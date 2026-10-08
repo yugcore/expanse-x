@@ -196,6 +196,30 @@ Pixel explanations, shader tracing, and frame reduction depend on those features
 actually executing in EX. They are later experiments, not implemented diagnostics
 or a promise to reproduce hardware-specific bugs or find an absolute minimum.
 
+## EX Proof — experimental track: not started
+
+The [EX Proof direction](../DOCUMENTATION.md#ex-proof-experimental-execution-certificates)
+explores independently checkable execution certificates. It shares the
+managed/explicit contracts and adds no new Phase 1 completion requirement.
+
+After the copy/submission foundation works:
+
+- [ ] Define a narrow buffer-copy access/dependency model, checked obligations,
+      assumptions, and unsupported scope.
+- [ ] Generate a certificate for a valid plan with model version, coverage, and
+      binding to the plan and relevant resource parameters.
+- [ ] Verify it with a separate checker without rendering or executing the copies.
+- [ ] Test missing required dependencies, corrupted certificates, and reuse
+      against changed plans/resource parameters; distinguish unsupported inputs.
+- [ ] Return structured explanations; make console reporting opt-in and document
+      export/test consumption without claiming editor integration already exists.
+- [ ] Document trusted checker rules, runtime enforcement, and verification cost.
+
+Shader/hardware proofs remain later research. A successful check covers the
+stated model and assumptions, not the intended image, hardware behavior, or
+optimal performance. Proof and Witness can be explored independently; integration
+with failure reproductions follows demonstrated behavior in both experiments.
+
 ## Future — Hardware backends: deferred
 
 Hardware integration needs a driver interface, virtual memory model, command

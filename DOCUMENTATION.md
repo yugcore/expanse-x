@@ -188,6 +188,89 @@ and [Nsight](https://docs.nvidia.com/nsight-graphics/UserGuide/frame-debugger-ov
 The proposed distinction is integrating explanation, reduction, and executable
 tests into EX's own execution model, not claiming those individual ideas are new.
 
+## EX Proof: experimental execution certificates
+
+Status: accepted for exploration on 2026-10-08; not implemented. EX Proof is a
+working name for proof-carrying execution: a plan is accompanied by a
+machine-checkable certificate explaining why specified resource-access
+obligations hold under a defined EX model. It does not certify an entire frame
+as correct without stating what was checked and assumed.
+
+The intended workflow is:
+
+1. Define the supported command/access model and the properties being checked.
+   Begin with buffer copies and their ranges and dependencies; expand only when
+   the corresponding execution rules exist.
+2. Describe the plan, relevant resource relationships, access ranges, and
+   execution/visibility dependencies.
+3. Generate a certificate with the evidence for supported obligations. Managed
+   work produces a plan and certificate; explicit work supplies a plan that EX
+   attempts to certify without silently changing it.
+4. Verify the certificate using a small, separate checker that does not render
+   the work or simply trust the planner's verdict. Record the model version,
+   coverage, assumptions, and binding to the exact plan and resource parameters.
+5. Return structured results explaining satisfied obligations, missing
+   requirements, invalid certificates, or unsupported scope. Unsupported work
+   must not be labelled proven or automatically treated as an invalid plan.
+
+For example, if copy A writes a temporary buffer and copy B reads those bytes,
+the report can identify the dependency that orders those accesses and makes A's
+writes visible to B. A separate copy with disjoint modeled resource accesses
+may need no additional dependency. This is an illustrative report, not an
+implemented API or a claim about today's queue handles.
+
+The proposed benefit is making synchronization reasoning inspectable and
+exchangeable. Automated checks could verify supported plan properties without
+the target GPU, and developers could recheck changes to dependencies, queue
+assignments, or memory reuse. A dependency unnecessary for the modeled resource
+accesses is not automatically a performance problem; actual speed needs measurement.
+
+### Results and presentation
+
+The result is structured data, not mandatory console printing. Optional views
+can include a readable console report, editor/debugger links to commands and
+resources, automated-test results, and an exported certificate for an independent
+checker. Developers explicitly request reports or enable diagnostics; normal
+rendering remains quiet. Reporting policy does not disable required safety checks.
+No console format, editor integration, certificate format, or public method is
+implemented or frozen by this decision.
+
+### Scope, trust, and relation to Witness
+
+A certificate proves only the stated properties within its model and assumptions.
+Possible later obligations include resource retention, valid ranges, access
+compatibility, and execution/memory dependencies. Rust ownership alone does not
+prove those GPU properties. Shader-dependent accesses, aliasing, CPU concurrency,
+and external inputs must be modeled or explicitly excluded from the certified
+scope; the current implementation provides no such certificates.
+
+The checker and its rules remain part of the trusted implementation. Execution
+must obey the checked plan, and actual resource parameters must satisfy the
+certificate's assumptions. Changing relevant commands, parameters, resources,
+or assumptions requires rechecking. A certificate does not replace runtime
+enforcement, prove driver/hardware correctness, guarantee the intended image,
+or establish identical output or optimal performance across GPUs.
+
+EX Proof explains why a supported plan satisfies specified obligations. EX
+Witness captures and reduces selected failures. A future failed proof check
+could supply a condition for Witness, but neither experimental feature depends
+on the other being fully implemented. Both use the same managed/explicit core
+contracts and introduce no third control level.
+
+The smallest experiment follows the copy/submission foundation: define a narrow
+buffer-copy model, generate a certificate for a valid plan, and independently
+check it without executing copies. Verify that the checker rejects a missing
+required dependency, a corrupted certificate, and a certificate reused against
+an altered plan or resource parameters. Report unsupported inputs distinctly.
+Full shader proofs and hardware synchronization are later research, not pilot scope.
+
+Formal GPU synchronization verification and synthesis already exist, including
+[NVIDIA's WEFT research](https://research.nvidia.com/publication/2015-06_verification-producer-consumer-synchronization-gpu-programs)
+and [AutoSync](https://cseweb.ucsd.edu/~npolikarpova/publications/fmcad18.pdf).
+EX's proposed distinction is independently checkable execution certificates
+integrated with readable explanations and Witness reproductions. No claim of
+market uniqueness or a sound, complete verifier is established by this document.
+
 ## Implementation order and current reality
 
 Build the explicit core first and prove its rules with small working operations.
@@ -198,8 +281,9 @@ theoretical scheduler before work can execute.
 Today EX implements software discovery, logical device/queue ownership, owned
 buffers, checked synchronous CPU access, and label-only command recording.
 Executable copies, submission, rendering, shaders, managed planning, GPU hazard
-validation, EX Witness, and hardware drivers are not implemented. The next step
-remains recorded buffer copies and queue submission, as defined by the roadmap.
+validation, EX Witness, EX Proof, and hardware drivers are not implemented. The
+next step remains recorded buffer copies and queue submission, as defined by
+the roadmap.
 
 ## Design commitments
 
@@ -220,3 +304,8 @@ own reference execution before hardware drivers.
 Decision record: 2026-10-08 — addition of EX Witness as an
 experimental direction. Start with supported buffer-copy failures after the
 execution foundation; retain the locked core philosophy and existing phase gates.
+
+Decision record: 2026-10-08 — addition of EX Proof as an experimental
+direction, with structured results and optional console/tool presentation. Start
+with independently checked buffer-copy certificates after the execution
+foundation; retain the locked core philosophy and existing phase gates.

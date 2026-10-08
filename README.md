@@ -5,6 +5,11 @@ public API, runtime, command model, and execution backend. The first backend wil
 be a software/reference GPU; rendering will not use Vulkan, Direct3D, Metal,
 OpenGL, or wgpu.
 
+The [project design](DOCUMENTATION.md) defines one core with managed
+and explicit control levels, Rust-based ownership, and validated execution.
+Build the explicit core first; managed planning is a future layer over the same
+resources and execution rules.
+
 ## Current status: Phase 1 — owned buffers and CPU access
 
 EX now discovers its built-in software adapter, creates independent logical
@@ -47,6 +52,7 @@ toolchain follows stable releases; it is not a pinned compiler-version guarantee
 
 | Path | Responsibility |
 | --- | --- |
+| `DOCUMENTATION.md` | Project design and commitments |
 | `crates/ex-api/` | Public Rust entry point, imported as `ex`; runnable example |
 | `crates/expansex-core/` | Discovery, object ownership, reference buffers, and label recording |
 | `docs/` | Current EX contracts, architecture, assessment, and conventions |

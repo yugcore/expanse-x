@@ -8,6 +8,13 @@ phase completion gates. This document describes architectural responsibilities.
 
 ## Philosophy and boundaries
 
+The [project design](../DOCUMENTATION.md) governs this architecture.
+EX has two intended control levels over one core: managed work derives a valid
+plan from resource-use declarations; explicit work supplies a plan that EX
+validates. Both share resources, execution rules, and completion semantics.
+Neither control level is implemented as an execution API today. Build the
+explicit core first, then add managed conveniences over proven contracts.
+
 EX is an independent graphics API. An application specifies resources and work;
 EX's runtime validates and schedules that work; EX's driver layer implements the
 execution contract for its target. The first target is an EX software GPU running
@@ -15,8 +22,9 @@ on the CPU. No other graphics API performs EX's rendering.
 
 ```text
 Application / game engine
-  -> ex-api (Rust import: ex)
-  -> EX runtime / shared contracts
+  -> EX managed or explicit level (Rust import: ex)
+  -> EX core / shared contracts
+  -> EX runtime
   -> EX driver layer
   -> EX reference GPU, later supported hardware targets
 ```

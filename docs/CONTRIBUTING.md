@@ -1,5 +1,9 @@
 # EX coding conventions
 
+- Follow the [project design](../DOCUMENTATION.md). Routine API and
+  implementation choices can evolve within it. Changes to guiding commitments
+  require an explicit design revision recorded in that document.
+
 - Keep production code, examples, tests and EX contracts tracked.
   Keep temporary output and local experiments out of Git.
 

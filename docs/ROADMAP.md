@@ -9,6 +9,12 @@ The first target is EX's own software/reference GPU. Rendering must not be
 delegated to Vulkan, Direct3D, Metal, OpenGL, wgpu, or another graphics API.
 Hardware-driver development remains deferred.
 
+The [project design](../DOCUMENTATION.md) governs this roadmap: managed and
+explicit control levels share one core, resources, and execution rules. Build
+and verify the explicit core first. Add managed planning over those contracts
+when a working workload justifies it; this is a future capability, not a second
+renderer or a reason to postpone the next recorded-copy/submission milestone.
+
 ## Status at a glance
 
 | Phase | Status | Completion evidence |
@@ -159,6 +165,8 @@ by an actual example's needs rather than implementing every object immediately.
 - [ ] Multithreaded recording, indirect operations, and measured allocator/command reuse.
 - [ ] Presentation/surface support when an interactive example requires it.
 - [ ] Richer host/device memory placement, staging, alignment, mapping, and residency as required.
+- [ ] Managed planning over proven explicit contracts, with inspectable decisions
+      and tested interoperability using the same resources and completion rules.
 
 Each feature needs a chosen EX contract, a working reference implementation,
 misuse validation, executable evidence, and updated documentation before its box

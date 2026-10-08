@@ -1,6 +1,6 @@
 # EX current API contract
 
-Status: Phases 0–3 complete; programmable and indexed rendering work. Names and behavior are provisional.
+Status: Phases 0–3 complete; Phase 4 sampled textures work. Names and behavior are provisional.
 Applications depend on package `ex-api` and import its library as `ex`. The
 implementation remains in `expansex-core`; the public crate re-exports its types.
 This contract describes implemented behavior only. See [architecture](ARCHITECTURE.md)
@@ -207,6 +207,32 @@ See [INDEXED-DRAWING.md](INDEXED-DRAWING.md) for errors and limitations.
 cargo run -p ex-api --example indexed_quad --locked --offline
 ```
 
+## Texture resources and fragment sampling
+
+Device::create_texture allocates a zeroed RGBA8 image with dimensions 1..=16384
+and explicit HostAccess for full-image CPU write_pixels/read_pixels. A TextureView
+retains a full image or validated positive rectangle. Device::create_sampler owns
+immutable nearest/bilinear filtering and independent U/V clamp/repeat addressing.
+
+Fragment SampleTexture reads XY of an earlier register as normalized view-local
+UVs. Shader creation validates stage, slot 0..8, and prior reference. Standalone
+Shader::evaluate returns MissingTextureBinding at sampling; TextureView::sample
+samples live storage synchronously. RenderPass::set_texture binds a same-device
+view/sampler pair, and programmable direct/indexed draws require/retain every
+shader-used slot, even for empty draws. Existing shader/pipeline descriptors remain
+compatible. Finished DrawTriangles exposes retained pairs through texture(slot).
+
+Submission snapshots used view rectangles once per nonempty draw, under the
+device gate and sequential storage locks. Empty draws skip texture locks; fragment
+sampling allocates/locks nothing per pixel. Texture poison and numeric/reservation
+failure preserve the entire failed scope. The extra memory is proportional to
+used view areas per draw. No texture transfers, attachments, mipmaps, or general
+resource bind groups exist yet. See [TEXTURES.md](TEXTURES.md).
+
+```text
+cargo run -p ex-api --example textured_quad --locked --offline
+```
+
 ## Standalone prototype labels
 
 `CommandRecorder` owns a `Vec<String>`. `new()` and `default()` start an empty
@@ -257,7 +283,10 @@ Ten public indexed-rendering tests, two internal poison/lifetime tests, and the
 indexed public documentation example verify formats, offsets/base, live copies,
 aliases, empty draws, errors, retention, ordering, and atomic failure. The quad
 example uses four shared vertices; independent decoding and pixel calculations
-verify its output. The workspace runs 122 tests, including documentation tests.
+verify its output. Twelve texture tests, three internal poison/lifetime/gate
+tests, and textured public documentation verify resource/sampling/rendering
+contracts. Independent checkerboard pixel calculations verify the example image.
+The workspace runs 137 tests, including documentation tests.
 Tests do not induce allocator OOM by exhausting host memory.
 
 ## Next contract
@@ -265,6 +294,7 @@ Tests do not induce allocator OOM by exhausting host memory.
 Phases 1–3 are complete: copies and fixed-function triangles execute through
 EX and produce observable bytes/pixels. Shader representation, stage interfaces,
 and programmable execution now work through pipeline validation, vertex layouts,
-interpolation, and indexed drawing. Textures, samplers, and shader resource
-bindings are next; language/format import remains future work.
+interpolation, and indexed drawing. Sampled textures, views, samplers, and eight
+fragment resource slots also work. Depth testing is next; language/format import
+remains future work.
 There is no implemented execution-backend ABI yet.

@@ -97,7 +97,11 @@ Fixed, direct programmable, and indexed rendering use the same queue. Indexed
 draws sample live index bytes after earlier copies, validate effective references,
 and fetch vertices under sequential storage locks while the device gate holds.
 Invalid references/poison preserve the failed scope target; retained commands
-remain reusable. See [INDEXED-DRAWING.md](INDEXED-DRAWING.md). No GPU driver,
+remain reusable. See [INDEXED-DRAWING.md](INDEXED-DRAWING.md). Texture upload,
+readback, and standalone sampling also acquire the device gate. Nonempty draws
+snapshot each used view once before shading, releasing source storage guards
+sequentially; aliases cannot deadlock. Poison/allocation/shading failures retain
+the same failed-scope boundary. See [TEXTURES.md](TEXTURES.md). No GPU driver,
 asynchronous job, multiple queues, fence, semaphore,
 barrier, timeline, cancellation, or execution-backend ABI is implemented here.
 Completion covers the submitted command buffer, not future calls from other threads.

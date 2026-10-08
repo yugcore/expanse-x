@@ -2,7 +2,8 @@
 
 Status: Phases 0–3 complete. Owned resources, validated recording, synchronous
 copies, shaders, graphics pipelines, vertex layouts, interpolation, and indexed
-software triangles work. Textures and samplers are next.
+software triangles work. Phase 4 now adds sampled textures/views, samplers, and
+fragment resource bindings. Depth testing is next.
 
 The [development roadmap](ROADMAP.md) tracks verified work, pending steps, and
 phase completion gates. This document describes architectural responsibilities.
@@ -39,10 +40,10 @@ not supply those capabilities. Hardware work is deferred.
 
 | Component | Implemented now | Next responsibility |
 | --- | --- | --- |
-| `ex-api`, library name `ex` | Resources, render scopes, submission/readback, shaders/pipelines/layouts, indexed drawing, and public examples | Texture and sampler entry points |
-| `expansex-core` | Ownership, allocation, recording, queue policy, shaders, validated pipelines, and index bindings | Texture/resource contracts |
-| Validation | Resource identity/usages/ranges, layouts/stages, render state, finite shader arithmetic, clip w, storage poison, and live index references | Texture binding and richer hazards |
-| Reference backend | reference.rs and reference/programmable.rs execute copies and fixed/programmed triangles, including indexed fetch and staged scope commits | Texture sampling |
+| `ex-api`, library name `ex` | Resources, render scopes, submission/readback, shaders/pipelines/layouts, indexed/textured drawing, and public examples | Depth attachment/state entry points |
+| `expansex-core` | Ownership, allocation, recording, queue policy, shaders, validated pipelines, indices, and sampled textures | Depth contracts |
+| Validation | Resource identity/usages/ranges, layouts/stages, render state, finite shader arithmetic, clip w, storage poison, live index references, texture views/slots/devices | Depth attachment compatibility and richer hazards |
+| Reference backend | reference.rs and reference/programmable.rs execute copies and fixed/programmed triangles, including indexed fetch, texture sampling, and staged scope commits | Depth testing |
 | Shader subsystem | shader.rs owns/validates EX instructions and evaluates standalone or allocation-free renderer invocations | Richer instructions and later external import |
 
 The public crate solves a packaging problem: callers have one `ex` import while
@@ -69,8 +70,9 @@ independent allocation identity, and share storage when cloned.
 
 Owned Framebuffer pixels and fixed-function RenderPass recorders now exist.
 Graphics pipelines and single-buffer vertex layouts also exist.
-Textures, views, samplers, resource layouts, compute pipelines, surfaces, and
-presentation are deferred until they have actual behavior. Offscreen image
+Sampled 2D textures, rectangular views, and immutable samplers also exist, with
+eight paired fragment slots inferred from shader instructions. General resource
+layouts, compute pipelines, surfaces, and presentation remain deferred. Offscreen image
 output is sufficient for the first triangle; a window and swapchain are not
 required. Choose Rust ownership, enums, borrowing, and `Result` for actual
 contracts instead of reproducing every object from another graphics API.
@@ -92,7 +94,9 @@ See [rendering](RENDERING.md) for the fixed vertex layout and failure boundaries
 Programmable draws retain each pipeline and run interpolated shaders; see
 [pipelines](PIPELINES.md). Indexed draws also retain index source/format/range
 and signed base vertex; [indexed drawing](INDEXED-DRAWING.md) defines execution-time
-reference checks and sequential source locking. Command pools and allocator reuse follow real needs.
+reference checks and sequential source locking. Draws retain shader-used texture/
+sampler pairs; [textures](TEXTURES.md) defines live uploads, view snapshots, and
+sampling. Command pools and allocator reuse follow real needs.
 
 ## Resources and memory
 
@@ -152,7 +156,9 @@ and constant fragments. Image readback feeds an example-only PNG serializer.
 Each render command preflights vertices and shades into a temporary image before
 committing its target, so late fragment failures preserve the scope's pixels.
 Indexed fetch reuses the programmable pipeline and decodes only selected records.
-Depth/stencil, blending, and textures are later steps,
+SampleTexture executes fragment sampling from view snapshots taken before shading.
+No per-fragment allocation/locking is introduced; snapshots add memory per used
+view per nonempty draw. Depth/stencil and blending are later steps,
 not hidden claims of full GPU conformance.
 
 ## Validation and errors

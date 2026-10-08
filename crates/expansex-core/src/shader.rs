@@ -25,6 +25,8 @@ pub enum ShaderStage {
 pub enum ShaderInstruction {
     /// Read one supplied input vector by location.
     Input { location: u32 },
+    /// Sample a fragment texture/sampler slot using XY of an earlier register.
+    SampleTexture { binding: u32, coordinates: u32 },
     /// Produce a finite literal vector.
     Constant([f32; 4]),
     /// Add corresponding components.
@@ -55,6 +57,14 @@ pub struct ShaderDescriptor<'a> {
 /// Structural or constant-value error, reported before a shader can be created.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ShaderValidationError {
+    TextureSamplingStage {
+        instruction: usize,
+        stage: ShaderStage,
+    },
+    InvalidTextureBinding {
+        instruction: usize,
+        binding: u32,
+    },
     TooManyInputs {
         count: u32,
         maximum: u32,
@@ -94,6 +104,8 @@ pub enum ShaderValidationError {
 impl fmt::Display for ShaderValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::TextureSamplingStage { instruction, stage } => write!(f, "instruction {instruction} samples a texture in {stage:?}; only Fragment supports sampling"),
+            Self::InvalidTextureBinding { instruction, binding } => write!(f, "instruction {instruction} uses texture slot {binding}; valid slots are 0..8"),
             Self::TooManyInputs { count, maximum } => write!(f, "shader requests {count} inputs; maximum is {maximum}"),
             Self::TooManyInstructions { count, maximum } => write!(f, "shader has {count} instructions; maximum is {maximum}"),
             Self::InvalidOutputCount { stage, count } => write!(f, "{stage:?} shader has invalid output count {count}; vertex requires 1..=17, fragment requires 1"),
@@ -145,6 +157,24 @@ impl ShaderDescriptor<'_> {
                 }
             };
             match *op {
+                ShaderInstruction::SampleTexture {
+                    binding,
+                    coordinates,
+                } => {
+                    if self.stage != ShaderStage::Fragment {
+                        return Err(ShaderValidationError::TextureSamplingStage {
+                            instruction,
+                            stage: self.stage,
+                        });
+                    }
+                    if binding >= 8 {
+                        return Err(ShaderValidationError::InvalidTextureBinding {
+                            instruction,
+                            binding,
+                        });
+                    }
+                    check_operand(coordinates)?;
+                }
                 ShaderInstruction::Input { location } if location >= self.input_count => {
                     return Err(ShaderValidationError::InvalidInputLocation {
                         instruction,
@@ -217,6 +247,7 @@ impl Error for ShaderCreateError {
 /// Evaluation failed; no partial output is returned and no resource is modified.
 #[derive(Debug)]
 pub enum ShaderExecutionError {
+    MissingTextureBinding { binding: u32 },
     WrongInputCount { expected: u32, actual: usize },
     NonFiniteInput { location: usize },
     NonFiniteResult { instruction: usize },
@@ -225,6 +256,10 @@ pub enum ShaderExecutionError {
 impl fmt::Display for ShaderExecutionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::MissingTextureBinding { binding } => write!(
+                f,
+                "shader sampling needs texture/sampler slot {binding}; use bound rendering"
+            ),
             Self::WrongInputCount { expected, actual } => write!(
                 f,
                 "shader requires {expected} input vectors, received {actual}"
@@ -361,6 +396,24 @@ impl Shader {
         inputs: &[[f32; 4]],
         outputs: &mut [[f32; 4]],
     ) -> Result<(), ShaderExecutionError> {
+        self.evaluate_with_sampler(inputs, outputs, |binding, _| {
+            Err(ShaderExecutionError::MissingTextureBinding { binding })
+        })
+    }
+
+    pub(crate) fn required_textures(&self) -> u8 {
+        self.instructions().iter().fold(0, |mask, op| match *op {
+            ShaderInstruction::SampleTexture { binding, .. } => mask | (1 << binding),
+            _ => mask,
+        })
+    }
+
+    pub(crate) fn evaluate_with_sampler(
+        &self,
+        inputs: &[[f32; 4]],
+        outputs: &mut [[f32; 4]],
+        sample: impl Fn(u32, [f32; 2]) -> Result<[f32; 4], ShaderExecutionError>,
+    ) -> Result<(), ShaderExecutionError> {
         if inputs.len() != self.input_count() as usize {
             return Err(ShaderExecutionError::WrongInputCount {
                 expected: self.input_count(),
@@ -378,6 +431,13 @@ impl Shader {
         for (instruction, op) in self.instructions().iter().enumerate() {
             let value = match *op {
                 ShaderInstruction::Input { location } => inputs[location as usize],
+                ShaderInstruction::SampleTexture {
+                    binding,
+                    coordinates,
+                } => {
+                    let uv = registers[coordinates as usize];
+                    sample(binding, [uv[0], uv[1]])?
+                }
                 ShaderInstruction::Constant(value) => value,
                 ShaderInstruction::Add { left, right } => std::array::from_fn(|lane| {
                     registers[left as usize][lane] + registers[right as usize][lane]

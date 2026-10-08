@@ -7,11 +7,25 @@ use std::error::Error;
 use std::fmt;
 use std::ops::Range;
 mod index;
+mod textures;
 pub use index::{IndexFormat, IndexedTriangles};
+pub use textures::TextureBinding;
 
 /// Recording misuse leaves previous work and the current binding unchanged.
 #[derive(Debug)]
 pub enum RenderEncodeError {
+    InvalidTextureSlot {
+        binding: u32,
+    },
+    ForeignTexture {
+        label: String,
+    },
+    ForeignSampler {
+        label: String,
+    },
+    MissingTextureBinding {
+        binding: u32,
+    },
     ForeignFramebuffer {
         label: String,
     },
@@ -87,6 +101,10 @@ pub enum RenderEncodeError {
 impl fmt::Display for RenderEncodeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::InvalidTextureSlot { binding } => write!(f, "texture slot {binding} is outside 0..8"),
+            Self::ForeignTexture { label } => write!(f, "texture {label:?} belongs to another device"),
+            Self::ForeignSampler { label } => write!(f, "sampler {label:?} belongs to another device"),
+            Self::MissingTextureBinding { binding } => write!(f, "bind a texture/sampler pair at required slot {binding}"),
             Self::ForeignFramebuffer { label } => write!(f, "framebuffer {label:?} belongs to another device; use the encoder's device"),
             Self::ForeignVertexBuffer { label } => write!(f, "vertex buffer {label:?} belongs to another device"),
             Self::MissingVertexUsage { label } => write!(f, "buffer {label:?} needs Vertex usage"),
@@ -128,6 +146,7 @@ pub struct DrawTriangles {
     colour: [u8; 4],
     pipeline: Option<GraphicsPipeline>,
     indexed: Option<IndexedTriangles>,
+    textures: [Option<TextureBinding>; 8],
 }
 
 impl DrawTriangles {
@@ -146,6 +165,10 @@ impl DrawTriangles {
     /// None selects the fixed-layout/colour path; Some selects shader execution.
     pub fn pipeline(&self) -> Option<&GraphicsPipeline> {
         self.pipeline.as_ref()
+    }
+    /// Borrow a retained shader-used texture slot; out-of-range slots return None.
+    pub fn texture(&self, binding: u32) -> Option<&TextureBinding> {
+        self.textures.get(binding as usize).and_then(Option::as_ref)
     }
     /// Some uses retained indices; None uses the direct vertex range.
     pub fn indexed(&self) -> Option<&IndexedTriangles> {
@@ -182,6 +205,7 @@ pub struct RenderPass<'a> {
     binding: Option<(Buffer, u64)>,
     pipeline: Option<GraphicsPipeline>,
     index_binding: Option<(Buffer, u64, IndexFormat)>,
+    textures: [Option<TextureBinding>; 8],
 }
 
 impl CommandEncoder {
@@ -218,6 +242,7 @@ impl CommandEncoder {
             binding: None,
             pipeline: None,
             index_binding: None,
+            textures: std::array::from_fn(|_| None),
         })
     }
 }
@@ -323,6 +348,7 @@ impl RenderPass<'_> {
                 buffer_size: buffer.size(),
             });
         }
+        let textures = self.draw_textures(pipeline.as_ref())?;
         self.commands
             .draws
             .try_reserve(1)
@@ -334,6 +360,7 @@ impl RenderPass<'_> {
             colour,
             pipeline,
             indexed: None,
+            textures,
         });
         Ok(())
     }
@@ -367,6 +394,12 @@ impl RenderPass<'_> {
 /// Expected reference render failures occur before any target pixels change.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RenderExecutionError {
+    TextureStoragePoisoned {
+        label: String,
+    },
+    MissingTextureBinding {
+        binding: u32,
+    },
     IndexStoragePoisoned {
         label: String,
     },
@@ -409,13 +442,15 @@ pub enum RenderExecutionError {
         invocation: u64,
         instruction: usize,
     },
-    /// Fallible temporary vertex/image reservation failed; no target writes occurred.
+    /// Fallible vertex/texture-snapshot/image reservation failed; no target writes occurred.
     AllocationFailed,
 }
 
 impl fmt::Display for RenderExecutionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::TextureStoragePoisoned { label } => write!(f, "texture {label:?} storage is poisoned"),
+            Self::MissingTextureBinding { binding } => write!(f, "shader sample requires texture slot {binding}"),
             Self::IndexStoragePoisoned { label } => write!(f, "index buffer {label:?} storage is poisoned"),
             Self::InvalidVertexIndex { index_position, index_value, base_vertex, vertex_label, available_vertices } => write!(f, "index element {index_position} value {index_value} plus base vertex {base_vertex} cannot address a complete u32-indexed vertex in buffer {vertex_label:?} ({available_vertices} available records)"),
             Self::VertexStoragePoisoned { label } => write!(f, "vertex buffer {label:?} storage is poisoned"),
@@ -425,7 +460,7 @@ impl fmt::Display for RenderExecutionError {
             Self::ShaderInputCount { stage, label, invocation, expected, actual } => write!(f, "{stage:?} shader {label:?} invocation {invocation} expected {expected} inputs, received {actual}"),
             Self::NonFiniteShaderInput { stage, label, invocation, location } => write!(f, "{stage:?} shader {label:?} invocation {invocation} input {location} is non-finite"),
             Self::NonFiniteShaderResult { stage, label, invocation, instruction } => write!(f, "{stage:?} shader {label:?} invocation {invocation} instruction {instruction} produced a non-finite result"),
-            Self::AllocationFailed => f.write_str("cannot reserve temporary render vertices or image"),
+            Self::AllocationFailed => f.write_str("cannot reserve temporary render vertices, texture snapshots, or image"),
         }
     }
 }

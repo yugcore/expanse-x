@@ -10,7 +10,15 @@ struct Vertex {
     varyings: [[f64; 4]; 16],
 }
 
+struct SampledTexture {
+    pixels: Vec<[u8; 4]>,
+    width: u32,
+    height: u32,
+    sampler: crate::Sampler,
+}
+
 pub(super) struct PreparedDraw {
+    textures: Vec<Option<SampledTexture>>,
     vertices: Vec<Vertex>,
     pipeline: GraphicsPipeline,
 }
@@ -26,6 +34,24 @@ pub(super) fn prepare(
             let indices = indexed.indices();
             (indices.end - indices.start) as usize
         });
+    let mut textures = Vec::new();
+    if count != 0 && pipeline.fragment_shader().required_textures() != 0 {
+        textures
+            .try_reserve_exact(8)
+            .map_err(|_| RenderExecutionError::AllocationFailed)?;
+        textures.resize_with(8, || None);
+        for (slot, target) in textures.iter_mut().enumerate() {
+            if let Some(binding) = draw.texture(slot as u32) {
+                let view = binding.view();
+                *target = Some(SampledTexture {
+                    pixels: view.snapshot()?,
+                    width: view.region().width,
+                    height: view.region().height,
+                    sampler: binding.sampler().clone(),
+                });
+            }
+        }
+    }
     let stride = pipeline.vertex_stride();
     let mut vertices = Vec::new();
     vertices
@@ -109,6 +135,7 @@ pub(super) fn prepare(
             })??;
     }
     Ok(PreparedDraw {
+        textures,
         vertices,
         pipeline: pipeline.clone(),
     })
@@ -135,6 +162,7 @@ fn decode_vertex(
         u64::from(vertex_index),
         &inputs[..pipeline.vertex_shader().input_count() as usize],
         &mut outputs,
+        None,
     )?;
     if outputs[0][3] <= 0.0 {
         return Err(RenderExecutionError::InvalidClipW { vertex_index });
@@ -158,10 +186,25 @@ fn shade(
     invocation: u64,
     inputs: &[[f32; 4]],
     outputs: &mut [[f32; 4]],
+    textures: Option<&[Option<SampledTexture>]>,
 ) -> Result<(), RenderExecutionError> {
     shader
-        .evaluate_into(inputs, outputs)
+        .evaluate_with_sampler(inputs, outputs, |binding, uv| {
+            let source = textures
+                .and_then(|t| t[binding as usize].as_ref())
+                .ok_or(ShaderExecutionError::MissingTextureBinding { binding })?;
+            Ok(crate::texture::sample(
+                source.width,
+                source.height,
+                &source.sampler,
+                uv,
+                |x, y| source.pixels[y as usize * source.width as usize + x as usize],
+            ))
+        })
         .map_err(|error| match error {
+            ShaderExecutionError::MissingTextureBinding { binding } => {
+                RenderExecutionError::MissingTextureBinding { binding }
+            }
             ShaderExecutionError::WrongInputCount { expected, actual } => {
                 RenderExecutionError::ShaderInputCount {
                     stage: shader.stage(),
@@ -198,7 +241,14 @@ pub(super) fn render(
     draw: &PreparedDraw,
 ) -> Result<(), RenderExecutionError> {
     for &triangle in draw.vertices.as_chunks::<3>().0 {
-        clipped_triangle(pixels, width, height, triangle, &draw.pipeline)?;
+        clipped_triangle(
+            pixels,
+            width,
+            height,
+            triangle,
+            &draw.pipeline,
+            &draw.textures,
+        )?;
     }
     Ok(())
 }
@@ -209,6 +259,7 @@ fn clipped_triangle(
     height: u32,
     triangle: [Vertex; 3],
     pipeline: &GraphicsPipeline,
+    textures: &[Option<SampledTexture>],
 ) -> Result<(), RenderExecutionError> {
     // Six planes can add at most six vertices to a clipped convex triangle.
     let mut polygon = [Vertex::default(); 12];
@@ -272,6 +323,7 @@ fn clipped_triangle(
             height,
             [polygon[0], polygon[index], polygon[index + 1]],
             pipeline,
+            textures,
         )?;
     }
     Ok(())
@@ -283,6 +335,7 @@ fn rasterize(
     height: u32,
     mut triangle: [Vertex; 3],
     pipeline: &GraphicsPipeline,
+    textures: &[Option<SampledTexture>],
 ) -> Result<(), RenderExecutionError> {
     let screen = |vertex: Vertex| {
         let x = (vertex.clip[0] / vertex.clip[3]).clamp(-1.0, 1.0);
@@ -348,7 +401,13 @@ fn rasterize(
             }
             let invocation = y as u64 * u64::from(width) + x as u64;
             let mut output = [[0.0; 4]; 1];
-            shade(shader, invocation, &inputs[..varying_count], &mut output)?;
+            shade(
+                shader,
+                invocation,
+                &inputs[..varying_count],
+                &mut output,
+                Some(textures),
+            )?;
             pixels[invocation as usize] =
                 output[0].map(|lane| (lane.clamp(0.0, 1.0) * 255.0).round() as u8);
         }

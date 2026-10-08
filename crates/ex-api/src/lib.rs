@@ -28,6 +28,7 @@
 //! use ex::{Instance, ShaderDescriptor, ShaderInstruction as Op, ShaderStage,
 //!     GraphicsPipelineDescriptor, VertexAttribute, VertexBufferLayout, VertexFormat,
 //!     FramebufferDescriptor, FramebufferFormat, BufferDescriptor, BufferUsage, HostAccess, IndexFormat};
+//! use ex::{TextureDescriptor, TextureFormat, SamplerDescriptor, FilterMode, AddressMode};
 //! let device = Instance::new().default_adapter().create_device();
 //! let vertex = device.create_shader(ShaderDescriptor {
 //!     label: "position", stage: ShaderStage::Vertex, input_count: 1,
@@ -35,7 +36,7 @@
 //! })?;
 //! let fragment = device.create_shader(ShaderDescriptor {
 //!     label: "red", stage: ShaderStage::Fragment, input_count: 0,
-//!     instructions: &[Op::Constant([1.0, 0.0, 0.0, 1.0])], outputs: &[0],
+//!     instructions: &[Op::Constant([0.5; 4]), Op::SampleTexture { binding: 0, coordinates: 0 }], outputs: &[1],
 //! })?;
 //! let pipeline = device.create_graphics_pipeline(GraphicsPipelineDescriptor {
 //!     label: "triangle", vertex_shader: &vertex, fragment_shader: &fragment,
@@ -56,11 +57,21 @@
 //!     label: "indices", size: 6, usages: &[BufferUsage::Index], host_access: HostAccess::Write,
 //! })?;
 //! indices.write(0, &[0, 0, 1, 0, 2, 0])?; // u16 little-endian 0,1,2
+//! let texture = device.create_texture(TextureDescriptor {
+//!     label: "red texel", width: 1, height: 1, format: TextureFormat::Rgba8Unorm,
+//!     host_access: HostAccess::Write,
+//! })?;
+//! texture.write_pixels(&[[255, 0, 0, 255]])?;
+//! let sampler = device.create_sampler(SamplerDescriptor {
+//!     label: "nearest", filter: FilterMode::Nearest,
+//!     address_u: AddressMode::ClampToEdge, address_v: AddressMode::ClampToEdge,
+//! })?;
 //! let mut encoder = device.create_command_encoder();
 //! let mut pass = encoder.begin_render_pass(&target, Some([0; 4]))?;
 //! pass.set_pipeline(&pipeline)?;
 //! pass.set_vertex_buffer(&buffer, 0)?;
 //! pass.set_index_buffer(&indices, 0, IndexFormat::Uint16)?;
+//! pass.set_texture(0, &texture.view(), &sampler)?;
 //! pass.draw_indexed(0..3, 0)?;
 //! pass.finish()?;
 //! device.default_queue().submit(&encoder.finish())?;
@@ -182,4 +193,10 @@ pub use expansex_core::{
     RenderExecutionError, RenderPass, Shader, ShaderCreateError, ShaderDescriptor,
     ShaderExecutionError, ShaderInstruction, ShaderStage, ShaderValidationError, VertexAttribute,
     VertexBufferLayout, VertexFormat,
+};
+
+pub use expansex_core::{
+    AddressMode, FilterMode, Sampler, SamplerCreateError, SamplerDescriptor, Texture,
+    TextureAccessError, TextureBinding, TextureCreateError, TextureDescriptor,
+    TextureDescriptorError, TextureFormat, TextureSampleError, TextureView, TextureViewDescriptor,
 };

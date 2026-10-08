@@ -127,6 +127,7 @@ impl RenderPass<'_> {
                 buffer_size: buffer.size(),
             });
         }
+        let textures = self.draw_textures(Some(pipeline))?;
         self.commands
             .draws
             .try_reserve(1)
@@ -137,6 +138,7 @@ impl RenderPass<'_> {
             vertices: 0..0,
             colour: [0; 4],
             pipeline: Some(pipeline.clone()),
+            textures,
             indexed: Some(IndexedTriangles {
                 buffer: buffer.clone(),
                 offset: *offset,

@@ -30,6 +30,10 @@ EX uses its own small contract and CPU executor, with safe Rust retained handles
   state. Programmable draws require both bindings, a complete triangle list,
   and checked offset + end * stride within the source. Zero draws still require
   valid state/range. Each draw retains its own pipeline/buffer; source bytes are live.
+- Fragment SampleTexture instructions infer required paired slots 0..8. Both
+  direct and indexed programmable draws validate and retain every required pair,
+  including unused sample results/empty draws. [TEXTURES.md](TEXTURES.md) defines
+  views, filtering, addressing, live contents, snapshots, and failures.
 - Legacy draws always use the Phase 2 layout/colour, even when a pipeline is bound.
   This explicit choice preserves existing examples and their semantics.
 - At submission, vertex attributes feed vertex invocations. Output zero is
@@ -49,7 +53,8 @@ EX uses its own small contract and CPU executor, with safe Rust retained handles
   image and commit only after every draw succeeds. Any expected failure leaves
   this scope's target unchanged (including its clear); earlier submission commands
   remain completed, later commands skip. This costs one extra full image plus
-  prepared vertex data. Device gate and storage lock ordering remain unchanged.
+  prepared vertex data, plus snapshots of shader-used views. Device gate and
+  sequential storage lock ordering remain unchanged.
 - No per-fragment heap allocation: internal shader evaluation fills fixed local
   output arrays. Public `Shader::evaluate` continues returning an owned Vec.
 

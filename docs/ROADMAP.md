@@ -23,7 +23,7 @@ renderer or a reason to postpone the programmable rendering milestone.
 | 1 — Minimum runtime | Complete | Ordered synchronous copy execution, readback, concurrency/failure contract, public example, and tests |
 | 2 — First software triangle | Complete | Public render scopes produce a verified PNG through EX's own clipped fixed-function rasterizer |
 | 3 — Programmability and pipeline milestone | Complete | Pipeline-controlled triangles, layouts, perspective interpolation, and validated u16/u32 indexed drawing |
-| 4 — Modern GPU concepts | Ready to start; not implemented | Next: textures, samplers, and shader resource bindings |
+| 4 — Modern GPU concepts | In progress | Sampled RGBA8 textures/views, nearest/bilinear samplers, eight fragment resource slots; depth testing next |
 | Future — Hardware drivers | Deferred | A selected target, viable driver interfaces, and demonstrated execution |
 
 Checked items mean implemented and verified behavior.
@@ -197,11 +197,11 @@ two internal poison/lifetime tests, and the [indexed quad](../crates/ex-api/exam
 verify these semantics. Four vertices (80 bytes) and six u16 indices (12 bytes)
 produce a 512x384 PNG with 110,592 shaded pixels and 80,237 foreground colours.
 Independent PNG checksums, coverage/interpolation calculations, and visual
-inspection verify the output. The complete workspace passes 122 tests.
+inspection verify the output. The Phase 3 checkpoint passed 122 tests.
 
 **Phase 3 completion gate: met.** Direct and indexed programmable triangles execute
 through the public API with validated state, layouts, stage interfaces, and live
-references. Phase 4 can start with textures, samplers, and resource bindings.
+references. Phase 4 has since started with textures, samplers, and resource bindings.
 External source-language/format ingestion remains future
 work; [the accepted direction](SHADERS.md#source-language-direction-accepted)
 uses established toolchains rather than committing to a new source language.
@@ -212,12 +212,12 @@ EX; and receives a triangle image produced entirely by EX's reference pipeline.
 This meets the original pipeline-based success criterion. A shader frontend/full
 compiler, external shader-format dependency, or real GPU is not required.
 
-## Phase 4 — Modern GPU concepts: ready to start
+## Phase 4 — Modern GPU concepts: in progress
 
 Add one capability at a time after the earlier contracts work. Select the order
 by an actual example's needs rather than implementing every object immediately.
 
-- [ ] Textures, views, samplers, and texture/resource binding.
+- [x] Sampled 2D RGBA8 textures, rectangular views, nearest/bilinear samplers, and eight fragment texture/sampler slots.
 - [ ] Depth/stencil and blending.
 - [ ] Compute pipelines and dispatch.
 - [ ] Explicit resource transitions, read/write hazards, and execution/memory dependencies.
@@ -228,6 +228,20 @@ by an actual example's needs rather than implementing every object immediately.
 - [ ] Managed planning over proven explicit contracts, with inspectable decisions
       and tested interoperability using the same resources and completion rules.
 
+The first capability is complete under [the texture contract](TEXTURES.md):
+explicit CPU upload/readback, retained view/sampler pairs, fragment SampleTexture,
+view-local clamp/repeat, perspective-correct UVs, and atomic scope failure.
+[Twelve public tests](../crates/ex-api/tests/textures.rs), three internal
+poison/lifetime/gate tests, and executable public documentation verify the path.
+The [checkerboard example](../crates/ex-api/examples/textured_quad.rs) renders
+nearest (left) and bilinear (right) repeat sampling. Independent PNG checksums
+and coverage/UV/filter calculations verify all 196,608 pixels, including 119,808
+covered samples; the image was also visually inspected. All 137 workspace tests pass.
+
+Phase 4 is still incomplete. Next: depth testing. Texture mipmaps, transfer
+commands, attachments, storage images, arbitrary bind groups, and general shader
+resources need separate demonstrated contracts.
+
 Each feature needs a chosen EX contract, a working reference implementation,
 misuse validation, executable evidence, and updated documentation before its box
 is checked. Performance or hardware-conformance claims require separate evidence.
@@ -237,7 +251,7 @@ is checked. Performance or hardware-conformance claims require separate evidence
 The [EX Witness direction](../DOCUMENTATION.md#ex-witness-experimental-differentiation)
 explores explanation → replay → smaller executable tests for selected failures.
 It uses the same contracts for managed and explicit work. This track adds no new
-Phase 1 completion requirement; the main roadmap continues with texture resources.
+Phase 1 completion requirement; the main roadmap continues with depth testing.
 
 After the copy/submission foundation works:
 

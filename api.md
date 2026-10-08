@@ -2,7 +2,7 @@
 
 Updated: 2026-10-08. Scope: every currently exported EX type, inherent method,
 public field, enum variant, and explicit standard trait implementation.
-There are **48 public types and 96 inherent methods**. Phase 3 is complete;
+There are **63 public types and 125 inherent methods**. Phase 3 is complete;
 these remain provisional APIs, not a completed or stable v1 specification.
 
 Applications depend on package `ex-api` and import its library as `ex`:
@@ -28,6 +28,8 @@ currently exported.
 | Copy recording | [CommandEncoder](#commandencoder), [CommandBuffer](#commandbuffer), [Command](#command), [BufferCopy](#buffercopy), [CopyBufferRole](#copybufferrole) |
 | Framebuffers | [Framebuffer](#framebuffer), [FramebufferDescriptor](#framebufferdescriptor), [FramebufferFormat](#framebufferformat) |
 | Rendering | [RenderPass](#renderpass), [RenderCommands](#rendercommands), [DrawTriangles](#drawtriangles), [IndexFormat](#indexformat), [IndexedTriangles](#indexedtriangles) |
+| Textures and sampling | [Texture](#texture), [TextureDescriptor](#texturedescriptor), [TextureFormat](#textureformat), [TextureView](#textureview), [TextureViewDescriptor](#textureviewdescriptor), [Sampler](#sampler), [SamplerDescriptor](#samplerdescriptor), [FilterMode](#filtermode), [AddressMode](#addressmode), [TextureBinding](#texturebinding) |
+| Texture errors | [TextureDescriptorError](#texturedescriptorerror), [TextureCreateError](#texturecreateerror), [TextureAccessError](#textureaccesserror), [SamplerCreateError](#samplercreateerror), [TextureSampleError](#texturesampleerror) |
 | Shaders | [Shader](#shader), [ShaderDescriptor](#shaderdescriptor), [ShaderStage](#shaderstage), [ShaderInstruction](#shaderinstruction) |
 | Pipelines and layouts | [GraphicsPipeline](#graphicspipeline), [GraphicsPipelineDescriptor](#graphicspipelinedescriptor), [VertexBufferLayout](#vertexbufferlayout), [VertexAttribute](#vertexattribute), [VertexFormat](#vertexformat), [GraphicsPipelineCreateError](#graphicspipelinecreateerror) |
 | Prototype labels | [CommandRecorder](#commandrecorder), [DebugMarkerBuffer](#debugmarkerbuffer) |
@@ -355,6 +357,7 @@ with a live borrowed pass is rejected by Rust. Dropping unfinished work discards
 | `RenderPass::draw_programmable(&mut self, vertices: Range<u32>) -> Result<(), RenderEncodeError>` | Require pipeline then vertex buffer; check complete triangle list and checked full range with pipeline stride. Retain current bindings for this draw. |
 | `RenderPass::set_index_buffer(&mut self, buffer: &Buffer, offset: u64, format: IndexFormat) -> Result<(), RenderEncodeError>` | Check exact device, Index usage, offset <= size, then format alignment; retain binding. |
 | `RenderPass::draw_indexed(&mut self, indices: Range<u32>, base_vertex: i32) -> Result<(), RenderEncodeError>` | Require pipeline, vertex buffer, then index buffer. Check ascending triangle-list index range and full index byte extent; retain all three bindings. Validate live references at submission. |
+| `RenderPass::set_texture(&mut self, binding: u32, view: &TextureView, sampler: &Sampler) -> Result<(), RenderEncodeError>` | Check slot 0..8, texture device, then sampler device; retain pair. Failure preserves prior binding. |
 | `RenderPass::finish(self) -> Result<(), RenderEncodeError>` | Reserve/append one render command; consumes this pass. Failed reservation commits no pass work. |
 
 `Range` is `std::ops::Range`, not an EX export. The exclusive end and first vertex
@@ -368,6 +371,12 @@ index binding offset; the signed base is added to each decoded index before
 vertex fetch relative to the vertex binding offset. All index values are ordinary
 references; no primitive restart exists. Empty indexed draws still validate state
 and range, but skip both source storage locks. See [INDEXED-DRAWING.md](docs/INDEXED-DRAWING.md).
+
+Direct/indexed programmable draws also require every slot referenced by their
+fragment shader's SampleTexture instructions, including unused results and empty
+draws. Each draw retains required pairs; legacy draws ignore texture bindings.
+New passes reset all slots. Submission snapshots used views only for nonempty
+draws; missing bindings are reported after vertex/index range validation.
 
 ### RenderCommands
 
@@ -392,6 +401,7 @@ recording retains live source bytes, not a snapshot.
 | `DrawTriangles::colour(&self) -> [u8; 4]` | Legacy constant RGBA; programmable draws store [0;4] here and ignore it. |
 | `DrawTriangles::pipeline(&self) -> Option<&GraphicsPipeline>` | Some selects programmable execution with a retained pipeline; None selects fixed layout/colour. |
 | `DrawTriangles::indexed(&self) -> Option<&IndexedTriangles>` | Some selects retained indexed fetch; None selects direct fetch. Indexed draws always have a pipeline. |
+| `DrawTriangles::texture(&self, binding: u32) -> Option<&TextureBinding>` | Borrow a retained shader-used pair; unused/out-of-range slots return None. |
 
 ### IndexFormat
 
@@ -450,6 +460,7 @@ result vector. Constants must be finite; references are register indices.
 | Variant and public payload | Operation |
 | --- | --- |
 | `ShaderInstruction::Input { location: u32 }` | Read an input vector with location less than input_count. |
+| `ShaderInstruction::SampleTexture { binding: u32, coordinates: u32 }` | Fragment-only sampling from slot 0..8; XY of an earlier register are normalized view-local UVs. |
 | `ShaderInstruction::Constant([f32; 4])` | Literal vector. |
 | `ShaderInstruction::Add { left: u32, right: u32 }` | Componentwise addition. |
 | `ShaderInstruction::Multiply { left: u32, right: u32 }` | Componentwise multiplication. |
@@ -495,6 +506,9 @@ registers; output reservation is fallible. No resource is changed and no partial
 output is returned on error. Calls can run repeatedly or concurrently without
 the device gate. No clipping, interpolation, projection, colour clamping, byte
 conversion, stage linking, or queue submission occurs.
+Standalone evaluation encountering SampleTexture returns MissingTextureBinding;
+bound fragment execution supplies retained resources. All sample instructions
+contribute required slots even when their results are unused.
 
 ## Graphics pipelines and vertex layouts
 
@@ -503,7 +517,8 @@ Contract: [PIPELINES.md](docs/PIPELINES.md). Programmable vertex output requires
 positive w, clips against -w <= x,y,z <= w, and divides by w before viewport
 mapping. Varyings interpolate with perspective correction at pixel centres on
 the 1/256-pixel grid. Fragment output clamps to [0,1], scales by 255, and rounds
-to bytes. Indexed fetch is implemented. No depth test, blending, textures, or instancing exists.
+to bytes. Indexed fetch and sampled fragment textures are implemented.
+No depth test, blending, or instancing exists.
 Every scope shades into a temporary image and commits only after all draws succeed.
 
 ### VertexFormat
@@ -709,6 +724,10 @@ Source: [render.rs](crates/expansex-core/src/render.rs).
 | Variant and public payload | Meaning |
 | --- | --- |
 | `RenderEncodeError::ForeignFramebuffer { label: String }` | Target belongs to another device. |
+| `RenderEncodeError::InvalidTextureSlot { binding: u32 }` | Texture binding slot is outside 0..8. |
+| `RenderEncodeError::ForeignTexture { label: String }` | Bound view's texture belongs to another device. |
+| `RenderEncodeError::ForeignSampler { label: String }` | Bound sampler belongs to another device. |
+| `RenderEncodeError::MissingTextureBinding { binding: u32 }` | Programmable draw requires a shader-used texture/sampler pair. |
 | `RenderEncodeError::ForeignVertexBuffer { label: String }` | Vertex source belongs to another device. |
 | `RenderEncodeError::MissingVertexUsage { label: String }` | Binding requires Vertex usage. |
 | `RenderEncodeError::VertexOffsetOutOfBounds { label: String, offset: u64, buffer_size: u64 }` | Binding offset exceeds size. |
@@ -739,6 +758,8 @@ Source: [render.rs](crates/expansex-core/src/render.rs).
 | Variant and public payload | Meaning |
 | --- | --- |
 | `RenderExecutionError::VertexStoragePoisoned { label: String }` | Nonempty draw's vertex source is untrusted. |
+| `RenderExecutionError::TextureStoragePoisoned { label: String }` | Nonempty draw's sampled texture source is untrusted. |
+| `RenderExecutionError::MissingTextureBinding { binding: u32 }` | Internal sampling context is incomplete; validated public draw recording prevents ordinary misuse from reaching this. |
 | `RenderExecutionError::IndexStoragePoisoned { label: String }` | Nonempty indexed draw's index source is untrusted. |
 | `RenderExecutionError::InvalidVertexIndex { index_position: u32, index_value: u32, base_vertex: i32, vertex_label: String, available_vertices: u64 }` | Raw index plus base cannot address a complete u32-indexed vertex record. Position is the index element relative to the binding offset; capacity excludes trailing incomplete records. |
 | `RenderExecutionError::FramebufferStoragePoisoned { label: String }` | Target pixel storage is untrusted. |
@@ -747,7 +768,7 @@ Source: [render.rs](crates/expansex-core/src/render.rs).
 | `RenderExecutionError::ShaderInputCount { stage: ShaderStage, label: String, invocation: u64, expected: u32, actual: usize }` | Interpreter input count mismatch; validated pipeline construction/binding prevents ordinary application misuse from reaching this. |
 | `RenderExecutionError::NonFiniteShaderInput { stage: ShaderStage, label: String, invocation: u64, location: usize }` | Shader invocation input contains NaN/infinity. |
 | `RenderExecutionError::NonFiniteShaderResult { stage: ShaderStage, label: String, invocation: u64, instruction: usize }` | Shader arithmetic produced a non-finite result. |
-| `RenderExecutionError::AllocationFailed` | Temporary vertex/image reservation failed; no lower-level source retained. |
+| `RenderExecutionError::AllocationFailed` | Temporary vertex/texture-snapshot/image reservation failed; no lower-level source retained. |
 
 Invocation is absolute vertex index for Vertex, row-major pixel index for Fragment.
 Late fragment errors discard the temporary image, including clear/prior draws in
@@ -761,6 +782,8 @@ Source: [shader.rs](crates/expansex-core/src/shader.rs). All variants have no so
 | Variant and public payload | Meaning |
 | --- | --- |
 | `ShaderValidationError::TooManyInputs { count: u32, maximum: u32 }` | More than 16 input vectors. |
+| `ShaderValidationError::TextureSamplingStage { instruction: usize, stage: ShaderStage }` | SampleTexture is supported only in Fragment programs. |
+| `ShaderValidationError::InvalidTextureBinding { instruction: usize, binding: u32 }` | SampleTexture slot is outside 0..8. |
 | `ShaderValidationError::TooManyInstructions { count: usize, maximum: usize }` | More than 256 instructions. |
 | `ShaderValidationError::InvalidOutputCount { stage: ShaderStage, count: usize }` | Vertex needs 1..=17 outputs; fragment needs exactly 1. |
 | `ShaderValidationError::InvalidInputLocation { instruction: usize, location: u32, input_count: u32 }` | Input location is outside declared inputs. |
@@ -781,6 +804,7 @@ Source: [shader.rs](crates/expansex-core/src/shader.rs). All variants have no so
 | Variant and public payload | Meaning |
 | --- | --- |
 | `ShaderExecutionError::WrongInputCount { expected: u32, actual: usize }` | Exact input count mismatch. |
+| `ShaderExecutionError::MissingTextureBinding { binding: u32 }` | Standalone evaluation encountered sampling without bound resources. |
 | `ShaderExecutionError::NonFiniteInput { location: usize }` | Input has a non-finite component. |
 | `ShaderExecutionError::NonFiniteResult { instruction: usize }` | Instruction produced a non-finite vector. |
 | `ShaderExecutionError::AllocationFailed { source: TryReserveError }` | Returning owned outputs failed; only this variant retains a source. |
@@ -802,10 +826,198 @@ Source: [pipeline.rs](crates/expansex-core/src/pipeline.rs).
 | `GraphicsPipelineCreateError::StageInterfaceMismatch { vertex_varyings: usize, fragment_inputs: u32 }` | Varying output/input counts differ. |
 | `GraphicsPipelineCreateError::AllocationFailed { source: TryReserveError }` | Owned attributes/label reservation failed; only this variant has a source. |
 
+## Textures, views, and samplers
+
+Sources: [texture.rs](crates/expansex-core/src/texture.rs),
+[sampler.rs](crates/expansex-core/src/texture/sampler.rs), and
+[render/textures.rs](crates/expansex-core/src/render/textures.rs).
+Contract: [TEXTURES.md](docs/TEXTURES.md). All handles have private fields.
+Storage is linear RGBA8, top-left row-major, with a single mip level.
+
+| Device method | Behavior |
+| --- | --- |
+| `Device::create_texture(&self, descriptor: TextureDescriptor<'_>) -> Result<Texture, TextureCreateError>` | Validate extent, own label/metadata, allocate zero-initialized sampled storage. |
+| `Device::create_sampler(&self, descriptor: SamplerDescriptor<'_>) -> Result<Sampler, SamplerCreateError>` | Own immutable sampling settings and label; retain device. |
+
+### TextureFormat
+
+Non-exhaustive enum, no inherent methods. External matches require a fallback.
+
+| Variant | Meaning |
+| --- | --- |
+| `TextureFormat::Rgba8Unorm` | Four linear unsigned normalized bytes; sample returns lane/255, without sRGB conversion. |
+
+### TextureDescriptor
+
+Borrowed creation request, copied into owned texture metadata.
+
+| Public field | Type | Meaning |
+| --- | --- | --- |
+| `label` | `&'a str` | Debug label; empty allowed. |
+| `width` | `u32` | Texel columns, 1..=16384. |
+| `height` | `u32` | Texel rows, 1..=16384. |
+| `format` | `TextureFormat` | Pixel encoding. |
+| `host_access` | `HostAccess` | CPU copy permission, independent of device sampling. |
+
+| Method | Behavior |
+| --- | --- |
+| `TextureDescriptor::validate(&self) -> Result<(), TextureDescriptorError>` | Check positive extents, then maximum; no allocation. |
+
+### Texture
+
+Clones share identity, live pixels, metadata, and device. All current textures
+are sampled images; attachment/storage/transfer usage is not exposed yet.
+
+| Method | Behavior |
+| --- | --- |
+| `Texture::label(&self) -> &str` | Borrow owned label. |
+| `Texture::width(&self) -> u32` | Texel columns. |
+| `Texture::height(&self) -> u32` | Texel rows. |
+| `Texture::format(&self) -> TextureFormat` | Encoding. |
+| `Texture::host_access(&self) -> HostAccess` | CPU permission. |
+| `Texture::device(&self) -> Device` | Retain creating device. |
+| `Texture::belongs_to(&self, device: &Device) -> bool` | Compare device identity. |
+| `Texture::is_same(&self, other: &Self) -> bool` | Compare shared allocation identity. |
+| `Texture::write_pixels(&self, pixels: &[[u8; 4]]) -> Result<(), TextureAccessError>` | Full-image upload; check Write/ReadWrite permission, exact width*height count, then storage poison. |
+| `Texture::read_pixels(&self, pixels: &mut [[u8; 4]]) -> Result<(), TextureAccessError>` | Full-image readback; check Read/ReadWrite permission, exact count, then poison. |
+| `Texture::create_view(&self, region: TextureViewDescriptor) -> Result<TextureView, TextureAccessError>` | Retain a positive in-bounds rectangle with overflow-safe checks. |
+| `Texture::view(&self) -> TextureView` | Retain a full-image view; no additional allocation. |
+
+CPU copies serialize under the device gate, then storage lock. Failed access
+changes neither pixels nor caller readback. Creation zeroes storage without a
+recorded clear. Fallible large reservations do not guarantee recovery from all OOM.
+
+### TextureViewDescriptor
+
+No inherent methods. Rectangle coordinates are parent texture texels.
+
+| Public field | Type | Meaning |
+| --- | --- | --- |
+| `x` | `u32` | Left column. |
+| `y` | `u32` | Top row. |
+| `width` | `u32` | Positive number of columns. |
+| `height` | `u32` | Positive number of rows. |
+
+### TextureView
+
+Clones retain the same texture and rectangle. UVs refer to the selected rectangle;
+clamp/repeat never read neighbouring texels outside the view.
+
+| Method | Behavior |
+| --- | --- |
+| `TextureView::texture(&self) -> &Texture` | Borrow retained parent. |
+| `TextureView::region(&self) -> TextureViewDescriptor` | Return rectangle by value. |
+| `TextureView::sample(&self, sampler: &Sampler, uv: [f32; 2]) -> Result<[f32; 4], TextureSampleError>` | Check sampler device then finite UVs; acquire gate/storage and sample live pixels. HostAccess is unnecessary. |
+
+Sampling uses f64 coordinate/filter arithmetic and returns f32 RGBA in [0,1].
+Nearest uses floor(uv*extent); Linear uses uv*extent-0.5 and four neighbours.
+U/V address independently, including repeat across bilinear seams. Finite extreme
+coordinates are reduced/bounded before indexing. Sampling does no framebuffer write.
+
+### FilterMode
+
+Exhaustive enum, no inherent methods.
+
+| Variant | Meaning |
+| --- | --- |
+| `FilterMode::Nearest` | Select one texel; centres are (i+0.5)/extent. |
+| `FilterMode::Linear` | Bilinear interpolation of four addressed texels. |
+
+### AddressMode
+
+Exhaustive enum, no inherent methods.
+
+| Variant | Meaning |
+| --- | --- |
+| `AddressMode::ClampToEdge` | Clamp each neighbour to the view's edge. |
+| `AddressMode::Repeat` | Wrap each neighbour within the view. |
+
+### SamplerDescriptor
+
+Borrowed creation request; no inherent methods. No mip/LOD/anisotropy settings exist.
+
+| Public field | Type | Meaning |
+| --- | --- | --- |
+| `label` | `&'a str` | Owned on creation; empty allowed. |
+| `filter` | `FilterMode` | Sole mip-level filtering. |
+| `address_u` | `AddressMode` | Horizontal addressing. |
+| `address_v` | `AddressMode` | Vertical addressing. |
+
+### Sampler
+
+Clones share immutable settings and identity.
+
+| Method | Behavior |
+| --- | --- |
+| `Sampler::label(&self) -> &str` | Borrow owned label. |
+| `Sampler::filter(&self) -> FilterMode` | Selected filter. |
+| `Sampler::address_u(&self) -> AddressMode` | Horizontal addressing. |
+| `Sampler::address_v(&self) -> AddressMode` | Vertical addressing. |
+| `Sampler::device(&self) -> Device` | Retain creating device. |
+| `Sampler::belongs_to(&self, device: &Device) -> bool` | Compare device identity. |
+| `Sampler::is_same(&self, other: &Self) -> bool` | Compare shared sampler identity. |
+
+### TextureBinding
+
+Created by render recording; clones retain view and sampler.
+
+| Method | Behavior |
+| --- | --- |
+| `TextureBinding::view(&self) -> &TextureView` | Borrow retained view. |
+| `TextureBinding::sampler(&self) -> &Sampler` | Borrow retained sampler. |
+
+### TextureDescriptorError
+
+No inherent methods or lower-level source.
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `TextureDescriptorError::ZeroExtent { width: u32, height: u32 }` | Either dimension is zero. |
+| `TextureDescriptorError::ExtentTooLarge { width: u32, height: u32, maximum: u32 }` | Either dimension exceeds 16384. |
+
+### TextureCreateError
+
+No inherent methods; both variants retain their lower-level source.
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `TextureCreateError::InvalidDescriptor(TextureDescriptorError)` | Bad extent. |
+| `TextureCreateError::AllocationFailed { source: TryReserveError }` | Storage/label reservation failed. |
+
+### TextureAccessError
+
+No inherent methods or lower-level source.
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `TextureAccessError::ReadForbidden { label: String }` | CPU read permission absent. |
+| `TextureAccessError::WriteForbidden { label: String }` | CPU write permission absent. |
+| `TextureAccessError::WrongPixelCount { expected: usize, actual: usize }` | Slice does not contain exactly width*height pixels. |
+| `TextureAccessError::InvalidView { region: TextureViewDescriptor, width: u32, height: u32 }` | Rectangle is empty or outside parent extent, including overflowing extents. |
+| `TextureAccessError::StoragePoisoned { label: String }` | Pixel storage is untrusted. |
+
+### SamplerCreateError
+
+No inherent methods; the sole variant retains its source.
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `SamplerCreateError::AllocationFailed { source: TryReserveError }` | Label reservation failed. |
+
+### TextureSampleError
+
+No inherent methods or lower-level source.
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `TextureSampleError::ForeignSampler { label: String }` | Sampler belongs to another device. |
+| `TextureSampleError::NonFiniteCoordinates` | U or V is NaN/infinity. |
+| `TextureSampleError::StoragePoisoned { label: String }` | Texture pixel storage is untrusted. |
+
 ## Explicit standard trait support
 
 This lists implemented/derived traits, not Rust's blanket implementations or
-auto traits. They are separate from the 96 inherent methods above.
+auto traits. They are separate from the 125 inherent methods above.
 
 | Type | Traits |
 | --- | --- |
@@ -857,17 +1069,32 @@ auto traits. They are separate from the 96 inherent methods above.
 | `GraphicsPipelineDescriptor<'a>` | `Debug`, `Clone`, `Copy` |
 | `GraphicsPipeline` | `Debug`, `Clone` |
 | `GraphicsPipelineCreateError` | `Debug`, `Display`, `Error` |
+| `TextureFormat` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `TextureDescriptor<'a>` | `Debug`, `Clone`, `Copy` |
+| `TextureDescriptorError` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`, `Display`, `Error` |
+| `TextureCreateError` | `Debug`, `Display`, `Error` |
+| `TextureAccessError` | `Debug`, `Clone`, `PartialEq`, `Eq`, `Display`, `Error` |
+| `TextureViewDescriptor` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `TextureView` | `Debug`, `Clone` |
+| `Texture` | `Debug`, `Clone` |
+| `FilterMode` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `AddressMode` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `SamplerDescriptor<'a>` | `Debug`, `Clone`, `Copy` |
+| `SamplerCreateError` | `Debug`, `Display`, `Error` |
+| `Sampler` | `Debug`, `Clone` |
+| `TextureSampleError` | `Debug`, `Clone`, `PartialEq`, `Eq`, `Display`, `Error` |
+| `TextureBinding` | `Debug`, `Clone` |
 
 Standard trait operations include:
 
 | Operation | Implementing types / behavior |
 | --- | --- |
-| `Clone::clone(&self) -> Self` | Types marked `Clone` above. Device/queue/buffer/framebuffer/shader/pipeline handles retain shared state; `AdapterInfo` clones its owned metadata. |
+| `Clone::clone(&self) -> Self` | Types marked `Clone` above. Device/queue/buffer/framebuffer/shader/pipeline/texture/view/sampler/binding handles retain shared state; `AdapterInfo` clones its owned metadata. |
 | `Default::default() -> Self` | `Instance`, `CommandRecorder`; same behavior as their `new()`. |
-| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 48 types; buffer/framebuffer formatting exposes metadata rather than stored bytes/pixels. |
+| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 63 types; buffer/framebuffer formatting exposes metadata rather than stored bytes/pixels. |
 | `PartialEq::eq(&self, other: &Self) -> bool` | Types marked `PartialEq`; handle identity instead uses explicit `is_same`/`belongs_to` methods. |
-| `Display::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | Fourteen error types and `CopyBufferRole`. |
-| `Error::source(&self) -> Option<&(dyn std::error::Error + 'static)>` | All fourteen error types. Buffer/framebuffer/shader creation retain descriptor/reservation sources, pipeline creation/command/render recording and shader evaluation retain reservation sources, and submission RenderFailed retains RenderExecutionError. Other current variants return None. |
+| `Display::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | Nineteen error types and `CopyBufferRole`. |
+| `Error::source(&self) -> Option<&(dyn std::error::Error + 'static)>` | All nineteen error types. Buffer/framebuffer/shader/texture creation retain descriptor/reservation sources, sampler creation retains reservation sources, pipeline creation/command/render recording and shader evaluation retain reservation sources, and submission RenderFailed retains RenderExecutionError. Other current variants return None. |
 
 Other inherited standard trait methods, such as `clone_from` and `ne`, follow
 their standard-library contracts. Error trait objects also support standard
@@ -876,8 +1103,9 @@ their standard-library contracts. Error trait objects also support standard
 
 ## Not implemented
 
-There are currently no public APIs for asynchronous submission/completion, textures,
-samplers, external shader language/format importer or frontend/compiler, compute
+There are currently no public APIs for asynchronous submission/completion, mipmaps,
+texture attachments/storage/transfer commands, arbitrary resource bind groups,
+external shader language/format importer or frontend/compiler, compute
 pipelines, instanced draws, primitive restart, indirect drawing, dispatch,
 presentation, mapped memory, hardware discovery/drivers, managed planning,
 EX Witness, or EX Proof. Resource branching is an unaccepted discussion idea,

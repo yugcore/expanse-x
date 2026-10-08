@@ -290,7 +290,8 @@ programs, graphics pipelines, vertex layouts, perspective interpolation, and
 programmable rendering also work; see [shaders](docs/SHADERS.md) and
 [pipelines](docs/PIPELINES.md). [Indexed drawing](docs/INDEXED-DRAWING.md) now works
 with u16/u32 formats, shared vertices, and live-reference validation. Phase 3 is
-complete; textures, samplers, and shader resource bindings are next. Established shader
+complete. [Textures, views, samplers, and fragment bindings](docs/TEXTURES.md)
+now work as the first Phase 4 capability; depth testing is next. Established shader
 languages/toolchains are the accepted future ingestion direction; a custom EX
 source language is deferred. Current examples use EX instructions directly.
 Managed planning, general

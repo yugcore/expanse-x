@@ -3,7 +3,8 @@
 EX supplies owned, validated vertex and fragment programs and a CPU interpreter
 callable through `Shader::evaluate`. Programs also execute through recorded
 graphics pipelines, vertex layouts, and perspective-correct interpolation; see
-[PIPELINES.md](PIPELINES.md). The fixed-function path remains available.
+[PIPELINES.md](PIPELINES.md). Fragment texture sampling is also implemented under
+[TEXTURES.md](TEXTURES.md). The fixed-function path remains available.
 
 Vulkan accepts SPIR-V shader modules and defines interfaces between shader stages
 ([shader contract](https://docs.vulkan.org/spec/latest/chapters/shaders.html),
@@ -17,9 +18,12 @@ not a new shader language or a full compiler.
 - Every value is `[f32; 4]`. An instruction's position is its result register:
   instruction 0 creates register 0, instruction 1 creates register 1, and so on.
 - Instructions are Input, Constant, componentwise Add and Multiply, Dot4
-  (four-component dot product broadcast into all lanes), and Swizzle.
+  (four-component dot product broadcast into all lanes), Swizzle, and fragment
+  SampleTexture { binding, coordinates } (XY of a prior register).
 - Operands must reference earlier results. There are no writes, branches, loops,
-  textures, buffer accesses, uniforms, built-in inputs, or arbitrary Rust callbacks.
+  buffer accesses, uniforms, built-in inputs, or arbitrary Rust callbacks. Texture
+  sampling supports eight paired slots, normalized view-local coordinates, and
+  nearest/bilinear clamp/repeat; no derivatives or LOD exists.
 - A descriptor borrows a label, instructions, and output register indices.
   `Device::create_shader` validates and copies them into immutable shared state.
   Clones retain the same identity and device; equal programs created separately
@@ -41,7 +45,8 @@ not a new shader language or a full compiler.
 
 Descriptor validation checks input count, instruction count, stage output count,
 then each instruction in order (input location, finite constant, prior operand,
-swizzle lane), then output indices. No allocation is needed for validation.
+swizzle lane, sampling stage/slot/register), then output indices. No allocation
+is needed for validation. SampleTexture requires Fragment stage and binding < 8.
 Referenced indices are u32; swizzle lanes are u8 in 0..4. Self references, forward
 references, cycles, missing outputs, and out-of-range inputs are rejected.
 
@@ -54,6 +59,11 @@ into a bounded local register array, rejects the first non-finite result, then
 reserves and returns outputs in descriptor order. Errors return no partial
 output. Allocation failure includes the reservation source. Immutable programs
 can be evaluated repeatedly or concurrently without changing resources.
+Standalone evaluation encounters MissingTextureBinding at a sample instruction;
+bound rendering supplies view snapshots, while TextureView::sample offers
+synchronized standalone sampling. All sample instructions contribute required
+slots even when their results are unused. Existing descriptor literals need no
+new field, and arithmetic-only evaluation remains compatible.
 
 ```rust
 use ex::{Instance, ShaderDescriptor, ShaderInstruction as Op, ShaderStage};

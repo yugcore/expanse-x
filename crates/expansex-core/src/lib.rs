@@ -4,7 +4,8 @@
 //! allocates reference buffers with explicit CPU access, and records validated
 //! buffer-copy descriptions independently of execution. Queues execute recorded
 //! copies and fixed/programmed triangles synchronously on the CPU. Owned shaders,
-//! pipelines, layouts, and perspective interpolation work. Prototype labels remain.
+//! pipelines, layouts, perspective interpolation, and sampled textures work.
+//! Prototype labels remain.
 
 mod buffer;
 mod command;
@@ -15,6 +16,7 @@ mod reference;
 mod render;
 mod shader;
 mod submission;
+mod texture;
 
 pub use buffer::{
     Buffer, BufferAccessError, BufferCreateError, BufferDescriptor, BufferDescriptorError,
@@ -35,10 +37,16 @@ pub use pipeline::{
 };
 pub use render::{
     DrawTriangles, IndexFormat, IndexedTriangles, RenderCommands, RenderEncodeError,
-    RenderExecutionError, RenderPass,
+    RenderExecutionError, RenderPass, TextureBinding,
 };
 pub use shader::{
     Shader, ShaderCreateError, ShaderDescriptor, ShaderExecutionError, ShaderInstruction,
     ShaderStage, ShaderValidationError,
 };
 pub use submission::QueueSubmitError;
+
+pub use texture::{
+    AddressMode, FilterMode, Sampler, SamplerCreateError, SamplerDescriptor, Texture,
+    TextureAccessError, TextureCreateError, TextureDescriptor, TextureDescriptorError,
+    TextureFormat, TextureSampleError, TextureView, TextureViewDescriptor,
+};

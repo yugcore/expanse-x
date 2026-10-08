@@ -10,7 +10,7 @@ and explicit control levels, Rust-based ownership, and validated execution.
 Build the explicit core first; managed planning is a future layer over the same
 resources and execution rules.
 
-## Current status: Phase 3 complete — programmable and indexed triangles
+## Current status: sampled textures render through EX
 
 EX now discovers its built-in software adapter, creates independent logical
 devices, and returns default queue handles with shared ownership. The workspace
@@ -26,7 +26,8 @@ fragment programs now have owned validated instructions, graphics pipelines,
 explicit vertex layouts, and perspective-correct interpolation. Vertex shaders
 control clip positions; fragment shaders control stored pixel colours. Indexed
 drawing shares vertex records using u16/u32 indices and a signed base vertex.
-Textures and samplers are next; hardware drivers remain deferred.
+RGBA8 textures, rectangular views, nearest/bilinear samplers, and fragment texture
+bindings now work. Phase 4 is in progress; hardware drivers remain deferred.
 
 ```text
 cargo run -p ex-api --example software_triangle --locked --offline
@@ -69,6 +70,17 @@ and writes `target/phase3-indexed-quad.png`. Geometry uses 80 vertex bytes plus
 The independently verified image contains 110,592 shaded pixels and 80,237 distinct
 foreground colours. See [indexed drawing](docs/INDEXED-DRAWING.md).
 
+```text
+cargo run -p ex-api --example textured_quad --locked --offline
+```
+
+The example uploads an 8x8 checkerboard and renders two indexed quads with the
+same texture: nearest repeat sampling on the left and bilinear repeat on the
+right. It writes `target/phase4-textured-quad.png`; independent calculations verify
+every pixel, including 119,808 covered samples. See [textures](docs/TEXTURES.md).
+Uploads are explicit CPU copies in this step; texture transfer commands and
+mipmaps remain future work.
+
 ## Build and check
 
 Install Rust through rustup. `rust-toolchain.toml` selects stable Rust with
@@ -108,8 +120,9 @@ defines completion checks for each phase. Phases 0–3 are complete. Discovery,
 owned resources, copies, fixed-function drawing, and synchronous readback now work.
 
 Phase 3 completes programmable pipelines, layouts, interpolation, and indexed
-drawing. The workspace passes 122 tests, including documentation tests. Start
-Phase 4 with textures, samplers, and shader resource bindings; modern GPU features
+drawing. Phase 4 now has sampled textures, views, samplers, and eight fragment
+resource slots. The workspace passes 137 tests, including documentation tests.
+Next: depth testing. Other modern GPU features
 and hardware drivers follow working reference semantics, one capability at a time.
 
 Read the [starting assessment](docs/ASSESSMENT.md),

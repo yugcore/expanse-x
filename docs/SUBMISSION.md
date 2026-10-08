@@ -1,6 +1,6 @@
 # EX synchronous reference submission
 
-Status: implemented Phase 1 contract, extended with Phase 2 render scopes;
+Status: implemented Phase 1 contract, extended with fixed and programmable render scopes;
 public names remain provisional. This is CPU execution, not hardware support.
 
 ## Design
@@ -48,8 +48,10 @@ Zero-byte copies execute as no-ops without locking storage, even if it is poison
   For an aliased copy the single lock is checked as `Source`.
 - `RenderFailed { command_index: usize, source: RenderExecutionError }`: that scope
   changed no target pixels; earlier commands completed and later commands are
-  skipped. Vertex decoding/preflight precedes clears and rasterization. This
-  variant exposes its underlying Error::source. See [RENDERING.md](RENDERING.md).
+  skipped. Vertex decoding/preflight precedes shading into a temporary image;
+  the scope commits only after all draws succeed, including fragment invocations.
+  This variant exposes its underlying Error::source. See
+  [RENDERING.md](RENDERING.md) and [PIPELINES.md](PIPELINES.md).
 
 Retrying a failed buffer replays the earlier commands too. The borrowed command
 buffer still owns its resources after failure. Poisoned storage is not repaired.
@@ -91,7 +93,7 @@ devices, retained resources, and concurrent submissions/CPU access. Internal tes
 inject poisoned locks and exercise partial failure and gate recovery without adding
 a public fault-injection API. The `submit_copy` example demonstrates completion.
 
-Fixed-function rendering now uses the same queue. No shader, GPU driver,
+Fixed and programmable rendering use the same queue. No GPU driver,
 asynchronous job, multiple queues, fence, semaphore,
 barrier, timeline, cancellation, or execution-backend ABI is implemented here.
 Completion covers the submitted command buffer, not future calls from other threads.

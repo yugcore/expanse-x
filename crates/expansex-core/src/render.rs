@@ -1,4 +1,7 @@
-use crate::{Buffer, BufferUsage, Command, CommandEncoder, Framebuffer};
+use crate::{
+    Buffer, BufferUsage, Command, CommandEncoder, Framebuffer, FramebufferFormat, GraphicsPipeline,
+    ShaderStage,
+};
 use std::collections::TryReserveError;
 use std::error::Error;
 use std::fmt;
@@ -25,6 +28,14 @@ pub enum RenderEncodeError {
         offset: u64,
     },
     MissingVertexBuffer,
+    MissingPipeline,
+    ForeignPipeline {
+        label: String,
+    },
+    IncompatibleTargetFormat {
+        pipeline_format: FramebufferFormat,
+        target_format: FramebufferFormat,
+    },
     InvalidVertexRange {
         start: u32,
         end: u32,
@@ -53,9 +64,12 @@ impl fmt::Display for RenderEncodeError {
             Self::VertexOffsetOutOfBounds { label, offset, buffer_size } => write!(f, "vertex binding offset {offset} exceeds buffer {label:?} size {buffer_size}"),
             Self::UnalignedVertexOffset { offset } => write!(f, "vertex binding offset {offset} must be aligned to 4 bytes"),
             Self::MissingVertexBuffer => f.write_str("bind a Vertex buffer before drawing"),
+            Self::MissingPipeline => f.write_str("bind a graphics pipeline before programmable drawing"),
+            Self::ForeignPipeline { label } => write!(f, "pipeline {label:?} belongs to another device"),
+            Self::IncompatibleTargetFormat { pipeline_format, target_format } => write!(f, "pipeline colour format {pipeline_format:?} does not match target {target_format:?}"),
             Self::InvalidVertexRange { start, end } => write!(f, "vertex range {start}..{end} must be ascending"),
             Self::IncompleteTriangle { vertex_count } => write!(f, "triangle-list vertex count {vertex_count} must be divisible by three"),
-            Self::VertexRangeOutOfBounds { label, first_vertex, vertex_count, offset, buffer_size } => write!(f, "{vertex_count} vertices from {first_vertex} at binding offset {offset} do not fit in buffer {label:?} ({buffer_size} bytes; 8-byte stride)"),
+            Self::VertexRangeOutOfBounds { label, first_vertex, vertex_count, offset, buffer_size } => write!(f, "{vertex_count} vertices from {first_vertex} at binding offset {offset} do not fit in buffer {label:?} ({buffer_size} bytes)"),
             Self::AllocationFailed { source } => write!(f, "cannot reserve recorded render work: {source}"),
         }
     }
@@ -69,13 +83,14 @@ impl Error for RenderEncodeError {
     }
 }
 
-/// One fixed-layout triangle-list draw, retaining live vertex bytes.
+/// One triangle-list draw retaining live vertex bytes and optional pipeline.
 #[derive(Debug)]
 pub struct DrawTriangles {
     vertex_buffer: Buffer,
     vertex_offset: u64,
     vertices: Range<u32>,
     colour: [u8; 4],
+    pipeline: Option<GraphicsPipeline>,
 }
 
 impl DrawTriangles {
@@ -90,6 +105,10 @@ impl DrawTriangles {
     }
     pub fn colour(&self) -> [u8; 4] {
         self.colour
+    }
+    /// None selects the fixed-layout/colour path; Some selects shader execution.
+    pub fn pipeline(&self) -> Option<&GraphicsPipeline> {
+        self.pipeline.as_ref()
     }
 }
 
@@ -120,6 +139,7 @@ pub struct RenderPass<'a> {
     encoder: &'a mut CommandEncoder,
     commands: RenderCommands,
     binding: Option<(Buffer, u64)>,
+    pipeline: Option<GraphicsPipeline>,
 }
 
 impl CommandEncoder {
@@ -154,12 +174,14 @@ impl CommandEncoder {
                 draws: Vec::new(),
             },
             binding: None,
+            pipeline: None,
         })
     }
 }
 
 impl RenderPass<'_> {
-    /// Binds little-endian `[x:f32,y:f32]` vertices with an 8-byte stride.
+    /// Binds a vertex source. Legacy draws use x/y pairs; programmable draws use
+    /// the current pipeline's layout. Offset is always aligned to four bytes.
     pub fn set_vertex_buffer(
         &mut self,
         buffer: &Buffer,
@@ -192,6 +214,42 @@ impl RenderPass<'_> {
     /// Records ascending ranges containing complete triangles. Byte ranges are
     /// checked now; finite vertex contents are checked when submitted.
     pub fn draw(&mut self, vertices: Range<u32>, colour: [u8; 4]) -> Result<(), RenderEncodeError> {
+        self.record_draw(vertices, colour, None)
+    }
+
+    /// Bind a retained pipeline after device/target checks. Failure preserves
+    /// the previous binding. Each pass starts with no pipeline bound.
+    pub fn set_pipeline(&mut self, pipeline: &GraphicsPipeline) -> Result<(), RenderEncodeError> {
+        if !pipeline.belongs_to(&self.encoder.device) {
+            return Err(RenderEncodeError::ForeignPipeline {
+                label: pipeline.label().to_owned(),
+            });
+        }
+        if pipeline.colour_format() != self.commands.target.format() {
+            return Err(RenderEncodeError::IncompatibleTargetFormat {
+                pipeline_format: pipeline.colour_format(),
+                target_format: self.commands.target.format(),
+            });
+        }
+        self.pipeline = Some(pipeline.clone());
+        Ok(())
+    }
+
+    /// Record a triangle list controlled by the current pipeline's shaders.
+    pub fn draw_programmable(&mut self, vertices: Range<u32>) -> Result<(), RenderEncodeError> {
+        let pipeline = self
+            .pipeline
+            .clone()
+            .ok_or(RenderEncodeError::MissingPipeline)?;
+        self.record_draw(vertices, [0; 4], Some(pipeline))
+    }
+
+    fn record_draw(
+        &mut self,
+        vertices: Range<u32>,
+        colour: [u8; 4],
+        pipeline: Option<GraphicsPipeline>,
+    ) -> Result<(), RenderEncodeError> {
         let (buffer, offset) = self
             .binding
             .as_ref()
@@ -207,8 +265,10 @@ impl RenderPass<'_> {
                 vertex_count: count,
             });
         }
-        if offset
-            .checked_add(u64::from(vertices.end) * 8)
+        let stride = pipeline.as_ref().map_or(8, GraphicsPipeline::vertex_stride);
+        if u64::from(vertices.end)
+            .checked_mul(stride)
+            .and_then(|bytes| offset.checked_add(bytes))
             .filter(|&end| end <= buffer.size())
             .is_none()
         {
@@ -229,6 +289,7 @@ impl RenderPass<'_> {
             vertex_offset: *offset,
             vertices,
             colour,
+            pipeline,
         });
         Ok(())
     }
@@ -272,7 +333,29 @@ pub enum RenderExecutionError {
         label: String,
         vertex_index: u32,
     },
-    /// Fallible temporary vertex reservation failed; no target writes occurred.
+    InvalidClipW {
+        vertex_index: u32,
+    },
+    ShaderInputCount {
+        stage: ShaderStage,
+        label: String,
+        invocation: u64,
+        expected: u32,
+        actual: usize,
+    },
+    NonFiniteShaderInput {
+        stage: ShaderStage,
+        label: String,
+        invocation: u64,
+        location: usize,
+    },
+    NonFiniteShaderResult {
+        stage: ShaderStage,
+        label: String,
+        invocation: u64,
+        instruction: usize,
+    },
+    /// Fallible temporary vertex/image reservation failed; no target writes occurred.
     AllocationFailed,
 }
 
@@ -282,7 +365,11 @@ impl fmt::Display for RenderExecutionError {
             Self::VertexStoragePoisoned { label } => write!(f, "vertex buffer {label:?} storage is poisoned"),
             Self::FramebufferStoragePoisoned { label } => write!(f, "framebuffer {label:?} storage is poisoned"),
             Self::NonFiniteVertex { label, vertex_index } => write!(f, "vertex {vertex_index} in buffer {label:?} contains NaN or infinity; positions must be finite"),
-            Self::AllocationFailed => f.write_str("cannot reserve temporary decoded render vertices"),
+            Self::InvalidClipW { vertex_index } => write!(f, "vertex {vertex_index} produced nonpositive clip w; this reference pipeline requires w > 0"),
+            Self::ShaderInputCount { stage, label, invocation, expected, actual } => write!(f, "{stage:?} shader {label:?} invocation {invocation} expected {expected} inputs, received {actual}"),
+            Self::NonFiniteShaderInput { stage, label, invocation, location } => write!(f, "{stage:?} shader {label:?} invocation {invocation} input {location} is non-finite"),
+            Self::NonFiniteShaderResult { stage, label, invocation, instruction } => write!(f, "{stage:?} shader {label:?} invocation {invocation} instruction {instruction} produced a non-finite result"),
+            Self::AllocationFailed => f.write_str("cannot reserve temporary render vertices or image"),
         }
     }
 }

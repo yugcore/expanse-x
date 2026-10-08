@@ -1,8 +1,8 @@
 # EX architecture
 
-Status: Phase 2 complete; Phase 3 shader foundation working. Owned resources,
-validated recording, synchronous copies, fixed-function software triangles,
-and independent vertex/fragment shader evaluation work.
+Status: Phase 2 complete; Phase 3 programmable rendering working. Owned resources,
+validated recording, synchronous copies, shaders, graphics pipelines, vertex
+layouts, and interpolated software triangles work. Indexed drawing is pending.
 
 The [development roadmap](ROADMAP.md) tracks verified work, pending steps, and
 phase completion gates. This document describes architectural responsibilities.
@@ -39,11 +39,11 @@ not supply those capabilities. Hardware work is deferred.
 
 | Component | Implemented now | Next responsibility |
 | --- | --- | --- |
-| `ex-api`, library name `ex` | Resources, render scopes, submission/readback, independent shader evaluation, and public examples | Programmable pipeline entry points |
-| `expansex-core` | Ownership, allocation, recording, synchronous queue policy, and owned shaders | Pipeline contracts and shader integration |
-| Validation | Resource identity, usages, ranges, extents, render binding/ranges, finite vertices, and storage poison | Pipeline/stage compatibility and richer hazards |
-| Reference backend | Private reference.rs executes copies, fetches/clips vertices, and rasterizes triangles under the device gate | Shader interpretation and programmable fragments |
-| Shader subsystem | shader.rs owns/validates EX vector instructions and interprets standalone invocations | Pipeline integration and interpolated stage inputs |
+| `ex-api`, library name `ex` | Resources, render scopes, submission/readback, shaders/pipelines/layouts, and public examples | Indexed draw entry points |
+| `expansex-core` | Ownership, allocation, recording, queue policy, shaders, and validated pipelines | Index contracts |
+| Validation | Resource identity/usages/ranges, layouts/stages, render state, finite shader arithmetic, clip w, and storage poison | Index validation and richer hazards |
+| Reference backend | reference.rs and reference/programmable.rs execute copies and fixed/programmed triangles, with staged scope commits | Indexed vertex fetch |
+| Shader subsystem | shader.rs owns/validates EX instructions and evaluates standalone or allocation-free renderer invocations | Richer instructions and later external import |
 
 The public crate solves a packaging problem: callers have one `ex` import while
 implementation responsibilities can grow behind it. The old core crate and its
@@ -68,7 +68,8 @@ identity checks, and cleanup. Buffers now retain their creating device, have
 independent allocation identity, and share storage when cloned.
 
 Owned Framebuffer pixels and fixed-function RenderPass recorders now exist.
-Textures, views, samplers, layouts, graphics/compute pipelines, surfaces, and
+Graphics pipelines and single-buffer vertex layouts also exist.
+Textures, views, samplers, resource layouts, compute pipelines, surfaces, and
 presentation are deferred until they have actual behavior. Offscreen image
 output is sufficient for the first triangle; a window and swapchain are not
 required. Choose Rust ownership, enums, borrowing, and `Result` for actual
@@ -88,7 +89,8 @@ the CPU. See [submission](SUBMISSION.md) for completion, failure, and concurrenc
 Finished render scopes retain their framebuffer and each draw's vertex binding.
 Their exclusive encoder borrow enforces recording scope; unfinished scopes discard.
 See [rendering](RENDERING.md) for the fixed vertex layout and failure boundaries.
-Next introduce programmable stages. Command pools and allocator reuse follow real needs.
+Programmable draws retain each pipeline and run interpolated shaders; see
+[pipelines](PIPELINES.md). Command pools and allocator reuse follow real needs.
 
 ## Resources and memory
 
@@ -127,25 +129,28 @@ readback; it does not establish asynchronous hardware synchronization.
 
 Phase 2 renders vertex positions with constant colour. Phase 3 now supplies a
 small EX-owned representation of vertex and fragment operations with independent
-software evaluation. See [SHADERS.md](SHADERS.md) for bounded vector interfaces,
-acyclic registers, operations, ownership, finite arithmetic, and errors. It does
-not yet participate in recorded rendering. Pipeline linking and interpolation
-are next; no shader frontend or compiler exists. This keeps an external shader
-format from becoming EX's permanent contract. Arbitrary Rust closures are not
+evaluation and recorded programmable rendering. See [SHADERS.md](SHADERS.md) for bounded vector interfaces,
+acyclic registers, operations, ownership, finite arithmetic, and errors. This
+representation participates in recorded rendering; [PIPELINES.md](PIPELINES.md) defines
+layout/stage validation, homogeneous clipping, perspective interpolation, and
+fragment conversion. No shader frontend, external importer, or compiler exists.
+The accepted source-language direction supports established toolchains later
+while EX retains execution. Arbitrary Rust closures are not
 assumed to be portable GPU shaders.
 
-Longer term: EX source -> frontend -> EX IR -> backend compiler -> target ISA or
-software execution. IR means intermediate representation; ISA means instruction
-set architecture. Define stage inputs/outputs and invalid-program errors before
-expanding instruction coverage. External formats can be studied or supported
-later without replacing EX's semantics.
+Longer term: established shader source -> existing compiler -> external format
+import -> EX IR -> target compiler or software execution. IR means intermediate
+representation; ISA means instruction set architecture. Expand instruction
+coverage and define supported input semantics before adding an importer.
+A custom EX source language remains a later decision.
 
 The private reference module now implements vertex fetch, triangle assembly,
 four-plane 2D clipping, full-target viewport mapping, 1/256-pixel rasterization,
 and constant fragments. Image readback feeds an example-only PNG serializer.
-Each render command preflights all vertex data before changing its target.
-Depth/stencil, blending, programmable interpolation,
-and textures are later steps, not hidden claims of full GPU conformance.
+Each render command preflights vertices and shades into a temporary image before
+committing its target, so late fragment failures preserve the scope's pixels.
+Depth/stencil, blending, indexed drawing, and textures are later steps,
+not hidden claims of full GPU conformance.
 
 ## Validation and errors
 
@@ -165,8 +170,9 @@ cause and guarantees the failed render scope changed no target pixels.
 Keep checks enabled in all builds initially. Release performance policy is a
 future decision supported by measurement, not a reason to hide correctness bugs.
 
-Before adding programmable rendering, define failures for unsupported usage, invalid draw
-state, incompatible pipeline/attachment state, and resource hazards. Report the
+Programmable rendering now reports stage/layout/binding/numeric failures and stages
+scope pixels until complete success. Continue defining unsupported usage, richer
+attachment state, and resource hazard errors as those features appear. Report the
 resource label/identity, operation, and expected condition.
 Only introduce error variants when an operation can actually produce them.
 

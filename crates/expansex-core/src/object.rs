@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum BackendKind {
-    /// EX's CPU/software reference target, with copies and fixed-function triangles.
+    /// EX's CPU/software reference target, with copies and programmable triangles.
     Reference,
 }
 
@@ -95,8 +95,8 @@ struct DeviceState {
     execution: Mutex<()>,
 }
 
-/// A logical EX device. Allocates reference buffers and creates copy encoders;
-/// executes recorded copies through its synchronous reference queue.
+/// A logical EX device. Creates reference resources, shaders, pipelines, and
+/// encoders; its synchronous queue executes copies and fixed/programmed triangles.
 ///
 /// Cloning retains the same device; use [`Adapter::create_device`] for a new one.
 #[derive(Debug, Clone)]

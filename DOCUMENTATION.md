@@ -286,8 +286,12 @@ copies in order, samples live bytes, serializes CPU access, and reports partial
 failure. The minimum runtime phase and first software triangle phase are complete.
 Owned RGBA framebuffers, render scopes, fixed-layout vertices, clipped triangle
 rasterization, and PNG example output now work. Owned vertex/fragment shader
-programs and independent evaluation also work; see [the shader contract](docs/SHADERS.md).
-Pipeline binding and programmable rendering are next. Managed planning, general
+programs, graphics pipelines, vertex layouts, perspective interpolation, and
+programmable rendering also work; see [shaders](docs/SHADERS.md) and
+[pipelines](docs/PIPELINES.md). Indexed drawing is next. Established shader
+languages/toolchains are the accepted future ingestion direction; a custom EX
+source language is deferred. Current examples use EX instructions directly.
+Managed planning, general
 execution hazard validation, EX Witness, EX Proof, and hardware drivers remain
 planned, as defined by the roadmap, [submission contract](docs/SUBMISSION.md),
 and [rendering contract](docs/RENDERING.md).

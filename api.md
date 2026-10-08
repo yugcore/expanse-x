@@ -2,8 +2,8 @@
 
 Updated: 2026-10-08. Scope: every currently exported EX type, inherent method,
 public field, enum variant, and explicit standard trait implementation.
-There are **40 public types and 73 inherent methods**. These are provisional
-APIs through the Phase 3 shader foundation, not a completed or stable v1 specification.
+There are **46 public types and 87 inherent methods**. These are provisional
+APIs through Phase 3 programmable rendering, not a completed or stable v1 specification.
 
 Applications depend on package `ex-api` and import its library as `ex`:
 
@@ -29,6 +29,7 @@ currently exported.
 | Framebuffers | [Framebuffer](#framebuffer), [FramebufferDescriptor](#framebufferdescriptor), [FramebufferFormat](#framebufferformat) |
 | Rendering | [RenderPass](#renderpass), [RenderCommands](#rendercommands), [DrawTriangles](#drawtriangles) |
 | Shaders | [Shader](#shader), [ShaderDescriptor](#shaderdescriptor), [ShaderStage](#shaderstage), [ShaderInstruction](#shaderinstruction) |
+| Pipelines and layouts | [GraphicsPipeline](#graphicspipeline), [GraphicsPipelineDescriptor](#graphicspipelinedescriptor), [VertexBufferLayout](#vertexbufferlayout), [VertexAttribute](#vertexattribute), [VertexFormat](#vertexformat), [GraphicsPipelineCreateError](#graphicspipelinecreateerror) |
 | Prototype labels | [CommandRecorder](#commandrecorder), [DebugMarkerBuffer](#debugmarkerbuffer) |
 | Errors | [BufferDescriptorError](#bufferdescriptorerror), [BufferCreateError](#buffercreateerror), [BufferAccessError](#bufferaccesserror), [CommandEncodeError](#commandencodeerror), [QueueSubmitError](#queuesubmiterror) |
 | Rendering errors | [FramebufferDescriptorError](#framebufferdescriptorerror), [FramebufferCreateError](#framebuffercreateerror), [FramebufferAccessError](#framebufferaccesserror), [RenderEncodeError](#renderencodeerror), [RenderExecutionError](#renderexecutionerror) |
@@ -86,7 +87,7 @@ returns a shared reference and does not allow mutating the adapter's metadata.
 
 | Variant | Meaning |
 | --- | --- |
-| `BackendKind::Reference` | EX's own CPU/software target; copies and fixed-function triangles. |
+| `BackendKind::Reference` | EX's own CPU/software target; copies and fixed/programmed triangles. |
 
 External matches need a fallback arm because more variants can be added.
 
@@ -95,9 +96,9 @@ External matches need a fallback arm because more variants can be added.
 `ex::Device` retains one logical device. Its fields are private. Methods are
 implemented across [object.rs](crates/expansex-core/src/object.rs),
 [buffer/resource.rs](crates/expansex-core/src/buffer/resource.rs),
-[command.rs](crates/expansex-core/src/command.rs), and
-[framebuffer.rs](crates/expansex-core/src/framebuffer.rs), and
-[shader.rs](crates/expansex-core/src/shader.rs).
+[command.rs](crates/expansex-core/src/command.rs),
+[framebuffer.rs](crates/expansex-core/src/framebuffer.rs),
+[shader.rs](crates/expansex-core/src/shader.rs), and [pipeline.rs](crates/expansex-core/src/pipeline.rs).
 
 | Method | Behavior |
 | --- | --- |
@@ -108,6 +109,7 @@ implemented across [object.rs](crates/expansex-core/src/object.rs),
 | `Device::create_command_encoder(&self) -> CommandEncoder` | Create an empty encoder bound to this device. |
 | `Device::create_framebuffer(&self, descriptor: FramebufferDescriptor<'_>) -> Result<Framebuffer, FramebufferCreateError>` | Validate extents/format and allocate zeroed RGBA reference pixels. |
 | `Device::create_shader(&self, descriptor: ShaderDescriptor<'_>) -> Result<Shader, ShaderCreateError>` | Validate and own immutable EX instruction source; no pipeline binding or rendering. |
+| `Device::create_graphics_pipeline(&self, descriptor: GraphicsPipelineDescriptor<'_>) -> Result<GraphicsPipeline, GraphicsPipelineCreateError>` | Validate shader devices/stages, vertex layout, and varying interface; own metadata and retain shaders. |
 
 Cloning retains the same domain; `Adapter::create_device()` creates a new one.
 Discovery/device/encoder constructors do not expose a recoverable allocation
@@ -162,15 +164,15 @@ descriptor; transfer and Vertex roles currently participate in recording/executi
 
 | Variant | Role |
 | --- | --- |
-| `BufferUsage::Vertex` | Fixed-layout triangle vertex input. |
+| `BufferUsage::Vertex` | Vertex input for fixed-layout or pipeline-controlled triangles. |
 | `BufferUsage::Index` | Future indexed draw input. |
 | `BufferUsage::Uniform` | Future shader parameters. |
 | `BufferUsage::Storage` | Future shader-accessible data. |
 | `BufferUsage::TransferSource` | Required source role for recorded copies. |
 | `BufferUsage::TransferDestination` | Required destination role for recorded copies. |
 
-A usage flag alone executes no work. Copies and fixed-function draws execute on submission;
-Shader evaluation is independent of buffers; programmable draws remain planned.
+A usage flag alone executes no work. Copies and triangle draws execute on submission.
+Standalone shader evaluation accepts input vectors independently of buffers.
 
 ### HostAccess
 
@@ -255,7 +257,7 @@ immutable; buffer contents remain live. Resources are retained, not snapshotted.
 | Variant | Payload |
 | --- | --- |
 | `Command::CopyBuffer(BufferCopy)` | One validated buffer-copy description. |
-| `Command::RenderPass(RenderCommands)` | One finished render scope, retaining target and per-draw vertex bindings. |
+| `Command::RenderPass(RenderCommands)` | One finished render scope, retaining target and per-draw vertex/pipeline bindings. |
 
 External matches need a fallback arm. Descriptions are not executor closures or
 another graphics API's handles.
@@ -290,7 +292,7 @@ Sources: [framebuffer.rs](crates/expansex-core/src/framebuffer.rs) and
 [render.rs](crates/expansex-core/src/render.rs). Contract: [RENDERING.md](docs/RENDERING.md).
 Pixels are row-major RGBA bytes with top-left origin. Vertex positions are
 little-endian f32 x/y pairs, 8-byte stride, in 2D post-projection coordinates.
-The reference executor clips to [-1,+1] on both axes, supports both windings,
+The fixed path clips to [-1,+1] on both axes, supports both windings,
 samples pixel centres on a 1/256-pixel grid, and uses a top-left shared-edge rule.
 Zero-area triangles write nothing; later draws overwrite covered RGBA pixels.
 
@@ -349,12 +351,17 @@ with a live borrowed pass is rejected by Rust. Dropping unfinished work discards
 | --- | --- |
 | `RenderPass::set_vertex_buffer(&mut self, buffer: &Buffer, offset: u64) -> Result<(), RenderEncodeError>` | Validate exact device, Vertex usage, offset <= size, then 4-byte alignment; retain binding. |
 | `RenderPass::draw(&mut self, vertices: Range<u32>, colour: [u8; 4]) -> Result<(), RenderEncodeError>` | Validate binding, ascending range, triangle-list count, checked byte extent; append a retained draw. |
+| `RenderPass::set_pipeline(&mut self, pipeline: &GraphicsPipeline) -> Result<(), RenderEncodeError>` | Check device then target colour format and retain pipeline binding. |
+| `RenderPass::draw_programmable(&mut self, vertices: Range<u32>) -> Result<(), RenderEncodeError>` | Require pipeline then vertex buffer; check complete triangle list and checked full range with pipeline stride. Retain current bindings for this draw. |
 | `RenderPass::finish(self) -> Result<(), RenderEncodeError>` | Reserve/append one render command; consumes this pass. Failed reservation commits no pass work. |
 
 `Range` is `std::ops::Range`, not an EX export. The exclusive end and first vertex
 are relative to the binding's byte offset. Count must be divisible by three;
 zero-count draws still require a binding and an in-bounds start. Failed binding
-or draw calls preserve earlier work/binding. Binding resets for each new pass.
+or draw calls preserve earlier work/binding. Buffer and pipeline bindings reset
+for each new pass. Legacy `draw` always uses the fixed 8-byte layout and supplied
+colour, including when a pipeline is bound. Programmable drawing is described in
+[PIPELINES.md](docs/PIPELINES.md).
 
 ### RenderCommands
 
@@ -368,7 +375,7 @@ or draw calls preserve earlier work/binding. Binding resets for each new pass.
 
 ### DrawTriangles
 
-`ex::DrawTriangles` has private fields. Each draw retains its own vertex binding;
+`ex::DrawTriangles` has private fields. Each draw retains its own vertex/pipeline binding;
 recording retains live source bytes, not a snapshot.
 
 | Method | Behavior |
@@ -376,13 +383,14 @@ recording retains live source bytes, not a snapshot.
 | `DrawTriangles::vertex_buffer(&self) -> &Buffer` | Borrow retained vertex source. |
 | `DrawTriangles::vertex_offset(&self) -> u64` | Binding offset in bytes. |
 | `DrawTriangles::vertices(&self) -> Range<u32>` | Return an owned copy of the vertex range. |
-| `DrawTriangles::colour(&self) -> [u8; 4]` | Constant fragment RGBA; replaces covered pixels without blending. |
+| `DrawTriangles::colour(&self) -> [u8; 4]` | Legacy constant RGBA; programmable draws store [0;4] here and ignore it. |
+| `DrawTriangles::pipeline(&self) -> Option<&GraphicsPipeline>` | Some selects programmable execution with a retained pipeline; None selects fixed layout/colour. |
 
 ## Shader representation and evaluation
 
 Source: [shader.rs](crates/expansex-core/src/shader.rs).
-Contract: [SHADERS.md](docs/SHADERS.md). These programs execute independently
-through `evaluate`; current render scopes still use fixed-function triangles.
+Contract: [SHADERS.md](docs/SHADERS.md). Programs execute independently through
+`evaluate` or through recorded programmable draws using a graphics pipeline.
 All values are four-component f32 vectors. Register numbers are instruction
 indices, and all operands must refer to earlier instructions.
 
@@ -392,7 +400,7 @@ indices, and all operands must refer to earlier instructions.
 
 | Variant | Interface meaning |
 | --- | --- |
-| `ShaderStage::Vertex` | First output is homogeneous clip position x,y,z,w; remaining outputs are varyings for future pipelines. |
+| `ShaderStage::Vertex` | First output is homogeneous clip position x,y,z,w; remaining outputs are pipeline varyings. |
 | `ShaderStage::Fragment` | Exactly one RGBA output vector. |
 
 ### ShaderInstruction
@@ -448,6 +456,88 @@ registers; output reservation is fallible. No resource is changed and no partial
 output is returned on error. Calls can run repeatedly or concurrently without
 the device gate. No clipping, interpolation, projection, colour clamping, byte
 conversion, stage linking, or queue submission occurs.
+
+## Graphics pipelines and vertex layouts
+
+Source: [pipeline.rs](crates/expansex-core/src/pipeline.rs).
+Contract: [PIPELINES.md](docs/PIPELINES.md). Programmable vertex output requires
+positive w, clips against -w <= x,y,z <= w, and divides by w before viewport
+mapping. Varyings interpolate with perspective correction at pixel centres on
+the 1/256-pixel grid. Fragment output clamps to [0,1], scales by 255, and rounds
+to bytes. No depth test, blending, textures, instancing, or indexed drawing exists.
+Every scope shades into a temporary image and commits only after all draws succeed.
+
+### VertexFormat
+
+`ex::VertexFormat` describes little-endian f32 storage. Omitted y/z lanes are
+zero; omitted w is one. It is exhaustive in this provisional version.
+
+| Variant | Bytes |
+| --- | --- |
+| `VertexFormat::Float32` | 4 |
+| `VertexFormat::Float32x2` | 8 |
+| `VertexFormat::Float32x3` | 12 |
+| `VertexFormat::Float32x4` | 16 |
+
+| Method | Behavior |
+| --- | --- |
+| `VertexFormat::size(&self) -> u64` | Attribute size in bytes. |
+
+### VertexAttribute
+
+`ex::VertexAttribute` has no inherent methods.
+
+| Public field | Type | Meaning |
+| --- | --- | --- |
+| `location` | `u32` | Vertex shader input vector location. |
+| `offset` | `u64` | Four-byte-aligned byte offset within each vertex. |
+| `format` | `VertexFormat` | Stored component count. |
+
+### VertexBufferLayout
+
+`ex::VertexBufferLayout<'a>` has no inherent methods.
+
+| Public field | Type | Meaning |
+| --- | --- | --- |
+| `stride` | `u64` | Positive, four-byte-aligned distance between vertices. |
+| `attributes` | `&'a [VertexAttribute]` | Cover all declared vertex input locations exactly once, in any order. Overlap is allowed; every attribute must fit within stride. |
+
+### GraphicsPipelineDescriptor
+
+`ex::GraphicsPipelineDescriptor<'a>` has no inherent methods. Creation validates
+in this order: vertex shader device/stage, fragment shader device/stage, stride,
+attribute count, each attribute's location/duplicates/alignment/checked extent,
+varying interface count, then metadata reservations.
+
+| Public field | Type | Meaning |
+| --- | --- | --- |
+| `label` | `&'a str` | Borrowed debug label; empty allowed. |
+| `vertex_shader` | `&'a Shader` | Vertex-stage shader from the creating device. |
+| `fragment_shader` | `&'a Shader` | Fragment-stage shader from the creating device. |
+| `vertex_layout` | `VertexBufferLayout<'a>` | One buffer's vertex input layout. |
+| `colour_format` | `FramebufferFormat` | Required target format; currently Rgba8Unorm only. |
+
+Vertex output zero is position. Remaining output count must equal fragment input
+count; sequential varying outputs map to input locations 0 onward. A shader with
+zero vertex inputs accepts an empty attribute list but draws still require a
+vertex buffer and valid full-stride range. No built-in vertex index is supplied.
+
+### GraphicsPipeline
+
+`ex::GraphicsPipeline` has private fields. It owns layout/label and retains shaders
+and creating device. Clones share immutable state and identity.
+
+| Method | Behavior |
+| --- | --- |
+| `GraphicsPipeline::label(&self) -> &str` | Borrow owned debug label. |
+| `GraphicsPipeline::vertex_shader(&self) -> &Shader` | Borrow retained vertex program. |
+| `GraphicsPipeline::fragment_shader(&self) -> &Shader` | Borrow retained fragment program. |
+| `GraphicsPipeline::vertex_stride(&self) -> u64` | Byte distance between vertices. |
+| `GraphicsPipeline::vertex_attributes(&self) -> &[VertexAttribute]` | Borrow owned attributes in descriptor order. |
+| `GraphicsPipeline::colour_format(&self) -> FramebufferFormat` | Required render-target format. |
+| `GraphicsPipeline::device(&self) -> Device` | Retain creating device. |
+| `GraphicsPipeline::belongs_to(&self, device: &Device) -> bool` | Test logical device identity. |
+| `GraphicsPipeline::is_same(&self, other: &Self) -> bool` | Test shared pipeline identity, independently of descriptor equality. |
 
 ## Standalone prototype labels
 
@@ -585,6 +675,9 @@ Source: [render.rs](crates/expansex-core/src/render.rs).
 | `RenderEncodeError::VertexOffsetOutOfBounds { label: String, offset: u64, buffer_size: u64 }` | Binding offset exceeds size. |
 | `RenderEncodeError::UnalignedVertexOffset { offset: u64 }` | Binding offset is not a multiple of 4. |
 | `RenderEncodeError::MissingVertexBuffer` | Draw requires a bound vertex source. |
+| `RenderEncodeError::MissingPipeline` | Programmable draw requires a bound pipeline. |
+| `RenderEncodeError::ForeignPipeline { label: String }` | Pipeline belongs to another logical device. |
+| `RenderEncodeError::IncompatibleTargetFormat { pipeline_format: FramebufferFormat, target_format: FramebufferFormat }` | Pipeline's required colour format differs from target. Only one format is currently constructible. |
 | `RenderEncodeError::InvalidVertexRange { start: u32, end: u32 }` | Exclusive end precedes start. |
 | `RenderEncodeError::IncompleteTriangle { vertex_count: u32 }` | Count is not divisible by three. |
 | `RenderEncodeError::VertexRangeOutOfBounds { label: String, first_vertex: u32, vertex_count: u32, offset: u64, buffer_size: u64 }` | Full fetched byte extent does not fit, including overflow. |
@@ -602,9 +695,15 @@ Source: [render.rs](crates/expansex-core/src/render.rs).
 | `RenderExecutionError::VertexStoragePoisoned { label: String }` | Nonempty draw's vertex source is untrusted. |
 | `RenderExecutionError::FramebufferStoragePoisoned { label: String }` | Target pixel storage is untrusted. |
 | `RenderExecutionError::NonFiniteVertex { label: String, vertex_index: u32 }` | Absolute fetched vertex index contains NaN or infinity. |
-| `RenderExecutionError::AllocationFailed` | Fallible decoded-vertex preparation failed; no lower-level source retained. |
+| `RenderExecutionError::InvalidClipW { vertex_index: u32 }` | Vertex shader output position w is zero or negative. |
+| `RenderExecutionError::ShaderInputCount { stage: ShaderStage, label: String, invocation: u64, expected: u32, actual: usize }` | Interpreter input count mismatch; validated pipeline construction/binding prevents ordinary application misuse from reaching this. |
+| `RenderExecutionError::NonFiniteShaderInput { stage: ShaderStage, label: String, invocation: u64, location: usize }` | Shader invocation input contains NaN/infinity. |
+| `RenderExecutionError::NonFiniteShaderResult { stage: ShaderStage, label: String, invocation: u64, instruction: usize }` | Shader arithmetic produced a non-finite result. |
+| `RenderExecutionError::AllocationFailed` | Temporary vertex/image reservation failed; no lower-level source retained. |
 
-All expected errors occur before that render scope changes target pixels. The
+Invocation is absolute vertex index for Vertex, row-major pixel index for Fragment.
+Late fragment errors discard the temporary image, including clear/prior draws in
+that scope. All expected errors leave that render scope's target unchanged. The
 gate prevents concurrent uploads from changing sources during preflight/drawing.
 
 ### ShaderValidationError
@@ -638,10 +737,27 @@ Source: [shader.rs](crates/expansex-core/src/shader.rs). All variants have no so
 | `ShaderExecutionError::NonFiniteResult { instruction: usize }` | Instruction produced a non-finite vector. |
 | `ShaderExecutionError::AllocationFailed { source: TryReserveError }` | Returning owned outputs failed; only this variant retains a source. |
 
+### GraphicsPipelineCreateError
+
+Source: [pipeline.rs](crates/expansex-core/src/pipeline.rs).
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `GraphicsPipelineCreateError::ForeignShader { stage: ShaderStage, label: String }` | Shader for this stage belongs to another device. |
+| `GraphicsPipelineCreateError::WrongShaderStage { expected: ShaderStage, actual: ShaderStage }` | Shader stage does not match its pipeline role. |
+| `GraphicsPipelineCreateError::InvalidStride { stride: u64 }` | Stride is zero or not four-byte aligned. |
+| `GraphicsPipelineCreateError::AttributeCountMismatch { expected: u32, actual: usize }` | Layout must provide exactly one attribute per vertex input. |
+| `GraphicsPipelineCreateError::InvalidAttributeLocation { location: u32, input_count: u32 }` | Location is outside declared inputs. |
+| `GraphicsPipelineCreateError::DuplicateAttributeLocation { location: u32 }` | Location appears twice. |
+| `GraphicsPipelineCreateError::UnalignedAttributeOffset { location: u32, offset: u64 }` | Offset is not four-byte aligned. |
+| `GraphicsPipelineCreateError::AttributeOutOfBounds { location: u32, offset: u64, size: u64, stride: u64 }` | Attribute extent overflows or exceeds stride. |
+| `GraphicsPipelineCreateError::StageInterfaceMismatch { vertex_varyings: usize, fragment_inputs: u32 }` | Varying output/input counts differ. |
+| `GraphicsPipelineCreateError::AllocationFailed { source: TryReserveError }` | Owned attributes/label reservation failed; only this variant has a source. |
+
 ## Explicit standard trait support
 
 This lists implemented/derived traits, not Rust's blanket implementations or
-auto traits. They are separate from the 73 inherent methods above.
+auto traits. They are separate from the 87 inherent methods above.
 
 | Type | Traits |
 | --- | --- |
@@ -685,17 +801,23 @@ auto traits. They are separate from the 73 inherent methods above.
 | `ShaderValidationError` | `Debug`, `Clone`, `PartialEq`, `Eq`, `Display`, `Error` |
 | `ShaderCreateError` | `Debug`, `Display`, `Error` |
 | `ShaderExecutionError` | `Debug`, `Display`, `Error` |
+| `VertexFormat` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `VertexAttribute` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `VertexBufferLayout<'a>` | `Debug`, `Clone`, `Copy` |
+| `GraphicsPipelineDescriptor<'a>` | `Debug`, `Clone`, `Copy` |
+| `GraphicsPipeline` | `Debug`, `Clone` |
+| `GraphicsPipelineCreateError` | `Debug`, `Display`, `Error` |
 
 Standard trait operations include:
 
 | Operation | Implementing types / behavior |
 | --- | --- |
-| `Clone::clone(&self) -> Self` | Types marked `Clone` above. Device/queue/buffer/framebuffer/shader handles retain shared state; `AdapterInfo` clones its owned metadata. |
+| `Clone::clone(&self) -> Self` | Types marked `Clone` above. Device/queue/buffer/framebuffer/shader/pipeline handles retain shared state; `AdapterInfo` clones its owned metadata. |
 | `Default::default() -> Self` | `Instance`, `CommandRecorder`; same behavior as their `new()`. |
-| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 40 types; buffer/framebuffer formatting exposes metadata rather than stored bytes/pixels. |
+| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 46 types; buffer/framebuffer formatting exposes metadata rather than stored bytes/pixels. |
 | `PartialEq::eq(&self, other: &Self) -> bool` | Types marked `PartialEq`; handle identity instead uses explicit `is_same`/`belongs_to` methods. |
-| `Display::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | Thirteen error types and `CopyBufferRole`. |
-| `Error::source(&self) -> Option<&(dyn std::error::Error + 'static)>` | All thirteen error types. Buffer/framebuffer/shader creation retain descriptor/reservation sources, command/render recording and shader evaluation retain reservation sources, and submission RenderFailed retains RenderExecutionError. Other current variants return None. |
+| `Display::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | Fourteen error types and `CopyBufferRole`. |
+| `Error::source(&self) -> Option<&(dyn std::error::Error + 'static)>` | All fourteen error types. Buffer/framebuffer/shader creation retain descriptor/reservation sources, pipeline creation/command/render recording and shader evaluation retain reservation sources, and submission RenderFailed retains RenderExecutionError. Other current variants return None. |
 
 Other inherited standard trait methods, such as `clone_from` and `ne`, follow
 their standard-library contracts. Error trait objects also support standard
@@ -705,8 +827,8 @@ their standard-library contracts. Error trait objects also support standard
 ## Not implemented
 
 There are currently no public APIs for asynchronous submission/completion, textures,
-samplers, shader frontend/compiler, graphics/compute pipelines, programmable
-draws/interpolation, indexed/instanced draws, dispatch,
+samplers, external shader language/format importer or frontend/compiler, compute
+pipelines, indexed/instanced draws, dispatch,
 presentation, mapped memory, hardware discovery/drivers, managed planning,
 EX Witness, or EX Proof. Resource branching is an unaccepted discussion idea,
 not an implemented or locked API.

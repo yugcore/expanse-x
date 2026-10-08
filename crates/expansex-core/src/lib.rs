@@ -3,13 +3,14 @@
 //! Discovers the software target, creates logical devices and queue handles,
 //! allocates reference buffers with explicit CPU access, and records validated
 //! buffer-copy descriptions independently of execution. Queues execute recorded
-//! copies and fixed-function triangles synchronously on the CPU. Independent
-//! validated vertex/fragment shader evaluation also works. Prototype labels remain.
+//! copies and fixed/programmed triangles synchronously on the CPU. Owned shaders,
+//! pipelines, layouts, and perspective interpolation work. Prototype labels remain.
 
 mod buffer;
 mod command;
 mod framebuffer;
 mod object;
+mod pipeline;
 mod reference;
 mod render;
 mod shader;
@@ -28,6 +29,10 @@ pub use framebuffer::{
     FramebufferDescriptorError, FramebufferFormat,
 };
 pub use object::{Adapter, AdapterInfo, BackendKind, Device, Instance, Queue};
+pub use pipeline::{
+    GraphicsPipeline, GraphicsPipelineCreateError, GraphicsPipelineDescriptor, VertexAttribute,
+    VertexBufferLayout, VertexFormat,
+};
 pub use render::{
     DrawTriangles, RenderCommands, RenderEncodeError, RenderExecutionError, RenderPass,
 };

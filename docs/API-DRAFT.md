@@ -1,6 +1,6 @@
 # EX current API contract
 
-Status: Phase 2 complete; Phase 3 shader foundation working. Public names and behavior are provisional.
+Status: Phase 2 complete; Phase 3 programmable rendering working. Names and behavior are provisional.
 Applications depend on package `ex-api` and import its library as `ex`. The
 implementation remains in `expansex-core`; the public crate re-exports its types.
 This contract describes implemented behavior only. See [architecture](ARCHITECTURE.md)
@@ -160,6 +160,32 @@ and retains output reservation errors. See [SHADERS.md](SHADERS.md).
 cargo run -p ex-api --example shader_evaluation --locked --offline
 ```
 
+## Graphics pipelines and programmable draws
+
+`Device::create_graphics_pipeline(GraphicsPipelineDescriptor)` retains same-device
+vertex/fragment shaders, copies a validated single-buffer vertex layout, and checks
+varying output/input counts. Float32/x2/x3/x4 attributes expand into four-component
+vectors, with missing y/z zero and missing w one. Layout locations cover every
+vertex input exactly once; offsets/stride align to four and attributes fit stride.
+
+`RenderPass::set_pipeline` checks device/target format. `draw_programmable(range)`
+requires current pipeline/buffer bindings and checks the full stride range. Draws
+retain their own pipeline and live source. Legacy `draw(range,colour)` keeps the
+fixed layout/colour even with a pipeline bound. Vertex operations produce clip
+position and varyings; positive w is required. Six-plane homogeneous clipping,
+division/viewport mapping, and perspective interpolation feed fragment operations.
+Finite RGBA clamps/rounds to bytes and overwrites covered samples.
+
+Each scope reserves a temporary image, shades into it, and commits only after
+every draw succeeds. Late numeric failure leaves the target unchanged, including
+scope clear/prior draws. Earlier submission commands still remain completed.
+This costs one additional full image; no per-fragment heap allocation occurs.
+See [PIPELINES.md](PIPELINES.md) for errors, limitations, and verification.
+
+```text
+cargo run -p ex-api --example programmable_triangle --locked --offline
+```
+
 ## Standalone prototype labels
 
 `CommandRecorder` owns a `Vec<String>`. `new()` and `default()` start an empty
@@ -203,13 +229,16 @@ and failure effects. Executable rendering documentation and two render-scope
 compile-fail examples verify public usage. Nine public shader tests, two internal
 lifetime checks, and executable shader documentation verify operations, invalid
 programs, finite arithmetic, interfaces, owned source, identity, and concurrency.
-The workspace runs 91 tests, including documentation tests. Tests do not induce
+Seventeen public programmable-rendering tests, one pipeline lifetime test, and
+executable pipeline documentation verify transforms, layouts, stage compatibility,
+perspective/clipping/edges, numeric errors, atomic scopes, order, reuse, and retention.
+The workspace runs 110 tests, including documentation tests. Tests do not induce
 allocator OOM by exhausting host memory.
 
 ## Next contract
 
 Phases 1 and 2 are complete: copies and fixed-function triangles execute through
 EX and produce observable bytes/pixels. Shader representation, stage interfaces,
-and independent evaluation now work. Next connect them through pipeline
-validation, vertex layouts, interpolation, and programmable reference execution.
+and programmable execution now work through pipeline validation, vertex layouts,
+and interpolation. Indexed drawing is next; language/format import remains future work.
 There is no implemented execution-backend ABI yet.

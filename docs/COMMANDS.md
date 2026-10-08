@@ -99,4 +99,5 @@ Tests do not induce allocator OOM by exhausting memory.
 
 The `submit_copy` example now executes these operations under the documented
 submission contract. Phase 2 now also records/executes triangles under the separate
-[rendering contract](RENDERING.md); programmable shaders are next.
+[rendering contract](RENDERING.md); pipeline-controlled triangles are now covered
+by the [pipeline contract](PIPELINES.md).

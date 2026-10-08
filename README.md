@@ -10,7 +10,7 @@ and explicit control levels, Rust-based ownership, and validated execution.
 Build the explicit core first; managed planning is a future layer over the same
 resources and execution rules.
 
-## Current status: Phase 2 complete; Phase 3 shader foundation working
+## Current status: programmable triangles render through EX pipelines
 
 EX now discovers its built-in software adapter, creates independent logical
 devices, and returns default queue handles with shared ownership. The workspace
@@ -22,9 +22,10 @@ with whole-submission serialization against CPU access and defined partial failu
 EX now owns RGBA framebuffers and records clear/vertex-binding/triangle-list scopes.
 Its own CPU rasterizer clips 2D geometry, samples pixel centres, and writes constant
 fragment colours. Applications import the `ex-api` package as `ex`. EX vertex and
-fragment programs now have owned validated instructions and independent CPU
-evaluation. Pipeline binding and programmable rendering are next; hardware
-drivers remain deferred.
+fragment programs now have owned validated instructions, graphics pipelines,
+explicit vertex layouts, and perspective-correct interpolation. Vertex shaders
+control clip positions; fragment shaders control stored pixel colours. Indexed
+drawing is next; hardware drivers remain deferred.
 
 ```text
 cargo run -p ex-api --example software_triangle --locked --offline
@@ -44,7 +45,18 @@ cargo run -p ex-api --example shader_evaluation --locked --offline
 
 This example translates a vertex position and transforms a fragment colour
 through EX's interpreter. It evaluates individual invocations; it does not yet
-connect shaders to the triangle rasterizer. See [the shader contract](docs/SHADERS.md).
+record a draw. See [the shader contract](docs/SHADERS.md).
+
+```text
+cargo run -p ex-api --example programmable_triangle --locked --offline
+```
+
+This example uploads position/colour attributes, records pipeline-controlled
+drawing, and writes `target/phase3-programmable-triangle.png`. EX's vertex shader
+scales/translates the triangle and its fragment shader tints interpolated colours.
+The verified image contains 47,794 shaded pixels and 36,374 distinct foreground
+colours. See [the pipeline contract](docs/PIPELINES.md).
+HLSL/GLSL/SPIR-V import is planned; current examples use EX instructions directly.
 
 ## Build and check
 
@@ -84,9 +96,9 @@ The [development roadmap](docs/ROADMAP.md) is the current progress tracker and
 defines completion checks for each phase. Phases 0, 1, and 2 are complete. Discovery,
 owned resources, copies, fixed-function drawing, and synchronous readback now work.
 
-Phase 2 produces the first software triangle; Phase 3 has started with shader
-representation and evaluation. Pipeline objects and programmable drawing will
-complete the original graphics milestone. Modern GPU features
+Phase 2 produces the first software triangle; Phase 3 now meets the original
+pipeline-based graphics milestone. Indexed drawing and its validation/tests
+remain before the whole phase is complete. Modern GPU features
 and hardware drivers follow working reference semantics, one capability at a time.
 
 Read the [starting assessment](docs/ASSESSMENT.md),
@@ -96,5 +108,6 @@ Read the [starting assessment](docs/ASSESSMENT.md),
 [buffer contract](docs/BUFFERS.md), [copy-recording contract](docs/COMMANDS.md), and
 [submission contract](docs/SUBMISSION.md) and [rendering contract](docs/RENDERING.md).
 The [shader contract](docs/SHADERS.md) describes the working interpreter and its limits.
+The [pipeline contract](docs/PIPELINES.md) describes programmable execution.
 See [coding conventions](docs/CONTRIBUTING.md)
 for implementation and commit policy.

@@ -1,6 +1,7 @@
 //! Working CPU executor. Queue policy owns the device gate; this module owns
 //! byte-copy interpretation, vertex fetch, clipping, and pixel rasterization.
 use crate::{Command, CopyBufferRole, QueueSubmitError, RenderCommands, RenderExecutionError};
+mod programmable;
 
 pub(crate) fn execute(command_index: usize, command: &Command) -> Result<(), QueueSubmitError> {
     match command {
@@ -30,19 +31,30 @@ pub(crate) fn execute(command_index: usize, command: &Command) -> Result<(), Que
     }
 }
 
-struct PreparedDraw {
+struct FixedDraw {
     positions: Vec<[f64; 2]>,
     colour: [u8; 4],
 }
 
+enum PreparedDraw {
+    Fixed(FixedDraw),
+    Programmable(programmable::PreparedDraw),
+}
+
 fn render(pass: &RenderCommands) -> Result<(), RenderExecutionError> {
-    // Preflight the entire pass before clearing/writing the target. No allocation
-    // or expected fallible operation occurs once pixel writes begin.
+    // Preflight vertices, then shade into a temporary image. No allocation or
+    // expected fallible operation occurs once target commit begins.
     let mut prepared = Vec::new();
     prepared
         .try_reserve_exact(pass.draws().len())
         .map_err(|_| RenderExecutionError::AllocationFailed)?;
     for draw in pass.draws() {
+        if let Some(pipeline) = draw.pipeline() {
+            prepared.push(PreparedDraw::Programmable(programmable::prepare(
+                draw, pipeline,
+            )?));
+            continue;
+        }
         let vertices = draw.vertices();
         let count = (vertices.end - vertices.start) as usize;
         let mut positions = Vec::new();
@@ -71,32 +83,48 @@ fn render(pass: &RenderCommands) -> Result<(), RenderExecutionError> {
                     label: draw.vertex_buffer().label().to_owned(),
                 })??;
         }
-        prepared.push(PreparedDraw {
+        prepared.push(PreparedDraw::Fixed(FixedDraw {
             positions,
             colour: draw.colour(),
-        });
+        }));
     }
     let target = pass.target();
     target
         .with_pixels_mut(|pixels| {
+            // Late fragment failures must preserve the entire target, including
+            // clear and earlier draws in this scope. Commit only on full success.
+            let mut staged = Vec::new();
+            staged
+                .try_reserve_exact(pixels.len())
+                .map_err(|_| RenderExecutionError::AllocationFailed)?;
+            staged.extend_from_slice(pixels);
             if let Some(colour) = pass.clear_colour() {
-                pixels.fill(colour);
+                staged.fill(colour);
             }
             for draw in prepared {
-                for triangle in draw.positions.as_chunks::<3>().0 {
-                    clipped_triangle(
-                        pixels,
-                        target.width(),
-                        target.height(),
-                        [triangle[0], triangle[1], triangle[2]],
-                        draw.colour,
-                    );
+                match draw {
+                    PreparedDraw::Programmable(draw) => {
+                        programmable::render(&mut staged, target.width(), target.height(), &draw)?
+                    }
+                    PreparedDraw::Fixed(draw) => {
+                        for triangle in draw.positions.as_chunks::<3>().0 {
+                            clipped_triangle(
+                                &mut staged,
+                                target.width(),
+                                target.height(),
+                                [triangle[0], triangle[1], triangle[2]],
+                                draw.colour,
+                            );
+                        }
+                    }
                 }
             }
+            pixels.copy_from_slice(&staged);
+            Ok(())
         })
         .map_err(|_| RenderExecutionError::FramebufferStoragePoisoned {
             label: target.label().to_owned(),
-        })
+        })?
 }
 
 fn clipped_triangle(

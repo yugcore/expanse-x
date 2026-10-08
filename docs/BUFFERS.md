@@ -121,4 +121,6 @@ ownership, ranges, and overlap, and retain referenced allocations. They do not
 read storage or snapshot contents. Queue submission now executes those descriptions,
 with ordering, visibility, host concurrency, and failure defined in the submission
 contract. Vertex usage now enables fixed-layout triangle fetch under
-[RENDERING.md](RENDERING.md). Shaders and hardware storage remain future work.
+[RENDERING.md](RENDERING.md) and programmable layout fetch under
+[PIPELINES.md](PIPELINES.md). Shader resource-buffer access and hardware storage
+remain future work.

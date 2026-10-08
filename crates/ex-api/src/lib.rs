@@ -4,8 +4,8 @@
 //! alongside owned reference buffers with explicit host access and validated
 //! buffer-copy recording, fixed-function triangles, and synchronous submission.
 //! This crate has no dependency on another graphics API.
-//! Vertex and fragment shader programs can also be validated and evaluated
-//! independently; pipeline binding and programmable drawing are the next step.
+//! Vertex and fragment shader programs can be evaluated independently or bound
+//! through graphics pipelines to render interpolated programmable triangles.
 //!
 //! ```
 //! use ex::{Instance, ShaderDescriptor, ShaderInstruction as Op, ShaderStage};
@@ -21,6 +21,45 @@
 //! })?;
 //! assert_eq!(shader.evaluate(&[[0.0, 0.5, 0.0, 1.0]])?,
 //!            vec![[0.25, 0.5, 0.0, 1.0]]);
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
+//! ```
+//! use ex::{Instance, ShaderDescriptor, ShaderInstruction as Op, ShaderStage,
+//!     GraphicsPipelineDescriptor, VertexAttribute, VertexBufferLayout, VertexFormat,
+//!     FramebufferDescriptor, FramebufferFormat, BufferDescriptor, BufferUsage, HostAccess};
+//! let device = Instance::new().default_adapter().create_device();
+//! let vertex = device.create_shader(ShaderDescriptor {
+//!     label: "position", stage: ShaderStage::Vertex, input_count: 1,
+//!     instructions: &[Op::Input { location: 0 }], outputs: &[0],
+//! })?;
+//! let fragment = device.create_shader(ShaderDescriptor {
+//!     label: "red", stage: ShaderStage::Fragment, input_count: 0,
+//!     instructions: &[Op::Constant([1.0, 0.0, 0.0, 1.0])], outputs: &[0],
+//! })?;
+//! let pipeline = device.create_graphics_pipeline(GraphicsPipelineDescriptor {
+//!     label: "triangle", vertex_shader: &vertex, fragment_shader: &fragment,
+//!     vertex_layout: VertexBufferLayout { stride: 8, attributes: &[
+//!         VertexAttribute { location: 0, offset: 0, format: VertexFormat::Float32x2 },
+//!     ] }, colour_format: FramebufferFormat::Rgba8Unorm,
+//! })?;
+//! let target = device.create_framebuffer(FramebufferDescriptor {
+//!     label: "image", width: 4, height: 4, format: FramebufferFormat::Rgba8Unorm,
+//! })?;
+//! let data = [-1.0_f32, 1.0, 1.0, 1.0, -1.0, -1.0];
+//! let bytes: Vec<u8> = data.iter().flat_map(|n| n.to_le_bytes()).collect();
+//! let buffer = device.create_buffer(BufferDescriptor {
+//!     label: "positions", size: 24, usages: &[BufferUsage::Vertex], host_access: HostAccess::Write,
+//! })?;
+//! buffer.write(0, &bytes)?;
+//! let mut encoder = device.create_command_encoder();
+//! let mut pass = encoder.begin_render_pass(&target, Some([0; 4]))?;
+//! pass.set_pipeline(&pipeline)?;
+//! pass.set_vertex_buffer(&buffer, 0)?;
+//! pass.draw_programmable(0..3)?;
+//! pass.finish()?;
+//! device.default_queue().submit(&encoder.finish())?;
+//! assert_eq!(target.pixel(0, 0)?, [255, 0, 0, 255]);
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
@@ -132,8 +171,9 @@ pub use expansex_core::{
     BufferDescriptor, BufferDescriptorError, BufferUsage, Command, CommandBuffer,
     CommandEncodeError, CommandEncoder, CommandRecorder, CopyBufferRole, DebugMarkerBuffer, Device,
     DrawTriangles, Framebuffer, FramebufferAccessError, FramebufferCreateError,
-    FramebufferDescriptor, FramebufferDescriptorError, FramebufferFormat, HostAccess, Instance,
-    Queue, QueueSubmitError, RenderCommands, RenderEncodeError, RenderExecutionError, RenderPass,
-    Shader, ShaderCreateError, ShaderDescriptor, ShaderExecutionError, ShaderInstruction,
-    ShaderStage, ShaderValidationError,
+    FramebufferDescriptor, FramebufferDescriptorError, FramebufferFormat, GraphicsPipeline,
+    GraphicsPipelineCreateError, GraphicsPipelineDescriptor, HostAccess, Instance, Queue,
+    QueueSubmitError, RenderCommands, RenderEncodeError, RenderExecutionError, RenderPass, Shader,
+    ShaderCreateError, ShaderDescriptor, ShaderExecutionError, ShaderInstruction, ShaderStage,
+    ShaderValidationError, VertexAttribute, VertexBufferLayout, VertexFormat,
 };

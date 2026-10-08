@@ -1,9 +1,9 @@
 # EX shader representation and interpreter
 
-EX needs inspectable programmable operations before connecting shaders to draws.
-This step supplies owned, validated vertex and fragment programs and a CPU
-interpreter callable through `Shader::evaluate`. Render scopes still use the
-Phase 2 fixed-function path. Pipeline binding and interpolation are next.
+EX supplies owned, validated vertex and fragment programs and a CPU interpreter
+callable through `Shader::evaluate`. Programs also execute through recorded
+graphics pipelines, vertex layouts, and perspective-correct interpolation; see
+[PIPELINES.md](PIPELINES.md). The fixed-function path remains available.
 
 Vulkan accepts SPIR-V shader modules and defines interfaces between shader stages
 ([shader contract](https://docs.vulkan.org/spec/latest/chapters/shaders.html),
@@ -28,8 +28,8 @@ not a new shader language or a full compiler.
   A vertex program requires output 0 (reserved for homogeneous clip position
   x,y,z,w) and may return up to 16 additional vectors (varyings). A fragment
   program returns exactly one RGBA vector. Output indices can repeat.
-- These are stage interface meanings for upcoming pipelines. Evaluation returns
-  raw vectors: it performs no projection, clipping, interpolation, colour
+- These stage interfaces are linked when creating a graphics pipeline. Standalone
+  evaluation returns raw vectors: it performs no projection, clipping, interpolation, colour
   clamping, byte conversion, or stage compatibility check.
 - All constants, all supplied inputs (even unused ones), and every instruction
   result must be finite. Arithmetic uses f32 in instruction order; Dot4 sums
@@ -79,6 +79,18 @@ device identity, and concurrent evaluation. The internal lifetime test checks
 cleanup after the last clone. Allocation failures are handled without forcing
 the process to exhaust memory.
 
-Next: connect this representation to validated pipelines, vertex layouts,
-interpolation, and programmable draws. A standalone successful evaluation does
-not mean programmable rendering is complete.
+The [programmable triangle](../crates/ex-api/examples/programmable_triangle.rs)
+connects these operations to rendered pixels. Internal renderer invocations fill
+fixed output arrays without heap allocation per vertex/fragment. Standalone
+evaluation still returns an owned Vec and does not itself render.
+
+## Source-language direction: accepted
+
+Use established shader languages/toolchains when external shader ingestion is
+added; reconsider a custom EX source language only for a demonstrated benefit.
+A possible route is HLSL/GLSL -> SPIR-V -> validated EX IR -> EX execution.
+[DXC](https://github.com/microsoft/DirectXShaderCompiler) supports HLSL-to-SPIR-V;
+[glslang](https://github.com/KhronosGroup/glslang) supports GLSL-to-SPIR-V. The
+importer and supported subset are future work, not current language support.
+EX's current vector instructions need to grow before general shader import is
+possible. This decision preserves EX's ownership of rendering and execution.

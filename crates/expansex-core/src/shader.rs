@@ -344,6 +344,23 @@ impl Shader {
     /// All inputs and results must be finite. No projection or colour conversion
     /// occurs, and fixed-function rendering is unaffected by this call.
     pub fn evaluate(&self, inputs: &[[f32; 4]]) -> Result<Vec<[f32; 4]>, ShaderExecutionError> {
+        let mut values = [[0.0; 4]; MAX_VERTEX_OUTPUTS];
+        self.evaluate_into(inputs, &mut values)?;
+        let mut outputs = Vec::new();
+        outputs
+            .try_reserve_exact(self.outputs().len())
+            .map_err(|source| ShaderExecutionError::AllocationFailed { source })?;
+        outputs.extend_from_slice(&values[..self.outputs().len()]);
+        Ok(outputs)
+    }
+
+    /// Internal invocations avoid allocation per vertex/sample. Callers supply
+    /// space for all declared outputs; immutable validated pipelines prove sizes.
+    pub(crate) fn evaluate_into(
+        &self,
+        inputs: &[[f32; 4]],
+        outputs: &mut [[f32; 4]],
+    ) -> Result<(), ShaderExecutionError> {
         if inputs.len() != self.input_count() as usize {
             return Err(ShaderExecutionError::WrongInputCount {
                 expected: self.input_count(),
@@ -386,16 +403,10 @@ impl Shader {
             }
             registers[instruction] = value;
         }
-        let mut outputs = Vec::new();
-        outputs
-            .try_reserve_exact(self.outputs().len())
-            .map_err(|source| ShaderExecutionError::AllocationFailed { source })?;
-        outputs.extend(
-            self.outputs()
-                .iter()
-                .map(|&register| registers[register as usize]),
-        );
-        Ok(outputs)
+        for (output, &register) in outputs.iter_mut().zip(self.outputs()) {
+            *output = registers[register as usize];
+        }
+        Ok(())
     }
 }
 

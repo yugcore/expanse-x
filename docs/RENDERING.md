@@ -1,7 +1,8 @@
 # EX Phase 2 reference rendering
 
 Status: implemented Phase 2 contract. Names are provisional. The software_triangle
-example exports the first EX triangle; programmable shaders remain Phase 3.
+example exports the first EX triangle. The working programmable path is documented
+separately in [PIPELINES.md](PIPELINES.md); this document defines the legacy path.
 
 ## Capability and choices
 
@@ -9,7 +10,7 @@ An application allocates an owned framebuffer, records a render scope with an
 optional clear, binds a vertex buffer, records triangle-list draws with constant
 RGBA colour, finishes the scope/encoder, and submits through the same queue as
 copies. EX's software implementation fetches vertices and writes real pixels.
-This is fixed-function rendering; shaders and pipeline objects belong to Phase 3.
+This is the fixed-function path; programmable draws use the same render scope/queue.
 
 [Vulkan dynamic rendering](https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdBeginRendering.html)
 also establishes a rendering scope with attachments. EX starts with one owned
@@ -67,7 +68,10 @@ resources; later CPU uploads affect drawing on the next submission.
 Before changing a render target, a render command reserves temporary decoded
 vertex storage, locks/reads each nonempty draw's source, and validates every fetched
 x/y as finite. Error reports identify the command index, source label, and absolute
-vertex index when applicable. Then it locks the target and clears/draws. All
+vertex index when applicable. Then it locks the target, reserves/copies a temporary
+image, clears/draws into that image, and commits only on complete success. The
+temporary image costs one extra framebuffer allocation even for legacy scopes;
+reservation failure occurs before target changes. All
 expected failure paths leave this render command's target unchanged; earlier
 commands in the submission stay completed and later commands are skipped.
 No rollback applies across commands. Zero-count draws access no vertex storage.
@@ -91,8 +95,9 @@ collapsed by clipping/subpixel rounding, write nothing. All pixel indices are
 bounded to the framebuffer. Integer arithmetic fits i64 at the stated extent limit.
 
 Draws execute in order; later covered fragments replace all four stored channels.
-No multisampling, interpolation, texture, depth/stencil, blend, scissor, configurable
-viewport, shader, swapchain, or hardware driver is implied. Clipping uses floating
+This legacy path has no interpolation or shader execution. No multisampling,
+texture, depth/stencil, blend, scissor, configurable viewport, swapchain, or
+hardware driver is implied. Clipping uses floating
 arithmetic, so no bit-for-bit hardware-conformance claim is made.
 
 ## Completion gate

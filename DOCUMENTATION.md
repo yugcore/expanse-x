@@ -288,7 +288,9 @@ Owned RGBA framebuffers, render scopes, fixed-layout vertices, clipped triangle
 rasterization, and PNG example output now work. Owned vertex/fragment shader
 programs, graphics pipelines, vertex layouts, perspective interpolation, and
 programmable rendering also work; see [shaders](docs/SHADERS.md) and
-[pipelines](docs/PIPELINES.md). Indexed drawing is next. Established shader
+[pipelines](docs/PIPELINES.md). [Indexed drawing](docs/INDEXED-DRAWING.md) now works
+with u16/u32 formats, shared vertices, and live-reference validation. Phase 3 is
+complete; textures, samplers, and shader resource bindings are next. Established shader
 languages/toolchains are the accepted future ingestion direction; a custom EX
 source language is deferred. Current examples use EX instructions directly.
 Managed planning, general

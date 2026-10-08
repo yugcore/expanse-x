@@ -93,7 +93,11 @@ devices, retained resources, and concurrent submissions/CPU access. Internal tes
 inject poisoned locks and exercise partial failure and gate recovery without adding
 a public fault-injection API. The `submit_copy` example demonstrates completion.
 
-Fixed and programmable rendering use the same queue. No GPU driver,
+Fixed, direct programmable, and indexed rendering use the same queue. Indexed
+draws sample live index bytes after earlier copies, validate effective references,
+and fetch vertices under sequential storage locks while the device gate holds.
+Invalid references/poison preserve the failed scope target; retained commands
+remain reusable. See [INDEXED-DRAWING.md](INDEXED-DRAWING.md). No GPU driver,
 asynchronous job, multiple queues, fence, semaphore,
 barrier, timeline, cancellation, or execution-backend ABI is implemented here.
 Completion covers the submitted command buffer, not future calls from other threads.

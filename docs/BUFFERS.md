@@ -35,8 +35,10 @@ the field. The descriptor is still `Copy` and owns no resource memory.
 Creation checks zero size, then missing usages, then whether the size fits this
 process's contiguous `Vec<u8>` capacity (`usize` and `isize::MAX`). Duplicate
 usages are preserved and have no extra meaning. An empty label remains valid.
-Transfer usages are now checked when [recording copies](COMMANDS.md); draws and
-compute remain future operations. Recording does not execute a transfer.
+Transfer usages are checked when [recording copies](COMMANDS.md). Vertex and
+Index roles are checked for [rendering](RENDERING.md) and [indexed draws](INDEXED-DRAWING.md).
+Uniform/Storage shader access and compute remain future operations. A single
+allocation may have both Vertex and Index usage. Recording does not execute work.
 
 Byte and metadata reservations use `try_reserve_exact`. Reservation failures
 become `BufferCreateError::AllocationFailed` with their standard Rust source;

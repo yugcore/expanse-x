@@ -1,6 +1,6 @@
 # EX current API contract
 
-Status: Phase 2 complete; Phase 3 programmable rendering working. Names and behavior are provisional.
+Status: Phases 0–3 complete; programmable and indexed rendering work. Names and behavior are provisional.
 Applications depend on package `ex-api` and import its library as `ex`. The
 implementation remains in `expansex-core`; the public crate re-exports its types.
 This contract describes implemented behavior only. See [architecture](ARCHITECTURE.md)
@@ -186,6 +186,27 @@ See [PIPELINES.md](PIPELINES.md) for errors, limitations, and verification.
 cargo run -p ex-api --example programmable_triangle --locked --offline
 ```
 
+## Indexed programmable draws
+
+`RenderPass::set_index_buffer(&Buffer, u64, IndexFormat)` validates same-device
+ownership, Index usage, byte offset, and 2/4-byte format alignment.
+`draw_indexed(Range<u32>, i32)` requires pipeline, vertex, and index bindings;
+validates a complete triangle list and index byte extent; and retains the bindings.
+`DrawTriangles::indexed()` exposes `IndexedTriangles` with buffer/offset/format/
+range/base getters. Its legacy vertex range is unused 0..0.
+
+At submission, decode live little-endian u16/u32 elements and add the signed base
+in i64. Each result must fit u32 and address a complete stride-sized record.
+Only referenced vertices execute; repeated references execute repeatedly. Release
+index storage before borrowing vertices, so both roles may share one allocation.
+Empty draws skip both source locks. Expected index or shading failures discard
+the entire scope image; earlier submitted commands remain completed.
+See [INDEXED-DRAWING.md](INDEXED-DRAWING.md) for errors and limitations.
+
+```text
+cargo run -p ex-api --example indexed_quad --locked --offline
+```
+
 ## Standalone prototype labels
 
 `CommandRecorder` owns a `Vec<String>`. `new()` and `default()` start an empty
@@ -232,13 +253,18 @@ programs, finite arithmetic, interfaces, owned source, identity, and concurrency
 Seventeen public programmable-rendering tests, one pipeline lifetime test, and
 executable pipeline documentation verify transforms, layouts, stage compatibility,
 perspective/clipping/edges, numeric errors, atomic scopes, order, reuse, and retention.
-The workspace runs 110 tests, including documentation tests. Tests do not induce
-allocator OOM by exhausting host memory.
+Ten public indexed-rendering tests, two internal poison/lifetime tests, and the
+indexed public documentation example verify formats, offsets/base, live copies,
+aliases, empty draws, errors, retention, ordering, and atomic failure. The quad
+example uses four shared vertices; independent decoding and pixel calculations
+verify its output. The workspace runs 122 tests, including documentation tests.
+Tests do not induce allocator OOM by exhausting host memory.
 
 ## Next contract
 
-Phases 1 and 2 are complete: copies and fixed-function triangles execute through
+Phases 1–3 are complete: copies and fixed-function triangles execute through
 EX and produce observable bytes/pixels. Shader representation, stage interfaces,
 and programmable execution now work through pipeline validation, vertex layouts,
-and interpolation. Indexed drawing is next; language/format import remains future work.
+interpolation, and indexed drawing. Textures, samplers, and shader resource
+bindings are next; language/format import remains future work.
 There is no implemented execution-backend ABI yet.

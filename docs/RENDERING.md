@@ -56,7 +56,9 @@ is unrelated. The fixed layout is two little-endian f32 values, x then y, with a
 Draw ranges must be ascending and have a count divisible by three; a binding is
 required even for a zero-count draw. The complete fetched range must fit using
 checked arithmetic, including an empty draw's start offset. First vertex is
-relative to the binding offset. No indexed draw or instance count exists yet.
+relative to the binding offset. This legacy draw uses direct vertices.
+[Indexed programmable drawing](INDEXED-DRAWING.md) is also implemented;
+instance counts remain unsupported.
 
 ## Execution and failure
 

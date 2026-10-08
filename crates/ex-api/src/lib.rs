@@ -27,7 +27,7 @@
 //! ```
 //! use ex::{Instance, ShaderDescriptor, ShaderInstruction as Op, ShaderStage,
 //!     GraphicsPipelineDescriptor, VertexAttribute, VertexBufferLayout, VertexFormat,
-//!     FramebufferDescriptor, FramebufferFormat, BufferDescriptor, BufferUsage, HostAccess};
+//!     FramebufferDescriptor, FramebufferFormat, BufferDescriptor, BufferUsage, HostAccess, IndexFormat};
 //! let device = Instance::new().default_adapter().create_device();
 //! let vertex = device.create_shader(ShaderDescriptor {
 //!     label: "position", stage: ShaderStage::Vertex, input_count: 1,
@@ -52,11 +52,16 @@
 //!     label: "positions", size: 24, usages: &[BufferUsage::Vertex], host_access: HostAccess::Write,
 //! })?;
 //! buffer.write(0, &bytes)?;
+//! let indices = device.create_buffer(BufferDescriptor {
+//!     label: "indices", size: 6, usages: &[BufferUsage::Index], host_access: HostAccess::Write,
+//! })?;
+//! indices.write(0, &[0, 0, 1, 0, 2, 0])?; // u16 little-endian 0,1,2
 //! let mut encoder = device.create_command_encoder();
 //! let mut pass = encoder.begin_render_pass(&target, Some([0; 4]))?;
 //! pass.set_pipeline(&pipeline)?;
 //! pass.set_vertex_buffer(&buffer, 0)?;
-//! pass.draw_programmable(0..3)?;
+//! pass.set_index_buffer(&indices, 0, IndexFormat::Uint16)?;
+//! pass.draw_indexed(0..3, 0)?;
 //! pass.finish()?;
 //! device.default_queue().submit(&encoder.finish())?;
 //! assert_eq!(target.pixel(0, 0)?, [255, 0, 0, 255]);
@@ -172,8 +177,9 @@ pub use expansex_core::{
     CommandEncodeError, CommandEncoder, CommandRecorder, CopyBufferRole, DebugMarkerBuffer, Device,
     DrawTriangles, Framebuffer, FramebufferAccessError, FramebufferCreateError,
     FramebufferDescriptor, FramebufferDescriptorError, FramebufferFormat, GraphicsPipeline,
-    GraphicsPipelineCreateError, GraphicsPipelineDescriptor, HostAccess, Instance, Queue,
-    QueueSubmitError, RenderCommands, RenderEncodeError, RenderExecutionError, RenderPass, Shader,
-    ShaderCreateError, ShaderDescriptor, ShaderExecutionError, ShaderInstruction, ShaderStage,
-    ShaderValidationError, VertexAttribute, VertexBufferLayout, VertexFormat,
+    GraphicsPipelineCreateError, GraphicsPipelineDescriptor, HostAccess, IndexFormat,
+    IndexedTriangles, Instance, Queue, QueueSubmitError, RenderCommands, RenderEncodeError,
+    RenderExecutionError, RenderPass, Shader, ShaderCreateError, ShaderDescriptor,
+    ShaderExecutionError, ShaderInstruction, ShaderStage, ShaderValidationError, VertexAttribute,
+    VertexBufferLayout, VertexFormat,
 };

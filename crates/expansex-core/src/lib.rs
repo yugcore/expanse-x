@@ -34,7 +34,8 @@ pub use pipeline::{
     VertexBufferLayout, VertexFormat,
 };
 pub use render::{
-    DrawTriangles, RenderCommands, RenderEncodeError, RenderExecutionError, RenderPass,
+    DrawTriangles, IndexFormat, IndexedTriangles, RenderCommands, RenderEncodeError,
+    RenderExecutionError, RenderPass,
 };
 pub use shader::{
     Shader, ShaderCreateError, ShaderDescriptor, ShaderExecutionError, ShaderInstruction,

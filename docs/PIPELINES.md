@@ -82,4 +82,6 @@ order, resource lifetime, and range/device/stage/layout misuse. Evidence:
 The 512x384 PNG contains 47,794 shaded pixels and 36,374 distinct foreground
 colours; independent decoding verified PNG checksums and every pixel against
 separately calculated coverage/interpolation. It was also visually inspected.
-Indexed drawing and wider GPU features remain separate work.
+[Indexed drawing](INDEXED-DRAWING.md) now reuses these pipelines, layouts, and
+interpolation rules. It supports u16/u32 elements and a signed base vertex, with
+live-reference validation at submission. Wider GPU features remain future work.

@@ -575,4 +575,157 @@ mod tests {
         device.default_queue().submit(&encoder.finish()).unwrap();
         assert_eq!(target.pixel(0, 0).unwrap(), [9; 4]);
     }
+
+    fn indexed_resources() -> (
+        Device,
+        crate::Framebuffer,
+        crate::GraphicsPipeline,
+        Buffer,
+        Buffer,
+    ) {
+        use crate::{
+            FramebufferDescriptor, FramebufferFormat, GraphicsPipelineDescriptor, ShaderDescriptor,
+            ShaderInstruction as Op, ShaderStage, VertexAttribute, VertexBufferLayout,
+            VertexFormat,
+        };
+        let device = Instance::new().default_adapter().create_device();
+        let target = device
+            .create_framebuffer(FramebufferDescriptor {
+                label: "indexed target",
+                width: 2,
+                height: 2,
+                format: FramebufferFormat::Rgba8Unorm,
+            })
+            .unwrap();
+        let vertex = device
+            .create_shader(ShaderDescriptor {
+                label: "v",
+                stage: ShaderStage::Vertex,
+                input_count: 1,
+                instructions: &[Op::Input { location: 0 }],
+                outputs: &[0],
+            })
+            .unwrap();
+        let fragment = device
+            .create_shader(ShaderDescriptor {
+                label: "f",
+                stage: ShaderStage::Fragment,
+                input_count: 0,
+                instructions: &[Op::Constant([1.0; 4])],
+                outputs: &[0],
+            })
+            .unwrap();
+        let pipeline = device
+            .create_graphics_pipeline(GraphicsPipelineDescriptor {
+                label: "indexed",
+                vertex_shader: &vertex,
+                fragment_shader: &fragment,
+                vertex_layout: VertexBufferLayout {
+                    stride: 8,
+                    attributes: &[VertexAttribute {
+                        location: 0,
+                        offset: 0,
+                        format: VertexFormat::Float32x2,
+                    }],
+                },
+                colour_format: FramebufferFormat::Rgba8Unorm,
+            })
+            .unwrap();
+        let vertices = device
+            .create_buffer(BufferDescriptor {
+                label: "indexed vertices",
+                size: 24,
+                usages: &[BufferUsage::Vertex],
+                host_access: HostAccess::None,
+            })
+            .unwrap();
+        let indices = device
+            .create_buffer(BufferDescriptor {
+                label: "indices",
+                size: 6,
+                usages: &[BufferUsage::Index],
+                host_access: HostAccess::Write,
+            })
+            .unwrap();
+        indices.write(0, &[0, 0, 1, 0, 2, 0]).unwrap();
+        (device, target, pipeline, vertices, indices)
+    }
+
+    #[test]
+    fn indexed_poison_preserves_target_and_empty_draws_skip_both_sources() {
+        use crate::{IndexFormat, QueueSubmitError, RenderExecutionError};
+        for poison_index in [true, false] {
+            let (device, target, pipeline, vertices, indices) = indexed_resources();
+            let mut encoder = device.create_command_encoder();
+            let mut pass = encoder.begin_render_pass(&target, Some([7; 4])).unwrap();
+            pass.set_pipeline(&pipeline).unwrap();
+            pass.set_vertex_buffer(&vertices, 0).unwrap();
+            pass.set_index_buffer(&indices, 0, IndexFormat::Uint16)
+                .unwrap();
+            pass.draw_indexed(0..3, 0).unwrap();
+            pass.finish().unwrap();
+            if poison_index {
+                poison(&indices);
+            } else {
+                poison(&vertices);
+            }
+            let expected = if poison_index {
+                RenderExecutionError::IndexStoragePoisoned {
+                    label: "indices".to_owned(),
+                }
+            } else {
+                RenderExecutionError::VertexStoragePoisoned {
+                    label: "indexed vertices".to_owned(),
+                }
+            };
+            assert_eq!(
+                device.default_queue().submit(&encoder.finish()),
+                Err(QueueSubmitError::RenderFailed {
+                    command_index: 0,
+                    source: expected
+                })
+            );
+            assert_eq!(target.pixel(0, 0).unwrap(), [0; 4]);
+            if poison_index {
+                poison(&vertices);
+            } else {
+                poison(&indices);
+            }
+            let mut encoder = device.create_command_encoder();
+            let mut pass = encoder.begin_render_pass(&target, Some([9; 4])).unwrap();
+            pass.set_pipeline(&pipeline).unwrap();
+            pass.set_vertex_buffer(&vertices, 24).unwrap();
+            pass.set_index_buffer(&indices, 6, IndexFormat::Uint16)
+                .unwrap();
+            pass.draw_indexed(0..0, i32::MIN).unwrap();
+            pass.finish().unwrap();
+            device.default_queue().submit(&encoder.finish()).unwrap();
+            assert_eq!(target.pixel(0, 0).unwrap(), [9; 4]);
+        }
+    }
+
+    #[test]
+    fn indexed_commands_release_both_buffer_allocations_after_last_owner_drops() {
+        let (device, target, pipeline, vertices, indices) = indexed_resources();
+        let vertex_state = Arc::downgrade(&vertices.state);
+        let index_state = Arc::downgrade(&indices.state);
+        let mut encoder = device.create_command_encoder();
+        let mut pass = encoder.begin_render_pass(&target, None).unwrap();
+        pass.set_pipeline(&pipeline).unwrap();
+        pass.set_vertex_buffer(&vertices, 0).unwrap();
+        pass.set_index_buffer(&indices, 0, crate::IndexFormat::Uint16)
+            .unwrap();
+        pass.draw_indexed(0..3, 0).unwrap();
+        pass.finish().unwrap();
+        let commands = encoder.finish();
+        drop(vertices);
+        drop(indices);
+        drop(pipeline);
+        device.default_queue().submit(&commands).unwrap();
+        assert!(vertex_state.upgrade().is_some());
+        assert!(index_state.upgrade().is_some());
+        drop(commands);
+        assert!(vertex_state.upgrade().is_none());
+        assert!(index_state.upgrade().is_none());
+    }
 }

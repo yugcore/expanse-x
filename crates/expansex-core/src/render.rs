@@ -6,6 +6,8 @@ use std::collections::TryReserveError;
 use std::error::Error;
 use std::fmt;
 use std::ops::Range;
+mod index;
+pub use index::{IndexFormat, IndexedTriangles};
 
 /// Recording misuse leaves previous work and the current binding unchanged.
 #[derive(Debug)]
@@ -28,6 +30,33 @@ pub enum RenderEncodeError {
         offset: u64,
     },
     MissingVertexBuffer,
+    MissingIndexBuffer,
+    ForeignIndexBuffer {
+        label: String,
+    },
+    MissingIndexUsage {
+        label: String,
+    },
+    IndexOffsetOutOfBounds {
+        label: String,
+        offset: u64,
+        buffer_size: u64,
+    },
+    UnalignedIndexOffset {
+        offset: u64,
+        alignment: u64,
+    },
+    InvalidIndexRange {
+        start: u32,
+        end: u32,
+    },
+    IndexRangeOutOfBounds {
+        label: String,
+        first_index: u32,
+        index_count: u32,
+        offset: u64,
+        buffer_size: u64,
+    },
     MissingPipeline,
     ForeignPipeline {
         label: String,
@@ -64,6 +93,13 @@ impl fmt::Display for RenderEncodeError {
             Self::VertexOffsetOutOfBounds { label, offset, buffer_size } => write!(f, "vertex binding offset {offset} exceeds buffer {label:?} size {buffer_size}"),
             Self::UnalignedVertexOffset { offset } => write!(f, "vertex binding offset {offset} must be aligned to 4 bytes"),
             Self::MissingVertexBuffer => f.write_str("bind a Vertex buffer before drawing"),
+            Self::MissingIndexBuffer => f.write_str("bind an Index buffer before indexed drawing"),
+            Self::ForeignIndexBuffer { label } => write!(f, "index buffer {label:?} belongs to another device"),
+            Self::MissingIndexUsage { label } => write!(f, "buffer {label:?} needs Index usage"),
+            Self::IndexOffsetOutOfBounds { label, offset, buffer_size } => write!(f, "index binding offset {offset} exceeds buffer {label:?} size {buffer_size}"),
+            Self::UnalignedIndexOffset { offset, alignment } => write!(f, "index binding offset {offset} must align to {alignment} bytes"),
+            Self::InvalidIndexRange { start, end } => write!(f, "index range {start}..{end} must be ascending"),
+            Self::IndexRangeOutOfBounds { label, first_index, index_count, offset, buffer_size } => write!(f, "{index_count} indices from {first_index} at offset {offset} do not fit buffer {label:?} ({buffer_size} bytes)"),
             Self::MissingPipeline => f.write_str("bind a graphics pipeline before programmable drawing"),
             Self::ForeignPipeline { label } => write!(f, "pipeline {label:?} belongs to another device"),
             Self::IncompatibleTargetFormat { pipeline_format, target_format } => write!(f, "pipeline colour format {pipeline_format:?} does not match target {target_format:?}"),
@@ -91,6 +127,7 @@ pub struct DrawTriangles {
     vertices: Range<u32>,
     colour: [u8; 4],
     pipeline: Option<GraphicsPipeline>,
+    indexed: Option<IndexedTriangles>,
 }
 
 impl DrawTriangles {
@@ -109,6 +146,10 @@ impl DrawTriangles {
     /// None selects the fixed-layout/colour path; Some selects shader execution.
     pub fn pipeline(&self) -> Option<&GraphicsPipeline> {
         self.pipeline.as_ref()
+    }
+    /// Some uses retained indices; None uses the direct vertex range.
+    pub fn indexed(&self) -> Option<&IndexedTriangles> {
+        self.indexed.as_ref()
     }
 }
 
@@ -140,6 +181,7 @@ pub struct RenderPass<'a> {
     commands: RenderCommands,
     binding: Option<(Buffer, u64)>,
     pipeline: Option<GraphicsPipeline>,
+    index_binding: Option<(Buffer, u64, IndexFormat)>,
 }
 
 impl CommandEncoder {
@@ -175,6 +217,7 @@ impl CommandEncoder {
             },
             binding: None,
             pipeline: None,
+            index_binding: None,
         })
     }
 }
@@ -290,6 +333,7 @@ impl RenderPass<'_> {
             vertices,
             colour,
             pipeline,
+            indexed: None,
         });
         Ok(())
     }
@@ -323,6 +367,16 @@ impl RenderPass<'_> {
 /// Expected reference render failures occur before any target pixels change.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RenderExecutionError {
+    IndexStoragePoisoned {
+        label: String,
+    },
+    InvalidVertexIndex {
+        index_position: u32,
+        index_value: u32,
+        base_vertex: i32,
+        vertex_label: String,
+        available_vertices: u64,
+    },
     VertexStoragePoisoned {
         label: String,
     },
@@ -362,6 +416,8 @@ pub enum RenderExecutionError {
 impl fmt::Display for RenderExecutionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::IndexStoragePoisoned { label } => write!(f, "index buffer {label:?} storage is poisoned"),
+            Self::InvalidVertexIndex { index_position, index_value, base_vertex, vertex_label, available_vertices } => write!(f, "index element {index_position} value {index_value} plus base vertex {base_vertex} cannot address a complete u32-indexed vertex in buffer {vertex_label:?} ({available_vertices} available records)"),
             Self::VertexStoragePoisoned { label } => write!(f, "vertex buffer {label:?} storage is poisoned"),
             Self::FramebufferStoragePoisoned { label } => write!(f, "framebuffer {label:?} storage is poisoned"),
             Self::NonFiniteVertex { label, vertex_index } => write!(f, "vertex {vertex_index} in buffer {label:?} contains NaN or infinity; positions must be finite"),

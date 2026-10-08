@@ -10,7 +10,7 @@ and explicit control levels, Rust-based ownership, and validated execution.
 Build the explicit core first; managed planning is a future layer over the same
 resources and execution rules.
 
-## Current status: programmable triangles render through EX pipelines
+## Current status: Phase 3 complete — programmable and indexed triangles
 
 EX now discovers its built-in software adapter, creates independent logical
 devices, and returns default queue handles with shared ownership. The workspace
@@ -25,7 +25,8 @@ fragment colours. Applications import the `ex-api` package as `ex`. EX vertex an
 fragment programs now have owned validated instructions, graphics pipelines,
 explicit vertex layouts, and perspective-correct interpolation. Vertex shaders
 control clip positions; fragment shaders control stored pixel colours. Indexed
-drawing is next; hardware drivers remain deferred.
+drawing shares vertex records using u16/u32 indices and a signed base vertex.
+Textures and samplers are next; hardware drivers remain deferred.
 
 ```text
 cargo run -p ex-api --example software_triangle --locked --offline
@@ -57,6 +58,16 @@ scales/translates the triangle and its fragment shader tints interpolated colour
 The verified image contains 47,794 shaded pixels and 36,374 distinct foreground
 colours. See [the pipeline contract](docs/PIPELINES.md).
 HLSL/GLSL/SPIR-V import is planned; current examples use EX instructions directly.
+
+```text
+cargo run -p ex-api --example indexed_quad --locked --offline
+```
+
+The indexed quad uploads four vertices and six u16 indices, renders two triangles,
+and writes `target/phase3-indexed-quad.png`. Geometry uses 80 vertex bytes plus
+12 index bytes, compared with 120 bytes for six expanded vertices in this layout.
+The independently verified image contains 110,592 shaded pixels and 80,237 distinct
+foreground colours. See [indexed drawing](docs/INDEXED-DRAWING.md).
 
 ## Build and check
 
@@ -93,12 +104,12 @@ toolchain follows stable releases; it is not a pinned compiler-version guarantee
 ## Next milestones
 
 The [development roadmap](docs/ROADMAP.md) is the current progress tracker and
-defines completion checks for each phase. Phases 0, 1, and 2 are complete. Discovery,
+defines completion checks for each phase. Phases 0–3 are complete. Discovery,
 owned resources, copies, fixed-function drawing, and synchronous readback now work.
 
-Phase 2 produces the first software triangle; Phase 3 now meets the original
-pipeline-based graphics milestone. Indexed drawing and its validation/tests
-remain before the whole phase is complete. Modern GPU features
+Phase 3 completes programmable pipelines, layouts, interpolation, and indexed
+drawing. The workspace passes 122 tests, including documentation tests. Start
+Phase 4 with textures, samplers, and shader resource bindings; modern GPU features
 and hardware drivers follow working reference semantics, one capability at a time.
 
 Read the [starting assessment](docs/ASSESSMENT.md),

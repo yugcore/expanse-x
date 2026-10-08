@@ -22,8 +22,8 @@ renderer or a reason to postpone the programmable rendering milestone.
 | 0 — Repository foundation | Complete | Production workspace, public `ex` entry point, checks, contracts, and local Git history |
 | 1 — Minimum runtime | Complete | Ordered synchronous copy execution, readback, concurrency/failure contract, public example, and tests |
 | 2 — First software triangle | Complete | Public render scopes produce a verified PNG through EX's own clipped fixed-function rasterizer |
-| 3 — Programmability and pipeline milestone | In progress; graphics milestone met | Pipeline-controlled positions/colours, layouts, and perspective interpolation work; indexed drawing remains |
-| 4 — Modern GPU concepts | Deferred until earlier phases work | Per-feature implementation, validation, and executable evidence |
+| 3 — Programmability and pipeline milestone | Complete | Pipeline-controlled triangles, layouts, perspective interpolation, and validated u16/u32 indexed drawing |
+| 4 — Modern GPU concepts | Ready to start; not implemented | Next: textures, samplers, and shader resource bindings |
 | Future — Hardware drivers | Deferred | A selected target, viable driver interfaces, and demonstrated execution |
 
 Checked items mean implemented and verified behavior.
@@ -156,19 +156,19 @@ Evidence: [rendering contract](RENDERING.md), [private CPU executor](../crates/e
 a 512x384 PNG with 48,556 foreground pixels; centre/corner assertions and independent
 PNG decoding verify the output. The Phase 2 milestone passed 79 tests, including
 executable and compile-fail documentation. Floating clipping and 1/256-pixel
-coverage rules are documented; programmable drawing, depth, blending,
-presentation, and hardware remain future work.
+coverage rules are documented. Programmable drawing followed in Phase 3;
+depth, blending, presentation, and hardware remain future work.
 
-## Phase 3 — Programmability and pipelines: in progress
+## Phase 3 — Programmability and pipelines: complete
 
 - [x] Define a small EX-owned shader representation, stage interfaces, and invalid-program errors.
 - [x] Interpret minimal vertex and fragment operations in the reference renderer.
 - [x] Introduce actual graphics pipeline objects and the binding/layout contract they require.
 - [x] Add explicit vertex attributes and interpolation with validated stage compatibility.
-- [ ] Add indexed drawing and index-buffer usage/range validation.
+- [x] Add indexed drawing and index-buffer usage/range validation.
 - [x] Exercise pipeline/vertex binding and programmable drawing through a public triangle example.
 - [x] Test shader behavior, interpolation, and incompatible pipeline/input errors.
-- [ ] Test indexed draw execution, index ranges/usages, and invalid indices.
+- [x] Test indexed draw execution, index ranges/usages, and invalid indices.
 
 Shader foundation: `Shader::evaluate` already interprets Input, Constant, Add,
 Multiply, Dot4, and Swizzle for independent vertex/fragment invocations. It
@@ -188,8 +188,21 @@ late fragment failure. The [pipeline contract](PIPELINES.md),
 [seventeen public rendering tests](../crates/ex-api/tests/programmable_rendering.rs)
 provide evidence. The 512x384 PNG contains 47,794 shaded pixels and 36,374 distinct
 foreground colours; independent decoding and pixel calculations verified the
-entire image. The workspace passes 110 tests including documentation.
-Next: indexed drawing. External source-language/format ingestion remains future
+entire image. The pipeline integration checkpoint passed 110 tests including documentation.
+
+Indexed drawing completes Phase 3: u16/u32 elements, signed base vertices,
+binding offsets, retained sources, and live-reference validation now work.
+[The contract](INDEXED-DRAWING.md), [ten public tests](../crates/ex-api/tests/indexed_rendering.rs),
+two internal poison/lifetime tests, and the [indexed quad](../crates/ex-api/examples/indexed_quad.rs)
+verify these semantics. Four vertices (80 bytes) and six u16 indices (12 bytes)
+produce a 512x384 PNG with 110,592 shaded pixels and 80,237 foreground colours.
+Independent PNG checksums, coverage/interpolation calculations, and visual
+inspection verify the output. The complete workspace passes 122 tests.
+
+**Phase 3 completion gate: met.** Direct and indexed programmable triangles execute
+through the public API with validated state, layouts, stage interfaces, and live
+references. Phase 4 can start with textures, samplers, and resource bindings.
+External source-language/format ingestion remains future
 work; [the accepted direction](SHADERS.md#source-language-direction-accepted)
 uses established toolchains rather than committing to a new source language.
 
@@ -199,7 +212,7 @@ EX; and receives a triangle image produced entirely by EX's reference pipeline.
 This meets the original pipeline-based success criterion. A shader frontend/full
 compiler, external shader-format dependency, or real GPU is not required.
 
-## Phase 4 — Modern GPU concepts: deferred
+## Phase 4 — Modern GPU concepts: ready to start
 
 Add one capability at a time after the earlier contracts work. Select the order
 by an actual example's needs rather than implementing every object immediately.
@@ -224,7 +237,7 @@ is checked. Performance or hardware-conformance claims require separate evidence
 The [EX Witness direction](../DOCUMENTATION.md#ex-witness-experimental-differentiation)
 explores explanation → replay → smaller executable tests for selected failures.
 It uses the same contracts for managed and explicit work. This track adds no new
-Phase 1 completion requirement; the main roadmap continues with indexed drawing.
+Phase 1 completion requirement; the main roadmap continues with texture resources.
 
 After the copy/submission foundation works:
 

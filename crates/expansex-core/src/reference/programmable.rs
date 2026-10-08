@@ -1,5 +1,8 @@
 use super::{edge, top_left};
-use crate::{DrawTriangles, GraphicsPipeline, RenderExecutionError, Shader, ShaderExecutionError};
+use crate::{
+    DrawTriangles, GraphicsPipeline, IndexFormat, RenderExecutionError, Shader,
+    ShaderExecutionError,
+};
 
 #[derive(Clone, Copy, Default)]
 struct Vertex {
@@ -17,54 +20,87 @@ pub(super) fn prepare(
     pipeline: &GraphicsPipeline,
 ) -> Result<PreparedDraw, RenderExecutionError> {
     let range = draw.vertices();
-    let count = (range.end - range.start) as usize;
+    let count = draw
+        .indexed()
+        .map_or((range.end - range.start) as usize, |indexed| {
+            let indices = indexed.indices();
+            (indices.end - indices.start) as usize
+        });
     let stride = pipeline.vertex_stride();
     let mut vertices = Vec::new();
     vertices
         .try_reserve_exact(count)
         .map_err(|_| RenderExecutionError::AllocationFailed)?;
-    if count != 0 {
+    if let Some(indexed) = draw.indexed().filter(|_| count != 0) {
+        let indices = indexed.indices();
+        let element_size = indexed.format().size();
+        let start = (indexed.offset() + u64::from(indices.start) * element_size) as usize;
+        let end = (indexed.offset() + u64::from(indices.end) * element_size) as usize;
+        let capacity = (draw.vertex_buffer().size() - draw.vertex_offset()) / stride;
+        let mut selected = Vec::new();
+        selected
+            .try_reserve_exact(count)
+            .map_err(|_| RenderExecutionError::AllocationFailed)?;
+        // Release index storage before acquiring vertex storage. This matters
+        // when both roles alias one allocation. The device gate preserves bytes.
+        indexed
+            .buffer()
+            .with_bytes(start..end, |bytes| {
+                for (position, record) in bytes.chunks_exact(element_size as usize).enumerate() {
+                    let value = match indexed.format() {
+                        IndexFormat::Uint16 => {
+                            u32::from(u16::from_le_bytes([record[0], record[1]]))
+                        }
+                        IndexFormat::Uint32 => {
+                            u32::from_le_bytes([record[0], record[1], record[2], record[3]])
+                        }
+                    };
+                    let effective = i64::from(value) + i64::from(indexed.base_vertex());
+                    let resolved = u32::try_from(effective)
+                        .ok()
+                        .filter(|&vertex| u64::from(vertex) < capacity)
+                        .ok_or_else(|| RenderExecutionError::InvalidVertexIndex {
+                            index_position: indices.start + position as u32,
+                            index_value: value,
+                            base_vertex: indexed.base_vertex(),
+                            vertex_label: draw.vertex_buffer().label().to_owned(),
+                            available_vertices: capacity,
+                        })?;
+                    selected.push(resolved);
+                }
+                Ok(())
+            })
+            .map_err(|_| RenderExecutionError::IndexStoragePoisoned {
+                label: indexed.buffer().label().to_owned(),
+            })??;
+        draw.vertex_buffer()
+            .with_bytes(
+                draw.vertex_offset() as usize..draw.vertex_buffer().size() as usize,
+                |bytes| {
+                    for &vertex_index in &selected {
+                        // Checked full-record capacity above also proves these usize bounds.
+                        let start = (u64::from(vertex_index) * stride) as usize;
+                        vertices.push(decode_vertex(
+                            &bytes[start..start + stride as usize],
+                            pipeline,
+                            vertex_index,
+                        )?);
+                    }
+                    Ok(())
+                },
+            )
+            .map_err(|_| RenderExecutionError::VertexStoragePoisoned {
+                label: draw.vertex_buffer().label().to_owned(),
+            })??;
+    } else if count != 0 {
         // Recording proved offset + end*stride fits buffer capacity (and usize).
         let start = (draw.vertex_offset() + u64::from(range.start) * stride) as usize;
         let end = (draw.vertex_offset() + u64::from(range.end) * stride) as usize;
         draw.vertex_buffer()
             .with_bytes(start..end, |bytes| {
                 for (index, record) in bytes.chunks_exact(stride as usize).enumerate() {
-                    let mut inputs = [[0.0; 4]; 16];
-                    for attribute in pipeline.vertex_attributes() {
-                        let mut value = [0.0, 0.0, 0.0, 1.0];
-                        let begin = attribute.offset as usize;
-                        let end = begin + attribute.format.size() as usize;
-                        for (lane, &bytes) in
-                            record[begin..end].as_chunks::<4>().0.iter().enumerate()
-                        {
-                            value[lane] = f32::from_le_bytes(bytes);
-                        }
-                        inputs[attribute.location as usize] = value;
-                    }
                     let vertex_index = range.start + index as u32;
-                    let mut outputs = [[0.0; 4]; 17];
-                    shade(
-                        pipeline.vertex_shader(),
-                        u64::from(vertex_index),
-                        &inputs[..pipeline.vertex_shader().input_count() as usize],
-                        &mut outputs,
-                    )?;
-                    if outputs[0][3] <= 0.0 {
-                        return Err(RenderExecutionError::InvalidClipW { vertex_index });
-                    }
-                    let mut vertex = Vertex {
-                        clip: outputs[0].map(f64::from),
-                        ..Vertex::default()
-                    };
-                    for (varying, value) in vertex
-                        .varyings
-                        .iter_mut()
-                        .zip(&outputs[1..pipeline.vertex_shader().outputs().len()])
-                    {
-                        *varying = value.map(f64::from);
-                    }
-                    vertices.push(vertex);
+                    vertices.push(decode_vertex(record, pipeline, vertex_index)?);
                 }
                 Ok(())
             })
@@ -76,6 +112,45 @@ pub(super) fn prepare(
         vertices,
         pipeline: pipeline.clone(),
     })
+}
+
+fn decode_vertex(
+    record: &[u8],
+    pipeline: &GraphicsPipeline,
+    vertex_index: u32,
+) -> Result<Vertex, RenderExecutionError> {
+    let mut inputs = [[0.0; 4]; 16];
+    for attribute in pipeline.vertex_attributes() {
+        let mut value = [0.0, 0.0, 0.0, 1.0];
+        let begin = attribute.offset as usize;
+        let end = begin + attribute.format.size() as usize;
+        for (lane, &bytes) in record[begin..end].as_chunks::<4>().0.iter().enumerate() {
+            value[lane] = f32::from_le_bytes(bytes);
+        }
+        inputs[attribute.location as usize] = value;
+    }
+    let mut outputs = [[0.0; 4]; 17];
+    shade(
+        pipeline.vertex_shader(),
+        u64::from(vertex_index),
+        &inputs[..pipeline.vertex_shader().input_count() as usize],
+        &mut outputs,
+    )?;
+    if outputs[0][3] <= 0.0 {
+        return Err(RenderExecutionError::InvalidClipW { vertex_index });
+    }
+    let mut vertex = Vertex {
+        clip: outputs[0].map(f64::from),
+        ..Vertex::default()
+    };
+    for (varying, value) in vertex
+        .varyings
+        .iter_mut()
+        .zip(&outputs[1..pipeline.vertex_shader().outputs().len()])
+    {
+        *varying = value.map(f64::from);
+    }
+    Ok(vertex)
 }
 
 fn shade(

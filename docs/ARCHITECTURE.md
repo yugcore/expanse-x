@@ -1,8 +1,8 @@
 # EX architecture
 
-Status: Phase 2 complete; Phase 3 programmable rendering working. Owned resources,
-validated recording, synchronous copies, shaders, graphics pipelines, vertex
-layouts, and interpolated software triangles work. Indexed drawing is pending.
+Status: Phases 0–3 complete. Owned resources, validated recording, synchronous
+copies, shaders, graphics pipelines, vertex layouts, interpolation, and indexed
+software triangles work. Textures and samplers are next.
 
 The [development roadmap](ROADMAP.md) tracks verified work, pending steps, and
 phase completion gates. This document describes architectural responsibilities.
@@ -39,10 +39,10 @@ not supply those capabilities. Hardware work is deferred.
 
 | Component | Implemented now | Next responsibility |
 | --- | --- | --- |
-| `ex-api`, library name `ex` | Resources, render scopes, submission/readback, shaders/pipelines/layouts, and public examples | Indexed draw entry points |
-| `expansex-core` | Ownership, allocation, recording, queue policy, shaders, and validated pipelines | Index contracts |
-| Validation | Resource identity/usages/ranges, layouts/stages, render state, finite shader arithmetic, clip w, and storage poison | Index validation and richer hazards |
-| Reference backend | reference.rs and reference/programmable.rs execute copies and fixed/programmed triangles, with staged scope commits | Indexed vertex fetch |
+| `ex-api`, library name `ex` | Resources, render scopes, submission/readback, shaders/pipelines/layouts, indexed drawing, and public examples | Texture and sampler entry points |
+| `expansex-core` | Ownership, allocation, recording, queue policy, shaders, validated pipelines, and index bindings | Texture/resource contracts |
+| Validation | Resource identity/usages/ranges, layouts/stages, render state, finite shader arithmetic, clip w, storage poison, and live index references | Texture binding and richer hazards |
+| Reference backend | reference.rs and reference/programmable.rs execute copies and fixed/programmed triangles, including indexed fetch and staged scope commits | Texture sampling |
 | Shader subsystem | shader.rs owns/validates EX instructions and evaluates standalone or allocation-free renderer invocations | Richer instructions and later external import |
 
 The public crate solves a packaging problem: callers have one `ex` import while
@@ -90,7 +90,9 @@ Finished render scopes retain their framebuffer and each draw's vertex binding.
 Their exclusive encoder borrow enforces recording scope; unfinished scopes discard.
 See [rendering](RENDERING.md) for the fixed vertex layout and failure boundaries.
 Programmable draws retain each pipeline and run interpolated shaders; see
-[pipelines](PIPELINES.md). Command pools and allocator reuse follow real needs.
+[pipelines](PIPELINES.md). Indexed draws also retain index source/format/range
+and signed base vertex; [indexed drawing](INDEXED-DRAWING.md) defines execution-time
+reference checks and sequential source locking. Command pools and allocator reuse follow real needs.
 
 ## Resources and memory
 
@@ -149,7 +151,8 @@ four-plane 2D clipping, full-target viewport mapping, 1/256-pixel rasterization,
 and constant fragments. Image readback feeds an example-only PNG serializer.
 Each render command preflights vertices and shades into a temporary image before
 committing its target, so late fragment failures preserve the scope's pixels.
-Depth/stencil, blending, indexed drawing, and textures are later steps,
+Indexed fetch reuses the programmable pipeline and decodes only selected records.
+Depth/stencil, blending, and textures are later steps,
 not hidden claims of full GPU conformance.
 
 ## Validation and errors

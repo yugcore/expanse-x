@@ -2,8 +2,8 @@
 
 Updated: 2026-10-08. Scope: every currently exported EX type, inherent method,
 public field, enum variant, and explicit standard trait implementation.
-There are **46 public types and 87 inherent methods**. These are provisional
-APIs through Phase 3 programmable rendering, not a completed or stable v1 specification.
+There are **48 public types and 96 inherent methods**. Phase 3 is complete;
+these remain provisional APIs, not a completed or stable v1 specification.
 
 Applications depend on package `ex-api` and import its library as `ex`:
 
@@ -27,7 +27,7 @@ currently exported.
 | Buffers | [BufferDescriptor](#bufferdescriptor), [BufferUsage](#bufferusage), [HostAccess](#hostaccess), [Buffer](#buffer) |
 | Copy recording | [CommandEncoder](#commandencoder), [CommandBuffer](#commandbuffer), [Command](#command), [BufferCopy](#buffercopy), [CopyBufferRole](#copybufferrole) |
 | Framebuffers | [Framebuffer](#framebuffer), [FramebufferDescriptor](#framebufferdescriptor), [FramebufferFormat](#framebufferformat) |
-| Rendering | [RenderPass](#renderpass), [RenderCommands](#rendercommands), [DrawTriangles](#drawtriangles) |
+| Rendering | [RenderPass](#renderpass), [RenderCommands](#rendercommands), [DrawTriangles](#drawtriangles), [IndexFormat](#indexformat), [IndexedTriangles](#indexedtriangles) |
 | Shaders | [Shader](#shader), [ShaderDescriptor](#shaderdescriptor), [ShaderStage](#shaderstage), [ShaderInstruction](#shaderinstruction) |
 | Pipelines and layouts | [GraphicsPipeline](#graphicspipeline), [GraphicsPipelineDescriptor](#graphicspipelinedescriptor), [VertexBufferLayout](#vertexbufferlayout), [VertexAttribute](#vertexattribute), [VertexFormat](#vertexformat), [GraphicsPipelineCreateError](#graphicspipelinecreateerror) |
 | Prototype labels | [CommandRecorder](#commandrecorder), [DebugMarkerBuffer](#debugmarkerbuffer) |
@@ -165,7 +165,7 @@ descriptor; transfer and Vertex roles currently participate in recording/executi
 | Variant | Role |
 | --- | --- |
 | `BufferUsage::Vertex` | Vertex input for fixed-layout or pipeline-controlled triangles. |
-| `BufferUsage::Index` | Future indexed draw input. |
+| `BufferUsage::Index` | Indexed triangle input; binding validates this role. |
 | `BufferUsage::Uniform` | Future shader parameters. |
 | `BufferUsage::Storage` | Future shader-accessible data. |
 | `BufferUsage::TransferSource` | Required source role for recorded copies. |
@@ -353,15 +353,21 @@ with a live borrowed pass is rejected by Rust. Dropping unfinished work discards
 | `RenderPass::draw(&mut self, vertices: Range<u32>, colour: [u8; 4]) -> Result<(), RenderEncodeError>` | Validate binding, ascending range, triangle-list count, checked byte extent; append a retained draw. |
 | `RenderPass::set_pipeline(&mut self, pipeline: &GraphicsPipeline) -> Result<(), RenderEncodeError>` | Check device then target colour format and retain pipeline binding. |
 | `RenderPass::draw_programmable(&mut self, vertices: Range<u32>) -> Result<(), RenderEncodeError>` | Require pipeline then vertex buffer; check complete triangle list and checked full range with pipeline stride. Retain current bindings for this draw. |
+| `RenderPass::set_index_buffer(&mut self, buffer: &Buffer, offset: u64, format: IndexFormat) -> Result<(), RenderEncodeError>` | Check exact device, Index usage, offset <= size, then format alignment; retain binding. |
+| `RenderPass::draw_indexed(&mut self, indices: Range<u32>, base_vertex: i32) -> Result<(), RenderEncodeError>` | Require pipeline, vertex buffer, then index buffer. Check ascending triangle-list index range and full index byte extent; retain all three bindings. Validate live references at submission. |
 | `RenderPass::finish(self) -> Result<(), RenderEncodeError>` | Reserve/append one render command; consumes this pass. Failed reservation commits no pass work. |
 
 `Range` is `std::ops::Range`, not an EX export. The exclusive end and first vertex
 are relative to the binding's byte offset. Count must be divisible by three;
 zero-count draws still require a binding and an in-bounds start. Failed binding
-or draw calls preserve earlier work/binding. Buffer and pipeline bindings reset
+or draw calls preserve earlier work/binding. Vertex, index, and pipeline bindings reset
 for each new pass. Legacy `draw` always uses the fixed 8-byte layout and supplied
 colour, including when a pipeline is bound. Programmable drawing is described in
-[PIPELINES.md](docs/PIPELINES.md).
+[PIPELINES.md](docs/PIPELINES.md). Indexed ranges count elements relative to the
+index binding offset; the signed base is added to each decoded index before
+vertex fetch relative to the vertex binding offset. All index values are ordinary
+references; no primitive restart exists. Empty indexed draws still validate state
+and range, but skip both source storage locks. See [INDEXED-DRAWING.md](docs/INDEXED-DRAWING.md).
 
 ### RenderCommands
 
@@ -375,16 +381,49 @@ colour, including when a pipeline is bound. Programmable drawing is described in
 
 ### DrawTriangles
 
-`ex::DrawTriangles` has private fields. Each draw retains its own vertex/pipeline binding;
+`ex::DrawTriangles` has private fields. Each draw retains its own vertex/pipeline and optional index binding;
 recording retains live source bytes, not a snapshot.
 
 | Method | Behavior |
 | --- | --- |
 | `DrawTriangles::vertex_buffer(&self) -> &Buffer` | Borrow retained vertex source. |
 | `DrawTriangles::vertex_offset(&self) -> u64` | Binding offset in bytes. |
-| `DrawTriangles::vertices(&self) -> Range<u32>` | Return an owned copy of the vertex range. |
+| `DrawTriangles::vertices(&self) -> Range<u32>` | Return an owned direct vertex range; indexed draws store unused 0..0. |
 | `DrawTriangles::colour(&self) -> [u8; 4]` | Legacy constant RGBA; programmable draws store [0;4] here and ignore it. |
 | `DrawTriangles::pipeline(&self) -> Option<&GraphicsPipeline>` | Some selects programmable execution with a retained pipeline; None selects fixed layout/colour. |
+| `DrawTriangles::indexed(&self) -> Option<&IndexedTriangles>` | Some selects retained indexed fetch; None selects direct fetch. Indexed draws always have a pipeline. |
+
+### IndexFormat
+
+`ex::IndexFormat` is an exhaustive enum of unsigned little-endian elements.
+All values, including the maximum, are ordinary indices. No restart sentinel exists.
+
+| Variant | Bytes / binding alignment |
+| --- | --- |
+| `IndexFormat::Uint16` | 2 |
+| `IndexFormat::Uint32` | 4 |
+
+| Method | Behavior |
+| --- | --- |
+| `IndexFormat::size(&self) -> u64` | Element size and required offset alignment in bytes. |
+
+### IndexedTriangles
+
+`ex::IndexedTriangles` has private fields and is created by `draw_indexed`.
+Source: [render/index.rs](crates/expansex-core/src/render/index.rs).
+
+| Method | Behavior |
+| --- | --- |
+| `IndexedTriangles::buffer(&self) -> &Buffer` | Borrow retained live index source. |
+| `IndexedTriangles::offset(&self) -> u64` | Binding byte offset. |
+| `IndexedTriangles::format(&self) -> IndexFormat` | Unsigned element encoding. |
+| `IndexedTriangles::indices(&self) -> Range<u32>` | Owned copy of element range relative to binding offset. |
+| `IndexedTriangles::base_vertex(&self) -> i32` | Signed addition to each decoded index. |
+
+Submission widens the addition to i64, then requires a u32 effective index and
+a complete stride-sized vertex record. Only referenced vertices are evaluated,
+including repeated references; no vertex cache exists. Index and vertex locks
+are taken sequentially under the device gate, so both may share one allocation.
 
 ## Shader representation and evaluation
 
@@ -464,7 +503,7 @@ Contract: [PIPELINES.md](docs/PIPELINES.md). Programmable vertex output requires
 positive w, clips against -w <= x,y,z <= w, and divides by w before viewport
 mapping. Varyings interpolate with perspective correction at pixel centres on
 the 1/256-pixel grid. Fragment output clamps to [0,1], scales by 255, and rounds
-to bytes. No depth test, blending, textures, instancing, or indexed drawing exists.
+to bytes. Indexed fetch is implemented. No depth test, blending, textures, or instancing exists.
 Every scope shades into a temporary image and commits only after all draws succeed.
 
 ### VertexFormat
@@ -675,11 +714,18 @@ Source: [render.rs](crates/expansex-core/src/render.rs).
 | `RenderEncodeError::VertexOffsetOutOfBounds { label: String, offset: u64, buffer_size: u64 }` | Binding offset exceeds size. |
 | `RenderEncodeError::UnalignedVertexOffset { offset: u64 }` | Binding offset is not a multiple of 4. |
 | `RenderEncodeError::MissingVertexBuffer` | Draw requires a bound vertex source. |
+| `RenderEncodeError::MissingIndexBuffer` | Indexed draw requires a bound index source. |
+| `RenderEncodeError::ForeignIndexBuffer { label: String }` | Index source belongs to another device. |
+| `RenderEncodeError::MissingIndexUsage { label: String }` | Index binding requires Index usage. |
+| `RenderEncodeError::IndexOffsetOutOfBounds { label: String, offset: u64, buffer_size: u64 }` | Index binding offset exceeds size. |
+| `RenderEncodeError::UnalignedIndexOffset { offset: u64, alignment: u64 }` | Index offset violates the format's 2/4-byte alignment. |
+| `RenderEncodeError::InvalidIndexRange { start: u32, end: u32 }` | Exclusive index end precedes start. |
+| `RenderEncodeError::IndexRangeOutOfBounds { label: String, first_index: u32, index_count: u32, offset: u64, buffer_size: u64 }` | Full index byte extent exceeds storage, including overflow. |
 | `RenderEncodeError::MissingPipeline` | Programmable draw requires a bound pipeline. |
 | `RenderEncodeError::ForeignPipeline { label: String }` | Pipeline belongs to another logical device. |
 | `RenderEncodeError::IncompatibleTargetFormat { pipeline_format: FramebufferFormat, target_format: FramebufferFormat }` | Pipeline's required colour format differs from target. Only one format is currently constructible. |
 | `RenderEncodeError::InvalidVertexRange { start: u32, end: u32 }` | Exclusive end precedes start. |
-| `RenderEncodeError::IncompleteTriangle { vertex_count: u32 }` | Count is not divisible by three. |
+| `RenderEncodeError::IncompleteTriangle { vertex_count: u32 }` | Vertex occurrences (index count for indexed draws) are not divisible by three. |
 | `RenderEncodeError::VertexRangeOutOfBounds { label: String, first_vertex: u32, vertex_count: u32, offset: u64, buffer_size: u64 }` | Full fetched byte extent does not fit, including overflow. |
 | `RenderEncodeError::AllocationFailed { source: TryReserveError }` | Reserving recorded draw or command slots failed. |
 
@@ -693,6 +739,8 @@ Source: [render.rs](crates/expansex-core/src/render.rs).
 | Variant and public payload | Meaning |
 | --- | --- |
 | `RenderExecutionError::VertexStoragePoisoned { label: String }` | Nonempty draw's vertex source is untrusted. |
+| `RenderExecutionError::IndexStoragePoisoned { label: String }` | Nonempty indexed draw's index source is untrusted. |
+| `RenderExecutionError::InvalidVertexIndex { index_position: u32, index_value: u32, base_vertex: i32, vertex_label: String, available_vertices: u64 }` | Raw index plus base cannot address a complete u32-indexed vertex record. Position is the index element relative to the binding offset; capacity excludes trailing incomplete records. |
 | `RenderExecutionError::FramebufferStoragePoisoned { label: String }` | Target pixel storage is untrusted. |
 | `RenderExecutionError::NonFiniteVertex { label: String, vertex_index: u32 }` | Absolute fetched vertex index contains NaN or infinity. |
 | `RenderExecutionError::InvalidClipW { vertex_index: u32 }` | Vertex shader output position w is zero or negative. |
@@ -757,7 +805,7 @@ Source: [pipeline.rs](crates/expansex-core/src/pipeline.rs).
 ## Explicit standard trait support
 
 This lists implemented/derived traits, not Rust's blanket implementations or
-auto traits. They are separate from the 87 inherent methods above.
+auto traits. They are separate from the 96 inherent methods above.
 
 | Type | Traits |
 | --- | --- |
@@ -792,6 +840,8 @@ auto traits. They are separate from the 87 inherent methods above.
 | `RenderPass<'a>` | `Debug` |
 | `RenderCommands` | `Debug` |
 | `DrawTriangles` | `Debug` |
+| `IndexFormat` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `IndexedTriangles` | `Debug` |
 | `RenderEncodeError` | `Debug`, `Display`, `Error` |
 | `RenderExecutionError` | `Debug`, `Clone`, `PartialEq`, `Eq`, `Display`, `Error` |
 | `ShaderStage` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
@@ -814,7 +864,7 @@ Standard trait operations include:
 | --- | --- |
 | `Clone::clone(&self) -> Self` | Types marked `Clone` above. Device/queue/buffer/framebuffer/shader/pipeline handles retain shared state; `AdapterInfo` clones its owned metadata. |
 | `Default::default() -> Self` | `Instance`, `CommandRecorder`; same behavior as their `new()`. |
-| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 46 types; buffer/framebuffer formatting exposes metadata rather than stored bytes/pixels. |
+| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 48 types; buffer/framebuffer formatting exposes metadata rather than stored bytes/pixels. |
 | `PartialEq::eq(&self, other: &Self) -> bool` | Types marked `PartialEq`; handle identity instead uses explicit `is_same`/`belongs_to` methods. |
 | `Display::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | Fourteen error types and `CopyBufferRole`. |
 | `Error::source(&self) -> Option<&(dyn std::error::Error + 'static)>` | All fourteen error types. Buffer/framebuffer/shader creation retain descriptor/reservation sources, pipeline creation/command/render recording and shader evaluation retain reservation sources, and submission RenderFailed retains RenderExecutionError. Other current variants return None. |
@@ -828,7 +878,7 @@ their standard-library contracts. Error trait objects also support standard
 
 There are currently no public APIs for asynchronous submission/completion, textures,
 samplers, external shader language/format importer or frontend/compiler, compute
-pipelines, indexed/instanced draws, dispatch,
+pipelines, instanced draws, primitive restart, indirect drawing, dispatch,
 presentation, mapped memory, hardware discovery/drivers, managed planning,
 EX Witness, or EX Proof. Resource branching is an unaccepted discussion idea,
 not an implemented or locked API.

@@ -1,6 +1,5 @@
 [workspace]
 resolver = "2"
 members = [
-    "learning/m01_rust_fundamentals",
     "crates/expansex-core",
 ]

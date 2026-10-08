@@ -1,6 +1,6 @@
 # EX current API contract
 
-Status: Phase 1 minimum runtime complete; public names and behavior are provisional.
+Status: Phase 2 reference rendering complete; public names and behavior are provisional.
 Applications depend on package `ex-api` and import its library as `ex`. The
 implementation remains in `expansex-core`; the public crate re-exports its types.
 This contract describes implemented behavior only. See [architecture](ARCHITECTURE.md)
@@ -111,6 +111,33 @@ See [the submission contract](SUBMISSION.md) for exact lock and failure rules.
 cargo run -p ex-api --example submit_copy --locked --offline
 ```
 
+## Framebuffers and render scopes
+
+`device.create_framebuffer(FramebufferDescriptor { label, width, height, format })`
+returns owned, zeroed, shared RGBA pixels. Each dimension is 1..=16384; format is
+currently Rgba8Unorm. Metadata/identity getters mirror buffer handles. `pixel(x,y)`
+checks a top-left-origin pixel, and `read_pixels(&mut [[u8;4]])` requires the exact
+pixel count. Readback serializes against whole submissions; errors leave caller
+storage unchanged.
+
+`encoder.begin_render_pass(&target, Option<[u8;4]>)` returns an exclusive borrowed
+RenderPass. Bind a Vertex-usable buffer using `set_vertex_buffer(&buffer, offset)`;
+its fixed layout is little-endian f32 x/y pairs, stride 8 bytes, aligned to 4.
+`draw(first..end, colour)` requires an ascending range with count divisible by
+three and a checked full byte extent. `pass.finish()` consumes/commits the scope;
+dropping it discards pending work. Clears and draws do not execute while recording.
+
+Submission runs Command::RenderPass alongside copies. A private working reference
+module reads live finite positions, clips 2D triangles, maps the viewport, samples
+pixel centres with a top-left rule, and writes constant RGBA fragments. A render
+command preflights all vertices before changing its target; RenderFailed retains
+the cause while earlier commands stay completed and later commands are skipped.
+See [RENDERING.md](RENDERING.md) for exact coverage, lifetime, and limits.
+
+```text
+cargo run -p ex-api --example software_triangle --locked --offline
+```
+
 ## Standalone prototype labels
 
 `CommandRecorder` owns a `Vec<String>`. `new()` and `default()` start an empty
@@ -148,12 +175,15 @@ now also has ten public command-recording tests, three additional lifecycle test
 and executable/compile-fail encoder documentation. Nine public submission tests
 and five internal execution tests check results, order, reuse, lifetime, aliasing,
 foreign work, concurrency, poisoning, partial failure, and gate recovery.
-The workspace runs 57 tests, including
+Fifteen public rendering tests and four internal storage/lifecycle checks cover
+framebuffers, draws, clipping, edges, winding, degenerates, misuse, live sources,
+and failure effects. Executable rendering documentation and two render-scope
+compile-fail examples verify public usage. The workspace runs 79 tests, including
 documentation tests. Tests do not induce allocator OOM by exhausting host memory.
 
 ## Next contract
 
-Phase 1 is complete: upload, recording, submission, and readback now work.
-Next define framebuffer storage, minimal draw commands, vertex fetch, and the
-first software rasterizer with observable triangle pixels.
+Phases 1 and 2 are complete: copies and fixed-function triangles execute through
+EX and produce observable bytes/pixels. Next define EX shader representation,
+stage interfaces, pipeline validation, and programmable reference execution.
 There is no implemented execution-backend ABI yet.

@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum BackendKind {
-    /// EX's CPU/software reference target. Rendering is not implemented yet.
+    /// EX's CPU/software reference target, with copies and fixed-function triangles.
     Reference,
 }
 
@@ -164,7 +164,9 @@ mod tests {
 
     #[test]
     fn execution_gate_blocks_cpu_access_and_queue_clones_but_not_other_devices() {
-        use crate::{BufferDescriptor, BufferUsage, HostAccess};
+        use crate::{
+            BufferDescriptor, BufferUsage, FramebufferDescriptor, FramebufferFormat, HostAccess,
+        };
         use std::sync::mpsc;
         use std::time::Duration;
         let device = Instance::new().default_adapter().create_device();
@@ -180,12 +182,22 @@ mod tests {
             })
             .unwrap();
         let other = device.adapter().create_device();
+        let target = device
+            .create_framebuffer(FramebufferDescriptor {
+                label: "gated framebuffer",
+                width: 2,
+                height: 2,
+                format: FramebufferFormat::Rgba8Unorm,
+            })
+            .unwrap();
         let queue = device.default_queue().clone();
         let commands = device.create_command_encoder().finish();
         let gate = device.lock_execution();
         let (done, received) = mpsc::channel();
         let write_done = done.clone();
         let read_done = done.clone();
+        let pixel_done = done.clone();
+        let image_done = done.clone();
         std::thread::scope(|scope| {
             scope.spawn(|| {
                 buffer.write(0, &[7; 4]).unwrap();
@@ -199,6 +211,14 @@ mod tests {
                 queue.submit(&commands).unwrap();
                 done.send(()).unwrap();
             });
+            scope.spawn(|| {
+                target.pixel(0, 0).unwrap();
+                pixel_done.send(()).unwrap();
+            });
+            scope.spawn(|| {
+                target.read_pixels(&mut [[0; 4]; 4]).unwrap();
+                image_done.send(()).unwrap();
+            });
             assert!(matches!(
                 received.recv_timeout(Duration::from_millis(50)),
                 Err(mpsc::RecvTimeoutError::Timeout)
@@ -209,7 +229,7 @@ mod tests {
                 .submit(&other.create_command_encoder().finish())
                 .unwrap();
             drop(gate);
-            for _ in 0..3 {
+            for _ in 0..5 {
                 received.recv_timeout(Duration::from_secs(2)).unwrap();
             }
         });

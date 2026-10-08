@@ -105,7 +105,7 @@ later; this provisional API is not frozen.
 
 Buffers and explicit CPU copies now exist under the separate buffer contract;
 buffer creation is fallible and retains this device ownership domain. Synchronous
-reference copy execution now exists; rendering remains planned. `CommandRecorder`
+reference copy and fixed-function triangle execution now exist. `CommandRecorder`
 remains the independent label-only prototype, returning `DebugMarkerBuffer`.
 Device-bound copy recording now exists under the [command contract](COMMANDS.md),
 with usage/range/device validation and retained resources. The queue executes

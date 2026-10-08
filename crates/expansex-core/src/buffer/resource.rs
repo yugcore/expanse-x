@@ -304,6 +304,16 @@ impl Buffer {
         }
     }
 
+    /// Reference executor only: device gate held and immutable range validated.
+    pub(crate) fn with_bytes<R>(
+        &self,
+        range: Range<usize>,
+        f: impl FnOnce(&[u8]) -> R,
+    ) -> Result<R, ()> {
+        let bytes = self.state.bytes.lock().map_err(|_| ())?;
+        Ok(f(&bytes[range]))
+    }
+
     fn poisoned_error(&self) -> BufferAccessError {
         BufferAccessError::StoragePoisoned {
             label: self.label().to_owned(),
@@ -517,5 +527,52 @@ mod tests {
         drop(commands);
         assert!(source_state.upgrade().is_none());
         assert!(destination_state.upgrade().is_none());
+    }
+
+    #[test]
+    fn poisoned_vertex_fetch_rejects_the_pass_before_clear_and_empty_fetch_skips_storage() {
+        use crate::{
+            FramebufferDescriptor, FramebufferFormat, QueueSubmitError, RenderExecutionError,
+        };
+        let device = Instance::new().default_adapter().create_device();
+        let buffer = device
+            .create_buffer(BufferDescriptor {
+                label: "poisoned vertices",
+                size: 24,
+                usages: &[BufferUsage::Vertex],
+                host_access: HostAccess::None,
+            })
+            .unwrap();
+        let target = device
+            .create_framebuffer(FramebufferDescriptor {
+                label: "target",
+                width: 2,
+                height: 2,
+                format: FramebufferFormat::Rgba8Unorm,
+            })
+            .unwrap();
+        let mut encoder = device.create_command_encoder();
+        let mut pass = encoder.begin_render_pass(&target, Some([7; 4])).unwrap();
+        pass.set_vertex_buffer(&buffer, 0).unwrap();
+        pass.draw(0..3, [8; 4]).unwrap();
+        pass.finish().unwrap();
+        poison(&buffer);
+        assert_eq!(
+            device.default_queue().submit(&encoder.finish()),
+            Err(QueueSubmitError::RenderFailed {
+                command_index: 0,
+                source: RenderExecutionError::VertexStoragePoisoned {
+                    label: "poisoned vertices".to_owned()
+                },
+            })
+        );
+        assert_eq!(target.pixel(0, 0).unwrap(), [0; 4]);
+        let mut encoder = device.create_command_encoder();
+        let mut pass = encoder.begin_render_pass(&target, Some([9; 4])).unwrap();
+        pass.set_vertex_buffer(&buffer, 24).unwrap();
+        pass.draw(0..0, [8; 4]).unwrap();
+        pass.finish().unwrap();
+        device.default_queue().submit(&encoder.finish()).unwrap();
+        assert_eq!(target.pixel(0, 0).unwrap(), [9; 4]);
     }
 }

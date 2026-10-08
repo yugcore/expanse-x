@@ -2,8 +2,8 @@
 
 Updated: 2026-10-08. Scope: every currently exported EX type, inherent method,
 public field, enum variant, and explicit standard trait implementation.
-There are **22 public types and 40 inherent methods**. These are provisional
-Phase 1 APIs, not a completed or stable v1 specification.
+There are **33 public types and 62 inherent methods**. These are provisional
+Phase 2 APIs, not a completed or stable v1 specification.
 
 Applications depend on package `ex-api` and import its library as `ex`:
 
@@ -26,8 +26,11 @@ currently exported.
 | Discovery and ownership | [Instance](#instance), [Adapter](#adapter), [AdapterInfo](#adapterinfo), [BackendKind](#backendkind), [Device](#device), [Queue](#queue) |
 | Buffers | [BufferDescriptor](#bufferdescriptor), [BufferUsage](#bufferusage), [HostAccess](#hostaccess), [Buffer](#buffer) |
 | Copy recording | [CommandEncoder](#commandencoder), [CommandBuffer](#commandbuffer), [Command](#command), [BufferCopy](#buffercopy), [CopyBufferRole](#copybufferrole) |
+| Framebuffers | [Framebuffer](#framebuffer), [FramebufferDescriptor](#framebufferdescriptor), [FramebufferFormat](#framebufferformat) |
+| Rendering | [RenderPass](#renderpass), [RenderCommands](#rendercommands), [DrawTriangles](#drawtriangles) |
 | Prototype labels | [CommandRecorder](#commandrecorder), [DebugMarkerBuffer](#debugmarkerbuffer) |
 | Errors | [BufferDescriptorError](#bufferdescriptorerror), [BufferCreateError](#buffercreateerror), [BufferAccessError](#bufferaccesserror), [CommandEncodeError](#commandencodeerror), [QueueSubmitError](#queuesubmiterror) |
+| Rendering errors | [FramebufferDescriptorError](#framebufferdescriptorerror), [FramebufferCreateError](#framebuffercreateerror), [FramebufferAccessError](#framebufferaccesserror), [RenderEncodeError](#renderencodeerror), [RenderExecutionError](#renderexecutionerror) |
 
 Signatures below use the listed type as the meaning of `Self`. Omitted return
 types mean `()`. References borrow their values; returned handles own their
@@ -81,7 +84,7 @@ returns a shared reference and does not allow mutating the adapter's metadata.
 
 | Variant | Meaning |
 | --- | --- |
-| `BackendKind::Reference` | EX's own CPU/software target; rendering is not implemented yet. |
+| `BackendKind::Reference` | EX's own CPU/software target; copies and fixed-function triangles. |
 
 External matches need a fallback arm because more variants can be added.
 
@@ -89,8 +92,9 @@ External matches need a fallback arm because more variants can be added.
 
 `ex::Device` retains one logical device. Its fields are private. Methods are
 implemented across [object.rs](crates/expansex-core/src/object.rs),
-[buffer/resource.rs](crates/expansex-core/src/buffer/resource.rs), and
-[command.rs](crates/expansex-core/src/command.rs).
+[buffer/resource.rs](crates/expansex-core/src/buffer/resource.rs),
+[command.rs](crates/expansex-core/src/command.rs), and
+[framebuffer.rs](crates/expansex-core/src/framebuffer.rs).
 
 | Method | Behavior |
 | --- | --- |
@@ -99,6 +103,7 @@ implemented across [object.rs](crates/expansex-core/src/object.rs),
 | `Device::is_same(&self, other: &Self) -> bool` | Compare logical device identity. |
 | `Device::create_buffer(&self, descriptor: BufferDescriptor<'_>) -> Result<Buffer, BufferCreateError>` | Validate and allocate owned zero-initialized reference storage. |
 | `Device::create_command_encoder(&self) -> CommandEncoder` | Create an empty encoder bound to this device. |
+| `Device::create_framebuffer(&self, descriptor: FramebufferDescriptor<'_>) -> Result<Framebuffer, FramebufferCreateError>` | Validate extents/format and allocate zeroed RGBA reference pixels. |
 
 Cloning retains the same domain; `Adapter::create_device()` creates a new one.
 Discovery/device/encoder constructors do not expose a recoverable allocation
@@ -112,13 +117,15 @@ error path. Buffer creation has its documented fallible reservation path.
 | --- | --- |
 | `Queue::device(&self) -> Device` | Retain the original owning device. |
 | `Queue::belongs_to(&self, device: &Device) -> bool` | Test device membership. |
-| `Queue::submit(&self, commands: &CommandBuffer) -> Result<(), QueueSubmitError>` | Execute reusable finished copies synchronously in recording order on the CPU. |
+| `Queue::submit(&self, commands: &CommandBuffer) -> Result<(), QueueSubmitError>` | Execute reusable finished copies and render scopes synchronously in order on the CPU. |
 
-Successful submission means all submitted copies finished. Concurrent submissions
+Successful submission means all submitted operations finished. Concurrent submissions
 and CPU access on the device serialize for the whole operation; concurrent arrival
 order is unspecified. Foreign work changes nothing. Storage failure leaves earlier
 commands completed, changes nothing in the failed copy, and skips later work.
-See [SUBMISSION.md](docs/SUBMISSION.md). No asynchronous completion API exists.
+Expected render failure leaves that scope's target unchanged. See
+[SUBMISSION.md](docs/SUBMISSION.md) and [RENDERING.md](docs/RENDERING.md).
+No asynchronous completion API exists.
 
 ## Buffers
 
@@ -147,18 +154,19 @@ and values, not storage. There is no `Default` implementation.
 ### BufferUsage
 
 `ex::BufferUsage` has no inherent methods. All variants can be requested in a
-descriptor; only transfer roles currently participate in command recording/execution.
+descriptor; transfer and Vertex roles currently participate in recording/execution.
 
 | Variant | Role |
 | --- | --- |
-| `BufferUsage::Vertex` | Future vertex input. |
+| `BufferUsage::Vertex` | Fixed-layout triangle vertex input. |
 | `BufferUsage::Index` | Future indexed draw input. |
 | `BufferUsage::Uniform` | Future shader parameters. |
 | `BufferUsage::Storage` | Future shader-accessible data. |
 | `BufferUsage::TransferSource` | Required source role for recorded copies. |
 | `BufferUsage::TransferDestination` | Required destination role for recorded copies. |
 
-A usage flag alone does not implement drawing or shaders. Copies execute on submission.
+A usage flag alone executes no work. Copies and fixed-function draws execute on submission;
+shaders remain planned.
 
 ### HostAccess
 
@@ -212,6 +220,7 @@ retains that device. All fields are private.
 | `CommandEncoder::commands(&self) -> &[Command]` | Inspect recorded operations. |
 | `CommandEncoder::copy_buffer(&mut self, source: &Buffer, source_offset: u64, destination: &Buffer, destination_offset: u64, size: u64) -> Result<(), CommandEncodeError>` | Validate and append a retained copy description. |
 | `CommandEncoder::finish(self) -> CommandBuffer` | Consume the encoder and move its work into immutable finished commands. |
+| `CommandEncoder::begin_render_pass(&mut self, target: &Framebuffer, clear: Option<[u8; 4]>) -> Result<RenderPass<'_>, RenderEncodeError>` | Open an exclusive borrowed render recorder; clear/draws change no pixels until submission. |
 
 Checks run in this order: source/destination devices, source/destination transfer
 roles, source/destination checked ranges, same-allocation overlap, command
@@ -242,6 +251,7 @@ immutable; buffer contents remain live. Resources are retained, not snapshotted.
 | Variant | Payload |
 | --- | --- |
 | `Command::CopyBuffer(BufferCopy)` | One validated buffer-copy description. |
+| `Command::RenderPass(RenderCommands)` | One finished render scope, retaining target and per-draw vertex bindings. |
 
 External matches need a fallback arm. Descriptions are not executor closures or
 another graphics API's handles.
@@ -269,6 +279,100 @@ inherent methods.
 | `CopyBufferRole::Destination` | Destination buffer. |
 
 Its `Display` representation is `source` or `destination`.
+
+## Framebuffers and fixed-function rendering
+
+Sources: [framebuffer.rs](crates/expansex-core/src/framebuffer.rs) and
+[render.rs](crates/expansex-core/src/render.rs). Contract: [RENDERING.md](docs/RENDERING.md).
+Pixels are row-major RGBA bytes with top-left origin. Vertex positions are
+little-endian f32 x/y pairs, 8-byte stride, in 2D post-projection coordinates.
+The reference executor clips to [-1,+1] on both axes, supports both windings,
+samples pixel centres on a 1/256-pixel grid, and uses a top-left shared-edge rule.
+Zero-area triangles write nothing; later draws overwrite covered RGBA pixels.
+
+### FramebufferFormat
+
+`ex::FramebufferFormat` is non-exhaustive; external matches require a fallback.
+It has no inherent methods.
+
+| Variant | Meaning |
+| --- | --- |
+| `FramebufferFormat::Rgba8Unorm` | Four u8 channels in R,G,B,A order; no sRGB conversion. |
+
+### FramebufferDescriptor
+
+`ex::FramebufferDescriptor<'a>` borrows creation metadata; creation owns the label.
+
+| Public field | Type | Meaning |
+| --- | --- | --- |
+| `label` | `&'a str` | Debug name; empty allowed. |
+| `width` | `u32` | Pixels across; 1..=16384. |
+| `height` | `u32` | Pixels down; 1..=16384. |
+| `format` | `FramebufferFormat` | Currently Rgba8Unorm only. |
+
+| Method | Behavior |
+| --- | --- |
+| `FramebufferDescriptor::validate(&self) -> Result<(), FramebufferDescriptorError>` | Check positive extents, maximum extents, then supported format; allocate nothing. |
+
+### Framebuffer
+
+`ex::Framebuffer` has private fields, owns fixed zeroed pixels, and retains its
+device. Clones share live pixels. Create through `Device::create_framebuffer`.
+
+| Method | Behavior |
+| --- | --- |
+| `Framebuffer::label(&self) -> &str` | Borrow owned label. |
+| `Framebuffer::width(&self) -> u32` | Width in pixels. |
+| `Framebuffer::height(&self) -> u32` | Height in pixels. |
+| `Framebuffer::format(&self) -> FramebufferFormat` | Stored pixel format. |
+| `Framebuffer::device(&self) -> Device` | Retain creating device. |
+| `Framebuffer::belongs_to(&self, device: &Device) -> bool` | Compare device identity. |
+| `Framebuffer::is_same(&self, other: &Self) -> bool` | Compare allocation identity, including aliases. |
+| `Framebuffer::read_pixels(&self, destination: &mut [[u8; 4]]) -> Result<(), FramebufferAccessError>` | Read the whole image into exactly width*height entries; errors leave destination unchanged. |
+| `Framebuffer::pixel(&self, x: u32, y: u32) -> Result<[u8; 4], FramebufferAccessError>` | Read one checked top-left-origin pixel. |
+
+Readbacks serialize with submissions using the device gate then pixel storage.
+No mutable image slice, file export method, or window is exposed. The example's
+PNG writer is application code, not an EX export.
+
+### RenderPass
+
+`ex::RenderPass<'a>` exclusively borrows its encoder and has private fields.
+Create through `CommandEncoder::begin_render_pass`. Nesting or using the encoder
+with a live borrowed pass is rejected by Rust. Dropping unfinished work discards it.
+
+| Method | Behavior |
+| --- | --- |
+| `RenderPass::set_vertex_buffer(&mut self, buffer: &Buffer, offset: u64) -> Result<(), RenderEncodeError>` | Validate exact device, Vertex usage, offset <= size, then 4-byte alignment; retain binding. |
+| `RenderPass::draw(&mut self, vertices: Range<u32>, colour: [u8; 4]) -> Result<(), RenderEncodeError>` | Validate binding, ascending range, triangle-list count, checked byte extent; append a retained draw. |
+| `RenderPass::finish(self) -> Result<(), RenderEncodeError>` | Reserve/append one render command; consumes this pass. Failed reservation commits no pass work. |
+
+`Range` is `std::ops::Range`, not an EX export. The exclusive end and first vertex
+are relative to the binding's byte offset. Count must be divisible by three;
+zero-count draws still require a binding and an in-bounds start. Failed binding
+or draw calls preserve earlier work/binding. Binding resets for each new pass.
+
+### RenderCommands
+
+`ex::RenderCommands` has private fields and is constructed by finishing a pass.
+
+| Method | Behavior |
+| --- | --- |
+| `RenderCommands::target(&self) -> &Framebuffer` | Borrow retained target. |
+| `RenderCommands::clear_colour(&self) -> Option<[u8; 4]>` | Some clears before draws; None preserves pixels. |
+| `RenderCommands::draws(&self) -> &[DrawTriangles]` | Borrow recorded draws in order. |
+
+### DrawTriangles
+
+`ex::DrawTriangles` has private fields. Each draw retains its own vertex binding;
+recording retains live source bytes, not a snapshot.
+
+| Method | Behavior |
+| --- | --- |
+| `DrawTriangles::vertex_buffer(&self) -> &Buffer` | Borrow retained vertex source. |
+| `DrawTriangles::vertex_offset(&self) -> u64` | Binding offset in bytes. |
+| `DrawTriangles::vertices(&self) -> Range<u32>` | Return an owned copy of the vertex range. |
+| `DrawTriangles::colour(&self) -> [u8; 4]` | Constant fragment RGBA; replaces covered pixels without blending. |
 
 ## Standalone prototype labels
 
@@ -359,14 +463,79 @@ Source: [submission.rs](crates/expansex-core/src/submission.rs).
 | --- | --- |
 | `QueueSubmitError::ForeignCommandBuffer` | Finished work belongs to another device; nothing executed. |
 | `QueueSubmitError::StoragePoisoned { command_index: usize, role: CopyBufferRole, label: String }` | Failed nonempty copy at this zero-based index; earlier copies completed, failed destination unchanged, later work skipped. |
+| `QueueSubmitError::RenderFailed { command_index: usize, source: RenderExecutionError }` | Failed render command; its target unchanged, earlier commands completed, later work skipped. |
 
-This error has no underlying `Error::source`. Aliased copies report poisoned
+Only RenderFailed supplies an underlying `Error::source`. Aliased copies report poisoned
 storage as `Source`; zero-byte copies never lock storage. No rollback is promised.
+
+### FramebufferDescriptorError
+
+Source: [framebuffer.rs](crates/expansex-core/src/framebuffer.rs).
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `FramebufferDescriptorError::ZeroExtent { width: u32, height: u32 }` | Either axis is zero. |
+| `FramebufferDescriptorError::ExtentTooLarge { width: u32, height: u32, maximum: u32 }` | Either axis exceeds reference maximum 16384. |
+
+### FramebufferCreateError
+
+Source: [framebuffer.rs](crates/expansex-core/src/framebuffer.rs).
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `FramebufferCreateError::InvalidDescriptor(FramebufferDescriptorError)` | Invalid extents. Only RGBA8 can currently be requested. |
+| `FramebufferCreateError::AllocationFailed { source: TryReserveError }` | Reserving pixels or owned label failed. |
+
+Both variants retain an underlying error source; small handle OOM is not recovered.
+
+### FramebufferAccessError
+
+Source: [framebuffer.rs](crates/expansex-core/src/framebuffer.rs).
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `FramebufferAccessError::WrongPixelCount { expected: usize, actual: usize }` | Readback slice length must equal width*height. |
+| `FramebufferAccessError::OutOfBounds { x: u32, y: u32, width: u32, height: u32 }` | Requested pixel is outside the image. |
+| `FramebufferAccessError::StoragePoisoned { label: String }` | Interrupted internal operation left pixels untrusted. |
+
+### RenderEncodeError
+
+Source: [render.rs](crates/expansex-core/src/render.rs).
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `RenderEncodeError::ForeignFramebuffer { label: String }` | Target belongs to another device. |
+| `RenderEncodeError::ForeignVertexBuffer { label: String }` | Vertex source belongs to another device. |
+| `RenderEncodeError::MissingVertexUsage { label: String }` | Binding requires Vertex usage. |
+| `RenderEncodeError::VertexOffsetOutOfBounds { label: String, offset: u64, buffer_size: u64 }` | Binding offset exceeds size. |
+| `RenderEncodeError::UnalignedVertexOffset { offset: u64 }` | Binding offset is not a multiple of 4. |
+| `RenderEncodeError::MissingVertexBuffer` | Draw requires a bound vertex source. |
+| `RenderEncodeError::InvalidVertexRange { start: u32, end: u32 }` | Exclusive end precedes start. |
+| `RenderEncodeError::IncompleteTriangle { vertex_count: u32 }` | Count is not divisible by three. |
+| `RenderEncodeError::VertexRangeOutOfBounds { label: String, first_vertex: u32, vertex_count: u32, offset: u64, buffer_size: u64 }` | Full fetched byte extent does not fit, including overflow. |
+| `RenderEncodeError::AllocationFailed { source: TryReserveError }` | Reserving recorded draw or command slots failed. |
+
+Only AllocationFailed has an underlying source. Expected recording errors change
+no bytes or prior recorded work. Nonfinite positions are checked at execution.
+
+### RenderExecutionError
+
+Source: [render.rs](crates/expansex-core/src/render.rs).
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `RenderExecutionError::VertexStoragePoisoned { label: String }` | Nonempty draw's vertex source is untrusted. |
+| `RenderExecutionError::FramebufferStoragePoisoned { label: String }` | Target pixel storage is untrusted. |
+| `RenderExecutionError::NonFiniteVertex { label: String, vertex_index: u32 }` | Absolute fetched vertex index contains NaN or infinity. |
+| `RenderExecutionError::AllocationFailed` | Fallible decoded-vertex preparation failed; no lower-level source retained. |
+
+All expected errors occur before that render scope changes target pixels. The
+gate prevents concurrent uploads from changing sources during preflight/drawing.
 
 ## Explicit standard trait support
 
 This lists implemented/derived traits, not Rust's blanket implementations or
-auto traits. They are separate from the 40 inherent methods above.
+auto traits. They are separate from the 62 inherent methods above.
 
 | Type | Traits |
 | --- | --- |
@@ -392,17 +561,28 @@ auto traits. They are separate from the 40 inherent methods above.
 | `BufferAccessError` | `Debug`, `Clone`, `PartialEq`, `Eq`, `Display`, `Error` |
 | `CommandEncodeError` | `Debug`, `Display`, `Error` |
 | `QueueSubmitError` | `Debug`, `Clone`, `PartialEq`, `Eq`, `Display`, `Error` |
+| `FramebufferFormat` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `FramebufferDescriptor<'a>` | `Debug`, `Clone`, `Copy` |
+| `Framebuffer` | `Debug`, `Clone` |
+| `FramebufferDescriptorError` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`, `Display`, `Error` |
+| `FramebufferCreateError` | `Debug`, `Display`, `Error` |
+| `FramebufferAccessError` | `Debug`, `Clone`, `PartialEq`, `Eq`, `Display`, `Error` |
+| `RenderPass<'a>` | `Debug` |
+| `RenderCommands` | `Debug` |
+| `DrawTriangles` | `Debug` |
+| `RenderEncodeError` | `Debug`, `Display`, `Error` |
+| `RenderExecutionError` | `Debug`, `Clone`, `PartialEq`, `Eq`, `Display`, `Error` |
 
 Standard trait operations include:
 
 | Operation | Implementing types / behavior |
 | --- | --- |
-| `Clone::clone(&self) -> Self` | Types marked `Clone` above. Device/queue/buffer handles retain shared state; `AdapterInfo` clones its owned metadata. |
+| `Clone::clone(&self) -> Self` | Types marked `Clone` above. Device/queue/buffer/framebuffer handles retain shared state; `AdapterInfo` clones its owned metadata. |
 | `Default::default() -> Self` | `Instance`, `CommandRecorder`; same behavior as their `new()`. |
-| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 22 types; buffer formatting exposes metadata rather than stored bytes. |
+| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 33 types; buffer/framebuffer formatting exposes metadata rather than stored bytes/pixels. |
 | `PartialEq::eq(&self, other: &Self) -> bool` | Types marked `PartialEq`; handle identity instead uses explicit `is_same`/`belongs_to` methods. |
-| `Display::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | Five error types and `CopyBufferRole`. |
-| `Error::source(&self) -> Option<&(dyn std::error::Error + 'static)>` | All five error types. Creation's invalid-descriptor/reservation variants and encoding's reservation variant retain a source; other current variants return `None`. |
+| `Display::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | Ten error types and `CopyBufferRole`. |
+| `Error::source(&self) -> Option<&(dyn std::error::Error + 'static)>` | All ten error types. Buffer/framebuffer creation retain descriptor/reservation sources, command/render recording retain reservation sources, and submission RenderFailed retains RenderExecutionError. Other current variants return None. |
 
 Other inherited standard trait methods, such as `clone_from` and `ne`, follow
 their standard-library contracts. Error trait objects also support standard
@@ -412,7 +592,7 @@ their standard-library contracts. Error trait objects also support standard
 ## Not implemented
 
 There are currently no public APIs for asynchronous submission/completion, textures,
-samplers, shaders, graphics/compute pipelines, draw/dispatch, render passes,
+samplers, shaders, graphics/compute pipelines, indexed/instanced draws, dispatch,
 presentation, mapped memory, hardware discovery/drivers, managed planning,
 EX Witness, or EX Proof. Resource branching is an unaccepted discussion idea,
 not an implemented or locked API.

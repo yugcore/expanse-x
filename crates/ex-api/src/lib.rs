@@ -2,7 +2,7 @@
 //!
 //! Phase 1 begins with software discovery, logical devices, and queue ownership,
 //! alongside owned reference buffers with explicit host access and validated
-//! buffer-copy recording and synchronous reference submission. Rendering is absent.
+//! buffer-copy recording, fixed-function triangles, and synchronous submission.
 //! This crate has no dependency on another graphics API.
 //!
 //! ```
@@ -30,6 +30,30 @@
 //! let mut output = [0; 4];
 //! buffer.read(0, &mut output)?;
 //! assert_eq!(output, [1, 2, 3, 4]);
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
+//! Phase 2 renders fixed-layout 2D triangles into owned offscreen RGBA pixels:
+//!
+//! ```
+//! use ex::{BufferDescriptor, BufferUsage, FramebufferDescriptor, FramebufferFormat, HostAccess, Instance};
+//! let device = Instance::new().default_adapter().create_device();
+//! let target = device.create_framebuffer(FramebufferDescriptor {
+//!     label: "image", width: 4, height: 4, format: FramebufferFormat::Rgba8Unorm,
+//! })?;
+//! let points = [[-1.0_f32, 1.0], [1.0, 1.0], [-1.0, -1.0]];
+//! let bytes: Vec<u8> = points.iter().flat_map(|p| p.iter().flat_map(|v| v.to_le_bytes())).collect();
+//! let vertices = device.create_buffer(BufferDescriptor {
+//!     label: "positions", size: 24, usages: &[BufferUsage::Vertex], host_access: HostAccess::Write,
+//! })?;
+//! vertices.write(0, &bytes)?;
+//! let mut encoder = device.create_command_encoder();
+//! let mut pass = encoder.begin_render_pass(&target, Some([0, 0, 0, 255]))?;
+//! pass.set_vertex_buffer(&vertices, 0)?;
+//! pass.draw(0..3, [255, 0, 0, 255])?;
+//! pass.finish()?;
+//! device.default_queue().submit(&encoder.finish())?;
+//! assert_eq!(target.pixel(0, 0)?, [255, 0, 0, 255]);
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
@@ -88,5 +112,7 @@ pub use expansex_core::{
     Adapter, AdapterInfo, BackendKind, Buffer, BufferAccessError, BufferCopy, BufferCreateError,
     BufferDescriptor, BufferDescriptorError, BufferUsage, Command, CommandBuffer,
     CommandEncodeError, CommandEncoder, CommandRecorder, CopyBufferRole, DebugMarkerBuffer, Device,
-    HostAccess, Instance, Queue, QueueSubmitError,
+    DrawTriangles, Framebuffer, FramebufferAccessError, FramebufferCreateError,
+    FramebufferDescriptor, FramebufferDescriptorError, FramebufferFormat, HostAccess, Instance,
+    Queue, QueueSubmitError, RenderCommands, RenderEncodeError, RenderExecutionError, RenderPass,
 };

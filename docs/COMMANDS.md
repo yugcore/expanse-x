@@ -86,7 +86,7 @@ Previously that output type was named `CommandBuffer`. This intentional provisio
 API change makes the real `CommandBuffer` always device-bound; explicitly typed
 old label results must use `DebugMarkerBuffer`. Inferred existing examples work.
 
-The new `CommandEncoder` records copies only in this step; it does not yet offer
+The `CommandEncoder` now records copies and finished render scopes; it does not offer
 marker insertion. Only the device-bound `CommandBuffer` can be submitted.
 
 ## Verification and next step
@@ -98,4 +98,5 @@ Internal lifecycle checks verify release after the final command buffer drops.
 Tests do not induce allocator OOM by exhausting memory.
 
 The `submit_copy` example now executes these operations under the documented
-submission contract. Phase 1 is complete; the first software triangle is next.
+submission contract. Phase 2 now also records/executes triangles under the separate
+[rendering contract](RENDERING.md); programmable shaders are next.

@@ -13,7 +13,7 @@ The [project design](../DOCUMENTATION.md) governs this roadmap: managed and
 explicit control levels share one core, resources, and execution rules. Build
 and verify the explicit core first. Add managed planning over those contracts
 when a working workload justifies it; this is a future capability, not a second
-renderer or a reason to postpone the next queue-submission milestone.
+renderer or a reason to postpone the programmable rendering milestone.
 
 ## Status at a glance
 
@@ -21,7 +21,7 @@ renderer or a reason to postpone the next queue-submission milestone.
 | --- | --- | --- |
 | 0 — Repository foundation | Complete | Production workspace, public `ex` entry point, checks, contracts, and local Git history |
 | 1 — Minimum runtime | Complete | Ordered synchronous copy execution, readback, concurrency/failure contract, public example, and tests |
-| 2 — First software triangle | Not started | Pending: public draw commands produce a triangle image through EX's own rasterizer |
+| 2 — First software triangle | Complete | Public render scopes produce a verified PNG through EX's own clipped fixed-function rasterizer |
 | 3 — Programmability and pipeline milestone | Not started | Pending: EX shader representation and public pipeline produce a programmable triangle |
 | 4 — Modern GPU concepts | Deferred until earlier phases work | Per-feature implementation, validation, and executable evidence |
 | Future — Hardware drivers | Deferred | A selected target, viable driver interfaces, and demonstrated execution |
@@ -124,7 +124,7 @@ against CPU access. Failure preserves completed commands and skips later work.
 Evidence: [submission contract](SUBMISSION.md),
 [public example](../crates/ex-api/examples/submit_copy.rs),
 [submission tests](../crates/ex-api/tests/queue_submission.rs), and internal
-poisoning/lifetime/gate checks. The workspace now passes 57 tests, including
+poisoning/lifetime/gate checks. The submission milestone passed 57 tests, including
 documentation tests. This does not claim hardware or asynchronous execution.
 
 **Phase 1 completion gate: met.** This flow runs through `ex`, misuse is reported clearly,
@@ -132,23 +132,31 @@ and order, visibility, error behavior, and resource retention are documented and
 tested. A synchronous reference contract is the starting point; future asynchronous
 execution must introduce explicit completion without losing these semantics.
 
-## Phase 2 — First reference triangle: not started
+## Phase 2 — First reference triangle: complete
 
-- [ ] Add a framebuffer/render-target resource with dimensions and format validation.
-- [ ] Record a minimal render scope, clear, vertex-buffer binding, and triangle draw.
-- [ ] Define the fixed vertex layout and validate vertex fetch and draw ranges.
-- [ ] Implement vertex fetch, primitive assembly, viewport mapping, and triangle rasterization.
-- [ ] Define supported clipping, winding, edge coverage, and degenerate-triangle behavior.
-- [ ] Write constant fragment colour into the framebuffer.
-- [ ] Export an offscreen image through an EX example; a window/swapchain is unnecessary here.
-- [ ] Test representative pixel coverage, clear/background preservation, and invalid draw state.
-- [ ] Separate working reference execution code when its responsibilities justify a backend boundary.
+- [x] Add a framebuffer/render-target resource with dimensions and format validation.
+- [x] Record a minimal render scope, clear, vertex-buffer binding, and triangle draw.
+- [x] Define the fixed vertex layout and validate vertex fetch and draw ranges.
+- [x] Implement vertex fetch, primitive assembly, viewport mapping, and triangle rasterization.
+- [x] Define supported clipping, winding, edge coverage, and degenerate-triangle behavior.
+- [x] Write constant fragment colour into the framebuffer.
+- [x] Export an offscreen image through an EX example; a window/swapchain is unnecessary here.
+- [x] Test representative pixel coverage, clear/background preservation, and invalid draw state.
+- [x] Separate working reference execution code when its responsibilities justify a backend boundary.
 
-**Phase 2 completion gate:** EX's public API records/submits a draw and EX's own
+**Phase 2 completion gate: met.** EX's public API records/submits a draw and EX's own
 software pipeline produces a verifiable triangle image. Document supported
 coordinates and clipping limits rather than claiming a complete GPU pipeline.
 This is the first visual checkpoint; programmable shaders and public pipeline
 objects in the original conceptual success program are completed in Phase 3.
+
+Evidence: [rendering contract](RENDERING.md), [private CPU executor](../crates/expansex-core/src/reference.rs),
+[public triangle example](../crates/ex-api/examples/software_triangle.rs), and
+[rendering tests](../crates/ex-api/tests/reference_rendering.rs). The example writes
+a 512x384 PNG with 48,556 foreground pixels; centre/corner assertions and independent
+PNG decoding verify the output. The workspace passes 79 tests, including executable
+and compile-fail documentation. Floating clipping and 1/256-pixel coverage rules
+are documented; shaders, depth, blending, presentation, and hardware remain future work.
 
 ## Phase 3 — Programmability and pipelines: not started
 
@@ -191,7 +199,7 @@ is checked. Performance or hardware-conformance claims require separate evidence
 The [EX Witness direction](../DOCUMENTATION.md#ex-witness-experimental-differentiation)
 explores explanation → replay → smaller executable tests for selected failures.
 It uses the same contracts for managed and explicit work. This track adds no new
-Phase 1 completion requirement; the next main milestone is the first triangle.
+Phase 1 completion requirement; the next main milestone is programmable rendering.
 
 After the copy/submission foundation works:
 

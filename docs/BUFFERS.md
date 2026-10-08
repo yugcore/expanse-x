@@ -120,4 +120,5 @@ Recorded copies now validate TransferSource/TransferDestination, common device
 ownership, ranges, and overlap, and retain referenced allocations. They do not
 read storage or snapshot contents. Queue submission now executes those descriptions,
 with ordering, visibility, host concurrency, and failure defined in the submission
-contract. Rendering and hardware storage are still future work.
+contract. Vertex usage now enables fixed-layout triangle fetch under
+[RENDERING.md](RENDERING.md). Shaders and hardware storage remain future work.

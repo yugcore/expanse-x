@@ -1,7 +1,7 @@
 # EX architecture
 
-Status: Phase 1 complete. Discovery, ownership, reference allocation, CPU access,
-validated recording, and ordered synchronous copy execution work.
+Status: Phase 2 complete. Owned buffers/framebuffers, validated recording,
+synchronous copy execution, and fixed-function software triangles work.
 
 The [development roadmap](ROADMAP.md) tracks verified work, pending steps, and
 phase completion gates. This document describes architectural responsibilities.
@@ -12,7 +12,7 @@ The [project design](../DOCUMENTATION.md) governs this architecture.
 EX has two intended control levels over one core: managed work derives a valid
 plan from resource-use declarations; explicit work supplies a plan that EX
 validates. Both share resources, execution rules, and completion semantics.
-The first explicit recording/submission path now executes reference buffer copies.
+The explicit recording/submission path now executes copies and offscreen triangles.
 Managed planning remains future work over those proven contracts.
 
 EX is an independent graphics API. An application specifies resources and work;
@@ -38,10 +38,10 @@ not supply those capabilities. Hardware work is deferred.
 
 | Component | Implemented now | Next responsibility |
 | --- | --- | --- |
-| `ex-api`, library name `ex` | Public discovery, buffers, recording, synchronous submission/readback; examples | First draw entry points |
-| `expansex-core` | Ownership, allocation, EX copy enum, and ordered CPU executor | Minimal framebuffer/draw contracts |
-| Validation | Descriptor, capacity, CPU permissions, copy roles/ranges/device/overlap, submission device, and storage poison | Draw state and richer hazards |
-| Reference backend | System-memory buffers, copy execution, and shared device gate in core | Software rasterization; split execution code when justified |
+| `ex-api`, library name `ex` | Owned buffers/framebuffers, render scopes, submission/readback, and PNG triangle example | Programmable pipeline entry points |
+| `expansex-core` | Ownership, allocation, copy/render command enum, and synchronous queue policy | Shader/pipeline contracts |
+| Validation | Resource identity, usages, ranges, extents, render binding/ranges, finite vertices, and storage poison | Pipeline/stage compatibility and richer hazards |
+| Reference backend | Private reference.rs executes copies, fetches/clips vertices, and rasterizes triangles under the device gate | Shader interpretation and programmable fragments |
 | Shader subsystem | Absent | Small EX internal representation and interpreter |
 
 The public crate solves a packaging problem: callers have one `ex` import while
@@ -66,6 +66,7 @@ See [the object ownership contract](OBJECT-MODEL.md) for rationale, API comparis
 identity checks, and cleanup. Buffers now retain their creating device, have
 independent allocation identity, and share storage when cloned.
 
+Owned Framebuffer pixels and fixed-function RenderPass recorders now exist.
 Textures, views, samplers, layouts, graphics/compute pipelines, surfaces, and
 presentation are deferred until they have actual behavior. Offscreen image
 output is sufficient for the first triangle; a window and swapchain are not
@@ -83,7 +84,10 @@ rename of the prototype's finished labels to `DebugMarkerBuffer`.
 
 `Queue::submit` now borrows reusable descriptions and executes them in order on
 the CPU. See [submission](SUBMISSION.md) for completion, failure, and concurrency.
-Next introduce minimal draws. Command pools and allocator reuse follow real needs.
+Finished render scopes retain their framebuffer and each draw's vertex binding.
+Their exclusive encoder borrow enforces recording scope; unfinished scopes discard.
+See [rendering](RENDERING.md) for the fixed vertex layout and failure boundaries.
+Next introduce programmable stages. Command pools and allocator reuse follow real needs.
 
 ## Resources and memory
 
@@ -115,12 +119,12 @@ through completion. Cross-device work and overlapping copy ranges are checked.
 Ordered chains observe earlier copy writes; general execution dependencies remain future work.
 Multiple queues,
 barriers, semaphores, and richer timelines remain future decisions, not claimed
-features. Synchronization will be part of Phase 1's contract, not postponed until
-after a renderer exists.
+features. The synchronous contract already covers render scopes and framebuffer
+readback; it does not establish asynchronous hardware synchronization.
 
 ## Shader strategy and rendering
 
-Phase 2 starts with vertex positions and constant colour. Phase 3 introduces a
+Phase 2 now renders vertex positions with constant colour. Phase 3 introduces a
 small EX-owned representation of vertex and fragment operations with software
 execution. This avoids choosing an external shader format as EX's permanent
 contract. There is no shader type, instruction language, compiler, or interpreter
@@ -132,10 +136,11 @@ set architecture. Define stage inputs/outputs and invalid-program errors before
 expanding instruction coverage. External formats can be studied or supported
 later without replacing EX's semantics.
 
-The first graphics backend will progressively add framebuffer storage, vertex
-fetch, primitive assembly, viewport mapping, rasterization, constant fragment
-colour, and image output. Clipping limits must be documented and tested when
-rasterization is introduced. Depth/stencil, blending, programmable interpolation,
+The private reference module now implements vertex fetch, triangle assembly,
+four-plane 2D clipping, full-target viewport mapping, 1/256-pixel rasterization,
+and constant fragments. Image readback feeds an example-only PNG serializer.
+Each render command preflights all vertex data before changing its target.
+Depth/stencil, blending, programmable interpolation,
 and textures are later steps, not hidden claims of full GPU conformance.
 
 ## Validation and errors
@@ -148,10 +153,15 @@ poisoning. `CommandEncodeError` reports foreign source/destination resources,
 missing transfer roles, invalid ranges, overlap, and command reservation failures.
 `QueueSubmitError` reports foreign work or poisoned storage with a failed command
 index, buffer role, and label; it defines the completed prefix explicitly.
+Framebuffer errors describe invalid extents, allocation, readback size, pixel
+bounds, and poisoned image storage. RenderEncodeError describes binding/range
+misuse; RenderExecutionError identifies nonfinite live vertices, poisoned storage,
+or temporary reservation failure. QueueSubmitError::RenderFailed retains that
+cause and guarantees the failed render scope changed no target pixels.
 Keep checks enabled in all builds initially. Release performance policy is a
 future decision supported by measurement, not a reason to hide correctness bugs.
 
-Before adding rendering, define failures for unsupported usage, invalid draw
+Before adding programmable rendering, define failures for unsupported usage, invalid draw
 state, incompatible pipeline/attachment state, and resource hazards. Report the
 resource label/identity, operation, and expected condition.
 Only introduce error variants when an operation can actually produce them.

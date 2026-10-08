@@ -151,7 +151,7 @@ The intended workflow is:
 For example, a future pixel explanation could show that a character fragment
 reached a pixel but failed its depth test against a value written by a background
 draw. A reproduction could retain those draws and their relevant resources.
-This example requires rendering and depth support that EX does not yet have;
+This example requires depth and pixel-explanation support that EX does not yet have;
 it does not establish that the background draw was logically wrong.
 
 Witness must use the same EX command and execution contracts for managed and
@@ -283,10 +283,12 @@ buffers, checked synchronous CPU access, and device-bound buffer-copy recording
 with transfer/device/range/overlap validation and resource retention. Standalone
 prototype labels remain separate. Synchronous reference submission now executes
 copies in order, samples live bytes, serializes CPU access, and reports partial
-failure. This completes the minimum runtime phase. Rendering, shaders, managed
-planning, general execution hazard validation, EX Witness, EX Proof, and hardware
-drivers remain planned. The next milestone is the first software triangle,
-as defined by the roadmap and [submission contract](docs/SUBMISSION.md).
+failure. The minimum runtime phase and first software triangle phase are complete.
+Owned RGBA framebuffers, render scopes, fixed-layout vertices, clipped triangle
+rasterization, and PNG example output now work. Shaders/pipelines, managed planning,
+general execution hazard validation, EX Witness, EX Proof, and hardware drivers
+remain planned. Programmable rendering is next, as defined by the roadmap,
+[submission contract](docs/SUBMISSION.md), and [rendering contract](docs/RENDERING.md).
 
 ## Design commitments
 

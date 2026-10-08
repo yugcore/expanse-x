@@ -1,6 +1,6 @@
 # EX synchronous reference submission
 
-Status: implemented Phase 1 contract with source, example, and tests;
+Status: implemented Phase 1 contract, extended with Phase 2 render scopes;
 public names remain provisional. This is CPU execution, not hardware support.
 
 ## Design
@@ -8,7 +8,7 @@ public names remain provisional. This is CPU execution, not hardware support.
 Recording describes work; submission makes that work happen. The reference target
 needs a small, observable upload → record → submit → readback path before drawing.
 `Queue::submit(&self, commands: &CommandBuffer) -> Result<(), QueueSubmitError>`
-borrows finished work and executes its copies synchronously in recording order.
+borrows finished work and executes copies/render scopes synchronously in recording order.
 The command buffer remains inspectable and can be submitted again. Each submission
 reads live source bytes, including changes since recording and earlier copies.
 
@@ -25,8 +25,8 @@ establish their final scheduling API or force future hardware to execute on the 
 1. Reject a command buffer from another logical device, even if empty. This changes
    no bytes. Devices on the same adapter are still distinct.
 2. Acquire the device's shared execution gate.
-3. Execute copies in order, reading source contents at each operation.
-4. Return `Ok(())` after every copy has finished. Subsequent permitted CPU reads
+3. Execute commands in order, reading source contents at each operation.
+4. Return `Ok(())` after every operation has finished. Subsequent permitted CPU reads
    observe the results unless another ordered operation changes them first.
 
 Only the encoder can construct copies; devices, usages, ranges, and overlap were
@@ -38,7 +38,7 @@ Different allocations lock source and destination before changing any bytes.
 Zero-byte copies execute as no-ops without locking storage, even if it is poisoned.
 
 `QueueSubmitError` implements `Debug`, `Clone`, `PartialEq`, `Eq`, `Display`, and
-`std::error::Error` (no lower-level error source):
+`std::error::Error`:
 
 - `ForeignCommandBuffer`: finished work belongs to another device; nothing executed.
 - `StoragePoisoned { command_index: usize, role: CopyBufferRole, label: String }`:
@@ -46,6 +46,10 @@ Zero-byte copies execute as no-ops without locking storage, even if it is poison
   zero-based. Earlier commands completed; the failing copy changes no destination
   bytes, and later commands do not execute. There is no transaction or rollback.
   For an aliased copy the single lock is checked as `Source`.
+- `RenderFailed { command_index: usize, source: RenderExecutionError }`: that scope
+  changed no target pixels; earlier commands completed and later commands are
+  skipped. Vertex decoding/preflight precedes clears and rasterization. This
+  variant exposes its underlying Error::source. See [RENDERING.md](RENDERING.md).
 
 Retrying a failed buffer replays the earlier commands too. The borrowed command
 buffer still owns its resources after failure. Poisoned storage is not repaired.
@@ -53,7 +57,7 @@ Error-label allocation follows ordinary Rust OOM behavior.
 
 ## Concurrency and locks
 
-Every submission and valid public CPU read/write on one device uses the same
+Every submission, valid public CPU buffer access, and framebuffer readback uses the same
 gate for its entire operation. Queue clones and repeated `default_queue()` calls
 share it. Submissions cannot interleave; CPU accesses cannot enter between their
 commands. A CPU access may happen before or after a concurrently started submission;
@@ -87,6 +91,7 @@ devices, retained resources, and concurrent submissions/CPU access. Internal tes
 inject poisoned locks and exercise partial failure and gate recovery without adding
 a public fault-injection API. The `submit_copy` example demonstrates completion.
 
-No renderer, shader, GPU driver, asynchronous job, multiple queues, fence, semaphore,
+Fixed-function rendering now uses the same queue. No shader, GPU driver,
+asynchronous job, multiple queues, fence, semaphore,
 barrier, timeline, cancellation, or execution-backend ABI is implemented here.
 Completion covers the submitted command buffer, not future calls from other threads.

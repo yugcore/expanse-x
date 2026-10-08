@@ -93,6 +93,7 @@ impl Error for CommandEncodeError {
 #[non_exhaustive]
 pub enum Command {
     CopyBuffer(BufferCopy),
+    RenderPass(crate::RenderCommands),
 }
 
 /// A validated copy description retaining both allocations, not their old bytes.
@@ -123,14 +124,14 @@ impl BufferCopy {
     }
 }
 
-/// Records copies for one device, retaining the device and referenced buffers.
+/// Records copies and render scopes for one device, retaining referenced resources.
 ///
 /// There is no public constructor independent of a device. Finishing consumes
 /// the encoder without executing its work; use Queue::submit afterward.
 #[derive(Debug)]
 pub struct CommandEncoder {
-    device: Device,
-    commands: Vec<Command>,
+    pub(crate) device: Device,
+    pub(crate) commands: Vec<Command>,
 }
 
 impl Device {

@@ -1,6 +1,6 @@
 # EX current API contract
 
-Status: Phase 2 reference rendering complete; public names and behavior are provisional.
+Status: Phase 2 complete; Phase 3 shader foundation working. Public names and behavior are provisional.
 Applications depend on package `ex-api` and import its library as `ex`. The
 implementation remains in `expansex-core`; the public crate re-exports its types.
 This contract describes implemented behavior only. See [architecture](ARCHITECTURE.md)
@@ -138,6 +138,28 @@ See [RENDERING.md](RENDERING.md) for exact coverage, lifetime, and limits.
 cargo run -p ex-api --example software_triangle --locked --offline
 ```
 
+## Independent shader evaluation
+
+`Device::create_shader(ShaderDescriptor)` validates and owns a vertex or fragment
+program. All values are four-component f32 vectors; result register numbers are
+instruction indices. Input, Constant, Add, Multiply, Dot4, and Swizzle execute
+through `Shader::evaluate` with bounded local registers. Descriptors require at
+most 16 inputs and 256 instructions; vertex programs return position and up to
+16 varyings, fragment programs return one RGBA vector. Only earlier registers
+can be referenced. All constants, inputs, and evaluated results must be finite.
+
+Clones share immutable source and retain the creating device. Evaluation checks
+input count/numbers and arithmetic before returning owned raw vectors; errors
+return no partial output or resource mutation. Calls need no device gate and
+can execute concurrently. No buffer access, stage linking, projection, colour
+conversion, or rendering occurs here. ShaderCreateError retains validation or
+reservation sources; ShaderExecutionError reports invocation/numeric failures
+and retains output reservation errors. See [SHADERS.md](SHADERS.md).
+
+```text
+cargo run -p ex-api --example shader_evaluation --locked --offline
+```
+
 ## Standalone prototype labels
 
 `CommandRecorder` owns a `Vec<String>`. `new()` and `default()` start an empty
@@ -178,12 +200,16 @@ foreign work, concurrency, poisoning, partial failure, and gate recovery.
 Fifteen public rendering tests and four internal storage/lifecycle checks cover
 framebuffers, draws, clipping, edges, winding, degenerates, misuse, live sources,
 and failure effects. Executable rendering documentation and two render-scope
-compile-fail examples verify public usage. The workspace runs 79 tests, including
-documentation tests. Tests do not induce allocator OOM by exhausting host memory.
+compile-fail examples verify public usage. Nine public shader tests, two internal
+lifetime checks, and executable shader documentation verify operations, invalid
+programs, finite arithmetic, interfaces, owned source, identity, and concurrency.
+The workspace runs 91 tests, including documentation tests. Tests do not induce
+allocator OOM by exhausting host memory.
 
 ## Next contract
 
 Phases 1 and 2 are complete: copies and fixed-function triangles execute through
-EX and produce observable bytes/pixels. Next define EX shader representation,
-stage interfaces, pipeline validation, and programmable reference execution.
+EX and produce observable bytes/pixels. Shader representation, stage interfaces,
+and independent evaluation now work. Next connect them through pipeline
+validation, vertex layouts, interpolation, and programmable reference execution.
 There is no implemented execution-backend ABI yet.

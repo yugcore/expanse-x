@@ -4,6 +4,25 @@
 //! alongside owned reference buffers with explicit host access and validated
 //! buffer-copy recording, fixed-function triangles, and synchronous submission.
 //! This crate has no dependency on another graphics API.
+//! Vertex and fragment shader programs can also be validated and evaluated
+//! independently; pipeline binding and programmable drawing are the next step.
+//!
+//! ```
+//! use ex::{Instance, ShaderDescriptor, ShaderInstruction as Op, ShaderStage};
+//! let device = Instance::new().default_adapter().create_device();
+//! let shader = device.create_shader(ShaderDescriptor {
+//!     label: "translate position", stage: ShaderStage::Vertex, input_count: 1,
+//!     instructions: &[
+//!         Op::Input { location: 0 },
+//!         Op::Constant([0.25, 0.0, 0.0, 0.0]),
+//!         Op::Add { left: 0, right: 1 },
+//!     ],
+//!     outputs: &[2],
+//! })?;
+//! assert_eq!(shader.evaluate(&[[0.0, 0.5, 0.0, 1.0]])?,
+//!            vec![[0.25, 0.5, 0.0, 1.0]]);
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
 //!
 //! ```
 //! use ex::{BackendKind, Instance};
@@ -115,4 +134,6 @@ pub use expansex_core::{
     DrawTriangles, Framebuffer, FramebufferAccessError, FramebufferCreateError,
     FramebufferDescriptor, FramebufferDescriptorError, FramebufferFormat, HostAccess, Instance,
     Queue, QueueSubmitError, RenderCommands, RenderEncodeError, RenderExecutionError, RenderPass,
+    Shader, ShaderCreateError, ShaderDescriptor, ShaderExecutionError, ShaderInstruction,
+    ShaderStage, ShaderValidationError,
 };

@@ -1,7 +1,8 @@
 # EX architecture
 
-Status: Phase 2 complete. Owned buffers/framebuffers, validated recording,
-synchronous copy execution, and fixed-function software triangles work.
+Status: Phase 2 complete; Phase 3 shader foundation working. Owned resources,
+validated recording, synchronous copies, fixed-function software triangles,
+and independent vertex/fragment shader evaluation work.
 
 The [development roadmap](ROADMAP.md) tracks verified work, pending steps, and
 phase completion gates. This document describes architectural responsibilities.
@@ -38,11 +39,11 @@ not supply those capabilities. Hardware work is deferred.
 
 | Component | Implemented now | Next responsibility |
 | --- | --- | --- |
-| `ex-api`, library name `ex` | Owned buffers/framebuffers, render scopes, submission/readback, and PNG triangle example | Programmable pipeline entry points |
-| `expansex-core` | Ownership, allocation, copy/render command enum, and synchronous queue policy | Shader/pipeline contracts |
+| `ex-api`, library name `ex` | Resources, render scopes, submission/readback, independent shader evaluation, and public examples | Programmable pipeline entry points |
+| `expansex-core` | Ownership, allocation, recording, synchronous queue policy, and owned shaders | Pipeline contracts and shader integration |
 | Validation | Resource identity, usages, ranges, extents, render binding/ranges, finite vertices, and storage poison | Pipeline/stage compatibility and richer hazards |
 | Reference backend | Private reference.rs executes copies, fetches/clips vertices, and rasterizes triangles under the device gate | Shader interpretation and programmable fragments |
-| Shader subsystem | Absent | Small EX internal representation and interpreter |
+| Shader subsystem | shader.rs owns/validates EX vector instructions and interprets standalone invocations | Pipeline integration and interpolated stage inputs |
 
 The public crate solves a packaging problem: callers have one `ex` import while
 implementation responsibilities can grow behind it. The old core crate and its
@@ -124,11 +125,14 @@ readback; it does not establish asynchronous hardware synchronization.
 
 ## Shader strategy and rendering
 
-Phase 2 now renders vertex positions with constant colour. Phase 3 introduces a
-small EX-owned representation of vertex and fragment operations with software
-execution. This avoids choosing an external shader format as EX's permanent
-contract. There is no shader type, instruction language, compiler, or interpreter
-today. Arbitrary Rust closures are not assumed to be portable GPU shaders.
+Phase 2 renders vertex positions with constant colour. Phase 3 now supplies a
+small EX-owned representation of vertex and fragment operations with independent
+software evaluation. See [SHADERS.md](SHADERS.md) for bounded vector interfaces,
+acyclic registers, operations, ownership, finite arithmetic, and errors. It does
+not yet participate in recorded rendering. Pipeline linking and interpolation
+are next; no shader frontend or compiler exists. This keeps an external shader
+format from becoming EX's permanent contract. Arbitrary Rust closures are not
+assumed to be portable GPU shaders.
 
 Longer term: EX source -> frontend -> EX IR -> backend compiler -> target ISA or
 software execution. IR means intermediate representation; ISA means instruction

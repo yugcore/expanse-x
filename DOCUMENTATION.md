@@ -285,10 +285,12 @@ prototype labels remain separate. Synchronous reference submission now executes
 copies in order, samples live bytes, serializes CPU access, and reports partial
 failure. The minimum runtime phase and first software triangle phase are complete.
 Owned RGBA framebuffers, render scopes, fixed-layout vertices, clipped triangle
-rasterization, and PNG example output now work. Shaders/pipelines, managed planning,
-general execution hazard validation, EX Witness, EX Proof, and hardware drivers
-remain planned. Programmable rendering is next, as defined by the roadmap,
-[submission contract](docs/SUBMISSION.md), and [rendering contract](docs/RENDERING.md).
+rasterization, and PNG example output now work. Owned vertex/fragment shader
+programs and independent evaluation also work; see [the shader contract](docs/SHADERS.md).
+Pipeline binding and programmable rendering are next. Managed planning, general
+execution hazard validation, EX Witness, EX Proof, and hardware drivers remain
+planned, as defined by the roadmap, [submission contract](docs/SUBMISSION.md),
+and [rendering contract](docs/RENDERING.md).
 
 ## Design commitments
 

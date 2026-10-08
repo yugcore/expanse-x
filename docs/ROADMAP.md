@@ -22,7 +22,7 @@ renderer or a reason to postpone the programmable rendering milestone.
 | 0 — Repository foundation | Complete | Production workspace, public `ex` entry point, checks, contracts, and local Git history |
 | 1 — Minimum runtime | Complete | Ordered synchronous copy execution, readback, concurrency/failure contract, public example, and tests |
 | 2 — First software triangle | Complete | Public render scopes produce a verified PNG through EX's own clipped fixed-function rasterizer |
-| 3 — Programmability and pipeline milestone | Not started | Pending: EX shader representation and public pipeline produce a programmable triangle |
+| 3 — Programmability and pipeline milestone | In progress | Owned validated EX shaders and standalone CPU evaluation work; pipeline drawing is pending |
 | 4 — Modern GPU concepts | Deferred until earlier phases work | Per-feature implementation, validation, and executable evidence |
 | Future — Hardware drivers | Deferred | A selected target, viable driver interfaces, and demonstrated execution |
 
@@ -154,19 +154,31 @@ Evidence: [rendering contract](RENDERING.md), [private CPU executor](../crates/e
 [public triangle example](../crates/ex-api/examples/software_triangle.rs), and
 [rendering tests](../crates/ex-api/tests/reference_rendering.rs). The example writes
 a 512x384 PNG with 48,556 foreground pixels; centre/corner assertions and independent
-PNG decoding verify the output. The workspace passes 79 tests, including executable
-and compile-fail documentation. Floating clipping and 1/256-pixel coverage rules
-are documented; shaders, depth, blending, presentation, and hardware remain future work.
+PNG decoding verify the output. The Phase 2 milestone passed 79 tests, including
+executable and compile-fail documentation. Floating clipping and 1/256-pixel
+coverage rules are documented; programmable drawing, depth, blending,
+presentation, and hardware remain future work.
 
-## Phase 3 — Programmability and pipelines: not started
+## Phase 3 — Programmability and pipelines: in progress
 
-- [ ] Define a small EX-owned shader representation, stage interfaces, and invalid-program errors.
+- [x] Define a small EX-owned shader representation, stage interfaces, and invalid-program errors.
 - [ ] Interpret minimal vertex and fragment operations in the reference renderer.
 - [ ] Introduce actual graphics pipeline objects and the binding/layout contract they require.
 - [ ] Add explicit vertex attributes and interpolation with validated stage compatibility.
 - [ ] Add indexed drawing and index-buffer usage/range validation.
 - [ ] Exercise pipeline/vertex binding and programmable drawing through a public triangle example.
 - [ ] Test shader behavior, interpolation, indexed draws, and incompatible pipeline/input errors.
+
+Shader foundation: `Shader::evaluate` already interprets Input, Constant, Add,
+Multiply, Dot4, and Swizzle for independent vertex/fragment invocations. It
+validates acyclic register references and bounded vector interfaces, owns source,
+and reports invalid inputs and non-finite arithmetic. Renderer integration remains
+unchecked above because current draws still use the Phase 2 fixed-function path.
+Evidence: [shader contract](SHADERS.md), [implementation](../crates/expansex-core/src/shader.rs),
+[public example](../crates/ex-api/examples/shader_evaluation.rs), and
+[nine public shader tests](../crates/ex-api/tests/shader_evaluation.rs).
+The shader foundation passes 91 workspace tests, including documentation tests.
+Next: validated graphics pipelines, vertex layouts, and programmable rendering.
 
 **First major graphics milestone:** the application creates a device, vertices,
 and graphics pipeline; records render scope, bindings, and draw; submits through

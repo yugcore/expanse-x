@@ -10,7 +10,7 @@ and explicit control levels, Rust-based ownership, and validated execution.
 Build the explicit core first; managed planning is a future layer over the same
 resources and execution rules.
 
-## Current status: Phase 2 complete — the first software triangle
+## Current status: Phase 2 complete; Phase 3 shader foundation working
 
 EX now discovers its built-in software adapter, creates independent logical
 devices, and returns default queue handles with shared ownership. The workspace
@@ -21,8 +21,10 @@ Queue submission executes finished copies synchronously in order on the CPU,
 with whole-submission serialization against CPU access and defined partial failure.
 EX now owns RGBA framebuffers and records clear/vertex-binding/triangle-list scopes.
 Its own CPU rasterizer clips 2D geometry, samples pixel centres, and writes constant
-fragment colours. Applications import the `ex-api` package as `ex`. Programmable
-shaders and pipelines are Phase 3; hardware drivers remain deferred.
+fragment colours. Applications import the `ex-api` package as `ex`. EX vertex and
+fragment programs now have owned validated instructions and independent CPU
+evaluation. Pipeline binding and programmable rendering are next; hardware
+drivers remain deferred.
 
 ```text
 cargo run -p ex-api --example software_triangle --locked --offline
@@ -35,6 +37,14 @@ example code; EX produces the pixels. `submit_copy` demonstrates ordered copy/re
 `record_copy` separately verifies that recording/finishing never execute work.
 `buffer_roundtrip` demonstrates CPU access and denied writes; `discover` shows
 device/queue ownership; `api_draft` retains the standalone label-only prototype.
+
+```text
+cargo run -p ex-api --example shader_evaluation --locked --offline
+```
+
+This example translates a vertex position and transforms a fragment colour
+through EX's interpreter. It evaluates individual invocations; it does not yet
+connect shaders to the triangle rasterizer. See [the shader contract](docs/SHADERS.md).
 
 ## Build and check
 
@@ -64,7 +74,7 @@ toolchain follows stable releases; it is not a pinned compiler-version guarantee
 | `DOCUMENTATION.md` | Project design and commitments |
 | `api.md` | Complete catalog of currently exposed public APIs |
 | `crates/ex-api/` | Public Rust entry point, imported as `ex`; runnable example |
-| `crates/expansex-core/` | Ownership, buffers/framebuffers, recording/submission, and private reference rasterizer |
+| `crates/expansex-core/` | Ownership, resources, recording/submission, shader interpreter, and private reference rasterizer |
 | `docs/` | Current EX contracts, architecture, assessment, and conventions |
 | `scripts/` | Repeatable production checks |
 
@@ -74,8 +84,9 @@ The [development roadmap](docs/ROADMAP.md) is the current progress tracker and
 defines completion checks for each phase. Phases 0, 1, and 2 are complete. Discovery,
 owned resources, copies, fixed-function drawing, and synchronous readback now work.
 
-Phase 2 produces the first software triangle; Phase 3 adds programmable shaders
-and pipelines to complete the original graphics milestone. Modern GPU features
+Phase 2 produces the first software triangle; Phase 3 has started with shader
+representation and evaluation. Pipeline objects and programmable drawing will
+complete the original graphics milestone. Modern GPU features
 and hardware drivers follow working reference semantics, one capability at a time.
 
 Read the [starting assessment](docs/ASSESSMENT.md),
@@ -84,5 +95,6 @@ Read the [starting assessment](docs/ASSESSMENT.md),
 [object ownership contract](docs/OBJECT-MODEL.md), and
 [buffer contract](docs/BUFFERS.md), [copy-recording contract](docs/COMMANDS.md), and
 [submission contract](docs/SUBMISSION.md) and [rendering contract](docs/RENDERING.md).
+The [shader contract](docs/SHADERS.md) describes the working interpreter and its limits.
 See [coding conventions](docs/CONTRIBUTING.md)
 for implementation and commit policy.

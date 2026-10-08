@@ -299,6 +299,28 @@ mod tests {
     }
 
     #[test]
+    fn shaders_retain_device_until_the_final_shader_clone_drops() {
+        use crate::{ShaderDescriptor, ShaderInstruction, ShaderStage};
+        let device = Instance::new().default_adapter().create_device();
+        let state = Arc::downgrade(&device.state);
+        let shader = device
+            .create_shader(ShaderDescriptor {
+                label: "device lifetime",
+                stage: ShaderStage::Fragment,
+                input_count: 0,
+                instructions: &[ShaderInstruction::Constant([1.0; 4])],
+                outputs: &[0],
+            })
+            .unwrap();
+        let retained = shader.clone();
+        drop(device);
+        drop(shader);
+        assert!(state.upgrade().is_some());
+        drop(retained);
+        assert!(state.upgrade().is_none());
+    }
+
+    #[test]
     fn buffers_retain_device_state_until_the_final_buffer_handle_drops() {
         use crate::{BufferDescriptor, BufferUsage, HostAccess};
 

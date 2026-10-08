@@ -2,8 +2,8 @@
 
 Updated: 2026-10-08. Scope: every currently exported EX type, inherent method,
 public field, enum variant, and explicit standard trait implementation.
-There are **33 public types and 62 inherent methods**. These are provisional
-Phase 2 APIs, not a completed or stable v1 specification.
+There are **40 public types and 73 inherent methods**. These are provisional
+APIs through the Phase 3 shader foundation, not a completed or stable v1 specification.
 
 Applications depend on package `ex-api` and import its library as `ex`:
 
@@ -28,9 +28,11 @@ currently exported.
 | Copy recording | [CommandEncoder](#commandencoder), [CommandBuffer](#commandbuffer), [Command](#command), [BufferCopy](#buffercopy), [CopyBufferRole](#copybufferrole) |
 | Framebuffers | [Framebuffer](#framebuffer), [FramebufferDescriptor](#framebufferdescriptor), [FramebufferFormat](#framebufferformat) |
 | Rendering | [RenderPass](#renderpass), [RenderCommands](#rendercommands), [DrawTriangles](#drawtriangles) |
+| Shaders | [Shader](#shader), [ShaderDescriptor](#shaderdescriptor), [ShaderStage](#shaderstage), [ShaderInstruction](#shaderinstruction) |
 | Prototype labels | [CommandRecorder](#commandrecorder), [DebugMarkerBuffer](#debugmarkerbuffer) |
 | Errors | [BufferDescriptorError](#bufferdescriptorerror), [BufferCreateError](#buffercreateerror), [BufferAccessError](#bufferaccesserror), [CommandEncodeError](#commandencodeerror), [QueueSubmitError](#queuesubmiterror) |
 | Rendering errors | [FramebufferDescriptorError](#framebufferdescriptorerror), [FramebufferCreateError](#framebuffercreateerror), [FramebufferAccessError](#framebufferaccesserror), [RenderEncodeError](#renderencodeerror), [RenderExecutionError](#renderexecutionerror) |
+| Shader errors | [ShaderValidationError](#shadervalidationerror), [ShaderCreateError](#shadercreateerror), [ShaderExecutionError](#shaderexecutionerror) |
 
 Signatures below use the listed type as the meaning of `Self`. Omitted return
 types mean `()`. References borrow their values; returned handles own their
@@ -94,7 +96,8 @@ External matches need a fallback arm because more variants can be added.
 implemented across [object.rs](crates/expansex-core/src/object.rs),
 [buffer/resource.rs](crates/expansex-core/src/buffer/resource.rs),
 [command.rs](crates/expansex-core/src/command.rs), and
-[framebuffer.rs](crates/expansex-core/src/framebuffer.rs).
+[framebuffer.rs](crates/expansex-core/src/framebuffer.rs), and
+[shader.rs](crates/expansex-core/src/shader.rs).
 
 | Method | Behavior |
 | --- | --- |
@@ -104,6 +107,7 @@ implemented across [object.rs](crates/expansex-core/src/object.rs),
 | `Device::create_buffer(&self, descriptor: BufferDescriptor<'_>) -> Result<Buffer, BufferCreateError>` | Validate and allocate owned zero-initialized reference storage. |
 | `Device::create_command_encoder(&self) -> CommandEncoder` | Create an empty encoder bound to this device. |
 | `Device::create_framebuffer(&self, descriptor: FramebufferDescriptor<'_>) -> Result<Framebuffer, FramebufferCreateError>` | Validate extents/format and allocate zeroed RGBA reference pixels. |
+| `Device::create_shader(&self, descriptor: ShaderDescriptor<'_>) -> Result<Shader, ShaderCreateError>` | Validate and own immutable EX instruction source; no pipeline binding or rendering. |
 
 Cloning retains the same domain; `Adapter::create_device()` creates a new one.
 Discovery/device/encoder constructors do not expose a recoverable allocation
@@ -166,7 +170,7 @@ descriptor; transfer and Vertex roles currently participate in recording/executi
 | `BufferUsage::TransferDestination` | Required destination role for recorded copies. |
 
 A usage flag alone executes no work. Copies and fixed-function draws execute on submission;
-shaders remain planned.
+Shader evaluation is independent of buffers; programmable draws remain planned.
 
 ### HostAccess
 
@@ -374,6 +378,77 @@ recording retains live source bytes, not a snapshot.
 | `DrawTriangles::vertices(&self) -> Range<u32>` | Return an owned copy of the vertex range. |
 | `DrawTriangles::colour(&self) -> [u8; 4]` | Constant fragment RGBA; replaces covered pixels without blending. |
 
+## Shader representation and evaluation
+
+Source: [shader.rs](crates/expansex-core/src/shader.rs).
+Contract: [SHADERS.md](docs/SHADERS.md). These programs execute independently
+through `evaluate`; current render scopes still use fixed-function triangles.
+All values are four-component f32 vectors. Register numbers are instruction
+indices, and all operands must refer to earlier instructions.
+
+### ShaderStage
+
+`ex::ShaderStage` has no inherent methods.
+
+| Variant | Interface meaning |
+| --- | --- |
+| `ShaderStage::Vertex` | First output is homogeneous clip position x,y,z,w; remaining outputs are varyings for future pipelines. |
+| `ShaderStage::Fragment` | Exactly one RGBA output vector. |
+
+### ShaderInstruction
+
+`ex::ShaderInstruction` has no inherent methods. Each instruction creates one
+result vector. Constants must be finite; references are register indices.
+
+| Variant and public payload | Operation |
+| --- | --- |
+| `ShaderInstruction::Input { location: u32 }` | Read an input vector with location less than input_count. |
+| `ShaderInstruction::Constant([f32; 4])` | Literal vector. |
+| `ShaderInstruction::Add { left: u32, right: u32 }` | Componentwise addition. |
+| `ShaderInstruction::Multiply { left: u32, right: u32 }` | Componentwise multiplication. |
+| `ShaderInstruction::Dot4 { left: u32, right: u32 }` | Sum x/y/z/w products in order, broadcast result to all four lanes. |
+| `ShaderInstruction::Swizzle { value: u32, components: [u8; 4] }` | Select four source lanes; each component is in 0..4, repetition allowed. |
+
+### ShaderDescriptor
+
+`ex::ShaderDescriptor<'a>` borrows source; creation copies it into owned state.
+
+| Public field | Type | Meaning |
+| --- | --- | --- |
+| `label` | `&'a str` | Debug label; empty allowed. |
+| `stage` | `ShaderStage` | Vertex or fragment interface. |
+| `input_count` | `u32` | Exact invocation input count, at most 16. |
+| `instructions` | `&'a [ShaderInstruction]` | At most 256 instructions in execution order. |
+| `outputs` | `&'a [u32]` | Register indices in return order, duplicates allowed; vertex 1..=17, fragment exactly 1. |
+
+| Method | Behavior |
+| --- | --- |
+| `ShaderDescriptor::validate(&self) -> Result<(), ShaderValidationError>` | Check input/instruction limits, stage output count, each instruction's validity, then output indices; no allocation or execution. |
+
+### Shader
+
+`ex::Shader` has private fields. Create through `Device::create_shader`.
+Clones share immutable source and identity and retain the creating device.
+
+| Method | Behavior |
+| --- | --- |
+| `Shader::label(&self) -> &str` | Borrow owned label. |
+| `Shader::stage(&self) -> ShaderStage` | Stage interface meaning. |
+| `Shader::input_count(&self) -> u32` | Exact number of input vectors required. |
+| `Shader::instructions(&self) -> &[ShaderInstruction]` | Borrow immutable instructions. |
+| `Shader::outputs(&self) -> &[u32]` | Borrow output register indices. |
+| `Shader::device(&self) -> Device` | Retain creating device. |
+| `Shader::belongs_to(&self, device: &Device) -> bool` | Compare device identity. |
+| `Shader::is_same(&self, other: &Self) -> bool` | Compare shared program identity, independently of source equality. |
+| `Shader::evaluate(&self, inputs: &[[f32; 4]]) -> Result<Vec<[f32; 4]>, ShaderExecutionError>` | Interpret one invocation and return raw vectors in output order. |
+
+Evaluation checks exact input count, then finite inputs, then every instruction
+result, including unused inputs/results. It uses f32 arithmetic and bounded local
+registers; output reservation is fallible. No resource is changed and no partial
+output is returned on error. Calls can run repeatedly or concurrently without
+the device gate. No clipping, interpolation, projection, colour clamping, byte
+conversion, stage linking, or queue submission occurs.
+
 ## Standalone prototype labels
 
 Source: [markers.rs](crates/expansex-core/src/command/markers.rs).
@@ -532,10 +607,41 @@ Source: [render.rs](crates/expansex-core/src/render.rs).
 All expected errors occur before that render scope changes target pixels. The
 gate prevents concurrent uploads from changing sources during preflight/drawing.
 
+### ShaderValidationError
+
+Source: [shader.rs](crates/expansex-core/src/shader.rs). All variants have no source.
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `ShaderValidationError::TooManyInputs { count: u32, maximum: u32 }` | More than 16 input vectors. |
+| `ShaderValidationError::TooManyInstructions { count: usize, maximum: usize }` | More than 256 instructions. |
+| `ShaderValidationError::InvalidOutputCount { stage: ShaderStage, count: usize }` | Vertex needs 1..=17 outputs; fragment needs exactly 1. |
+| `ShaderValidationError::InvalidInputLocation { instruction: usize, location: u32, input_count: u32 }` | Input location is outside declared inputs. |
+| `ShaderValidationError::NonFiniteConstant { instruction: usize }` | Constant contains NaN or infinity. |
+| `ShaderValidationError::InvalidOperand { instruction: usize, operand: u32 }` | Operand is not an earlier register. |
+| `ShaderValidationError::InvalidSwizzle { instruction: usize, lane: usize, component: u8 }` | Selected component is outside 0..4. |
+| `ShaderValidationError::InvalidOutput { output: usize, register: u32, instruction_count: usize }` | Output references a missing register. |
+
+### ShaderCreateError
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `ShaderCreateError::InvalidDescriptor(ShaderValidationError)` | Invalid source/interface; source retained. |
+| `ShaderCreateError::AllocationFailed { source: TryReserveError }` | Owned source or label reservation failed; source retained. |
+
+### ShaderExecutionError
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `ShaderExecutionError::WrongInputCount { expected: u32, actual: usize }` | Exact input count mismatch. |
+| `ShaderExecutionError::NonFiniteInput { location: usize }` | Input has a non-finite component. |
+| `ShaderExecutionError::NonFiniteResult { instruction: usize }` | Instruction produced a non-finite vector. |
+| `ShaderExecutionError::AllocationFailed { source: TryReserveError }` | Returning owned outputs failed; only this variant retains a source. |
+
 ## Explicit standard trait support
 
 This lists implemented/derived traits, not Rust's blanket implementations or
-auto traits. They are separate from the 62 inherent methods above.
+auto traits. They are separate from the 73 inherent methods above.
 
 | Type | Traits |
 | --- | --- |
@@ -572,17 +678,24 @@ auto traits. They are separate from the 62 inherent methods above.
 | `DrawTriangles` | `Debug` |
 | `RenderEncodeError` | `Debug`, `Display`, `Error` |
 | `RenderExecutionError` | `Debug`, `Clone`, `PartialEq`, `Eq`, `Display`, `Error` |
+| `ShaderStage` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `ShaderInstruction` | `Debug`, `Clone`, `Copy`, `PartialEq` |
+| `ShaderDescriptor<'a>` | `Debug`, `Clone`, `Copy` |
+| `Shader` | `Debug`, `Clone` |
+| `ShaderValidationError` | `Debug`, `Clone`, `PartialEq`, `Eq`, `Display`, `Error` |
+| `ShaderCreateError` | `Debug`, `Display`, `Error` |
+| `ShaderExecutionError` | `Debug`, `Display`, `Error` |
 
 Standard trait operations include:
 
 | Operation | Implementing types / behavior |
 | --- | --- |
-| `Clone::clone(&self) -> Self` | Types marked `Clone` above. Device/queue/buffer/framebuffer handles retain shared state; `AdapterInfo` clones its owned metadata. |
+| `Clone::clone(&self) -> Self` | Types marked `Clone` above. Device/queue/buffer/framebuffer/shader handles retain shared state; `AdapterInfo` clones its owned metadata. |
 | `Default::default() -> Self` | `Instance`, `CommandRecorder`; same behavior as their `new()`. |
-| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 33 types; buffer/framebuffer formatting exposes metadata rather than stored bytes/pixels. |
+| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 40 types; buffer/framebuffer formatting exposes metadata rather than stored bytes/pixels. |
 | `PartialEq::eq(&self, other: &Self) -> bool` | Types marked `PartialEq`; handle identity instead uses explicit `is_same`/`belongs_to` methods. |
-| `Display::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | Ten error types and `CopyBufferRole`. |
-| `Error::source(&self) -> Option<&(dyn std::error::Error + 'static)>` | All ten error types. Buffer/framebuffer creation retain descriptor/reservation sources, command/render recording retain reservation sources, and submission RenderFailed retains RenderExecutionError. Other current variants return None. |
+| `Display::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | Thirteen error types and `CopyBufferRole`. |
+| `Error::source(&self) -> Option<&(dyn std::error::Error + 'static)>` | All thirteen error types. Buffer/framebuffer/shader creation retain descriptor/reservation sources, command/render recording and shader evaluation retain reservation sources, and submission RenderFailed retains RenderExecutionError. Other current variants return None. |
 
 Other inherited standard trait methods, such as `clone_from` and `ne`, follow
 their standard-library contracts. Error trait objects also support standard
@@ -592,7 +705,8 @@ their standard-library contracts. Error trait objects also support standard
 ## Not implemented
 
 There are currently no public APIs for asynchronous submission/completion, textures,
-samplers, shaders, graphics/compute pipelines, indexed/instanced draws, dispatch,
+samplers, shader frontend/compiler, graphics/compute pipelines, programmable
+draws/interpolation, indexed/instanced draws, dispatch,
 presentation, mapped memory, hardware discovery/drivers, managed planning,
 EX Witness, or EX Proof. Resource branching is an unaccepted discussion idea,
 not an implemented or locked API.

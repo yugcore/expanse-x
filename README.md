@@ -55,6 +55,7 @@ toolchain follows stable releases; it is not a pinned compiler-version guarantee
 | Path | Responsibility |
 | --- | --- |
 | `DOCUMENTATION.md` | Project design and commitments |
+| `api.md` | Complete catalog of currently exposed public APIs |
 | `crates/ex-api/` | Public Rust entry point, imported as `ex`; runnable example |
 | `crates/expansex-core/` | Discovery, ownership, reference buffers, and copy recording |
 | `docs/` | Current EX contracts, architecture, assessment, and conventions |
@@ -71,7 +72,8 @@ and pipelines to complete the original graphics milestone. Modern GPU features
 and hardware drivers follow working reference semantics, one capability at a time.
 
 Read the [starting assessment](docs/ASSESSMENT.md),
-[architecture](docs/ARCHITECTURE.md), [current API contract](docs/API-DRAFT.md),
+[architecture](docs/ARCHITECTURE.md), [public API catalog](api.md),
+[current API contract](docs/API-DRAFT.md),
 [object ownership contract](docs/OBJECT-MODEL.md), and
 [buffer contract](docs/BUFFERS.md) and [copy-recording contract](docs/COMMANDS.md).
 See [coding conventions](docs/CONTRIBUTING.md)

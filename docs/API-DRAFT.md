@@ -6,6 +6,10 @@ implementation remains in `expansex-core`; the public crate re-exports its types
 This contract describes implemented behavior only. See [architecture](ARCHITECTURE.md)
 for planned runtime responsibilities.
 
+The [public API catalog](../api.md) lists every implemented public type, method,
+field, enum variant, and explicit standard trait implementation. This document
+describes their behavioral contracts.
+
 ## Discovery and logical ownership
 
 `Instance::new()` exposes one built-in software reference adapter via `adapters()`

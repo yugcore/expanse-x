@@ -31,6 +31,10 @@
   misuse; use public API examples/integration checks across subsystem boundaries.
   Documentation examples must agree with executable behavior.
 
+- Keep the root [API catalog](../api.md) current when public exports, signatures,
+  fields, variants, traits, or implemented status change. List planned APIs
+  separately from the implemented inventory and keep topic contracts consistent.
+
 - Review the staged diff, stage explicit paths, and make a local commit for each
   coherent change. Use short messages such as `get command recording working`.
   Preserve history; publishing or hardware support is not implied by a commit.

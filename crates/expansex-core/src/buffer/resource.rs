@@ -317,4 +317,47 @@ mod tests {
             Err(BufferAccessError::StoragePoisoned { .. })
         ));
     }
+
+    #[test]
+    fn recorded_copies_retain_storage_until_finished_work_drops() {
+        let device = Instance::new().default_adapter().create_device();
+        let request = BufferDescriptor {
+            label: "recorded allocation",
+            size: 4,
+            usages: &[
+                BufferUsage::TransferSource,
+                BufferUsage::TransferDestination,
+            ],
+            host_access: HostAccess::None,
+        };
+        let source = device.create_buffer(request).unwrap();
+        let destination = device.create_buffer(request).unwrap();
+        let source_state = Arc::downgrade(&source.state);
+        let destination_state = Arc::downgrade(&destination.state);
+        let mut encoder = device.create_command_encoder();
+        encoder.copy_buffer(&source, 0, &destination, 0, 4).unwrap();
+        drop(source);
+        drop(destination);
+        drop(device);
+        assert!(source_state.upgrade().is_some());
+        assert!(destination_state.upgrade().is_some());
+        let commands = encoder.finish();
+        assert!(source_state.upgrade().is_some());
+        assert!(destination_state.upgrade().is_some());
+        drop(commands);
+        assert!(source_state.upgrade().is_none());
+        assert!(destination_state.upgrade().is_none());
+    }
+
+    #[test]
+    fn rejected_copy_does_not_retain_buffers() {
+        let buffer = buffer(); // Storage role, so recording must reject it.
+        let state = Arc::downgrade(&buffer.state);
+        let mut encoder = buffer.device().create_command_encoder();
+        let error = encoder.copy_buffer(&buffer, 0, &buffer, 0, 1).unwrap_err();
+        drop(buffer);
+        assert!(state.upgrade().is_none());
+        assert!(encoder.commands().is_empty());
+        assert!(error.to_string().contains("TransferSource"));
+    }
 }

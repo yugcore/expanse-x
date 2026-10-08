@@ -279,11 +279,12 @@ justifies them. Do not create two API trees, empty backend crates, or a complete
 theoretical scheduler before work can execute.
 
 Today EX implements software discovery, logical device/queue ownership, owned
-buffers, checked synchronous CPU access, and label-only command recording.
-Executable copies, submission, rendering, shaders, managed planning, GPU hazard
-validation, EX Witness, EX Proof, and hardware drivers are not implemented. The
-next step remains recorded buffer copies and queue submission, as defined by
-the roadmap.
+buffers, checked synchronous CPU access, and device-bound buffer-copy recording
+with transfer/device/range/overlap validation and resource retention. Standalone
+prototype labels remain separate. Copy execution, submission, rendering, shaders,
+managed planning, execution hazard validation, EX Witness, EX Proof, and hardware
+drivers are not implemented. The next step is queue submission and copy execution,
+as defined by the roadmap.
 
 ## Design commitments
 

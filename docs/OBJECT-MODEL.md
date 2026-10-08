@@ -104,8 +104,10 @@ later; this provisional API is not frozen.
 Buffers and explicit CPU copies now exist under the separate buffer contract;
 buffer creation is fallible and retains this device ownership domain. No renderer,
 command executor, queue processor, or submission exists yet. `CommandRecorder`
-remains the independent label-only prototype. The next step is an executable
-recorded buffer copy with usage validation and a submission/completion contract.
+remains the independent label-only prototype, returning `DebugMarkerBuffer`.
+Device-bound copy recording now exists under the [command contract](COMMANDS.md),
+with usage/range/device validation and retained resources. The next step is queue
+execution and its submission/completion contract.
 
 ## Verification
 

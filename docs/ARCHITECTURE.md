@@ -1,7 +1,7 @@
 # EX architecture
 
-Status: Phase 1 buffer storage. Discovery, logical ownership, reference allocation,
-CPU copies, and label recording work; recorded command execution is still planned.
+Status: Phase 1 copy recording. Discovery, ownership, reference allocation, CPU
+access, and validated copy recording work; command execution is still planned.
 
 The [development roadmap](ROADMAP.md) tracks verified work, pending steps, and
 phase completion gates. This document describes architectural responsibilities.
@@ -38,9 +38,9 @@ not supply those capabilities. Hardware work is deferred.
 
 | Component | Implemented now | Next responsibility |
 | --- | --- | --- |
-| `ex-api`, library name `ex` | Public discovery, buffers, CPU access, and prototype recording; runnable examples | Executable command/submission entry point |
-| `expansex-core` | Software discovery; object/resource identity and retention; allocation; CPU copies; marker recording | Recorded copies and submission contracts |
-| Validation | Descriptor, capacity, host-access, range, and poisoned-storage errors | Device-side usage/order/ownership/hazard checks as commands exist |
+| `ex-api`, library name `ex` | Public discovery, buffers, CPU access, and copy recording; runnable examples | Submission entry point |
+| `expansex-core` | Discovery, ownership, allocation, CPU access, and EX command enum with retained copy resources | Reference execution and submission contracts |
+| Validation | Descriptor, capacity, host access, ranges, transfer roles, recording device/overlap, and poisoned CPU storage | Submission ownership, execution failures, and richer hazards |
 | Reference backend | Owned system-memory buffer storage in core; no command executor | Execute EX's recorded operations on CPU; split working execution code when justified |
 | Shader subsystem | Absent | Small EX internal representation and interpreter |
 
@@ -54,7 +54,8 @@ and dependency direction justify it.
 ## Object model
 
 Today `BufferDescriptor` describes requested bytes and roles; it is not a buffer.
-`CommandRecorder` owns labels; `CommandBuffer` owns the finished label sequence.
+`CommandEncoder` and `CommandBuffer` retain one device and a validated copy
+sequence. The legacy `CommandRecorder` returns a separate `DebugMarkerBuffer`.
 Public names are provisional. See [the current contract](API-DRAFT.md).
 
 `Instance` now discovers one adapter named `EX Reference (software)`.
@@ -73,15 +74,16 @@ contracts instead of reproducing every object from another graphics API.
 
 ## Command model
 
-Recording and execution are distinct. Current `finish(self)` consumes the
-recorder; Rust rejects subsequent use. The finished object is inspectable and
-immutable through the public API. It has no submission method.
+Recording and execution are distinct. `finish(self)` consumes the device-bound
+encoder; Rust rejects subsequent use. Its finished EX-owned command sequence is
+inspectable and immutable, while referenced buffer contents remain live. Copy
+recording validates both devices, transfer roles, checked ranges, and same-buffer
+overlap. See [the recording contract](COMMANDS.md), including the provisional
+rename of the prototype's finished labels to `DebugMarkerBuffer`.
 
-In Phase 1 introduce one executable CPU operation, then connect an encoder to
-queue submission. Its command representation must belong to EX and be recordable
-independently of execution. Define valid ordering and how recorded references
-keep resources alive before introducing draws. Command pools and allocator reuse
-will be introduced only when allocation/reuse requirements warrant them.
+Next connect these descriptions to queue submission and EX's CPU executor.
+Define execution order, visibility, failures, and host access before introducing
+draws. Command pools and allocator reuse follow demonstrated requirements.
 
 ## Resources and memory
 
@@ -107,9 +109,10 @@ implementation can establish those rules, but asynchronous hardware must not be
 forced by accident into the same blocking implementation.
 
 Rust moving a handle does not prove a GPU has finished reading its allocation.
-Recorded and submitted work must preserve needed storage until completion.
-Cross-device resource checks, overlapping accesses, and read/write dependencies
-must become testable when executable operations are added. Multiple queues,
+Recorded work now retains its resources; submitted work must preserve them until
+completion. Cross-device resources and overlapping ranges within a copy are
+already checked. Dependencies between executed operations remain future work.
+Multiple queues,
 barriers, semaphores, and richer timelines remain future decisions, not claimed
 features. Synchronization will be part of Phase 1's contract, not postponed until
 after a renderer exists.
@@ -140,7 +143,8 @@ and textures are later steps, not hidden claims of full GPU conformance.
 `std::error::Error`. Current messages explain zero size and missing usage.
 `BufferCreateError` preserves descriptor/reservation sources; `BufferAccessError`
 identifies resource labels, forbidden CPU access, invalid ranges, and storage
-poisoning. No device-side command usage is validated before commands exist.
+poisoning. `CommandEncodeError` reports foreign source/destination resources,
+missing transfer roles, invalid ranges, overlap, and command reservation failures.
 Keep checks enabled in all builds initially. Release performance policy is a
 future decision supported by measurement, not a reason to hide correctness bugs.
 

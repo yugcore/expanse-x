@@ -10,22 +10,24 @@ and explicit control levels, Rust-based ownership, and validated execution.
 Build the explicit core first; managed planning is a future layer over the same
 resources and execution rules.
 
-## Current status: Phase 1 — owned buffers and CPU access
+## Current status: Phase 1 — validated buffer-copy recording
 
 EX now discovers its built-in software adapter, creates independent logical
 devices, and returns default queue handles with shared ownership. The workspace
 also allocates owned reference buffers with explicit CPU upload/readback
-permissions, bounds checks, and shared storage. Applications import the `ex-api`
-package as `ex`. Queue submission, shaders, and rendering are not implemented yet.
+permissions, bounds checks, and shared storage. Device-bound encoders now record
+validated buffer copies and retain their resources without executing them.
+Applications import the `ex-api` package as `ex`. Queue submission, shaders, and
+rendering are not implemented yet.
 
 ```text
-cargo run -p ex-api --example buffer_roundtrip --locked --offline
+cargo run -p ex-api --example record_copy --locked --offline
 ```
 
-The example allocates bytes, writes a partial range, reads it after parent handles
-drop, and prints a denied CPU-write error. The `discover` example demonstrates
-software discovery and device/queue ownership; `api_draft` demonstrates
-descriptions and label-only recording.
+The example uploads bytes, records a partial copy, and verifies that the
+destination remains unchanged after finishing and dropping original handles.
+`buffer_roundtrip` demonstrates CPU access and denied writes; `discover` shows
+device/queue ownership; `api_draft` retains the standalone label-only prototype.
 
 ## Build and check
 
@@ -54,7 +56,7 @@ toolchain follows stable releases; it is not a pinned compiler-version guarantee
 | --- | --- |
 | `DOCUMENTATION.md` | Project design and commitments |
 | `crates/ex-api/` | Public Rust entry point, imported as `ex`; runnable example |
-| `crates/expansex-core/` | Discovery, object ownership, reference buffers, and label recording |
+| `crates/expansex-core/` | Discovery, ownership, reference buffers, and copy recording |
 | `docs/` | Current EX contracts, architecture, assessment, and conventions |
 | `scripts/` | Repeatable production checks |
 
@@ -62,7 +64,7 @@ toolchain follows stable releases; it is not a pinned compiler-version guarantee
 
 The [development roadmap](docs/ROADMAP.md) is the current progress tracker and
 defines completion checks for each phase. Phase 0 is complete. Phase 1 has
-discovery and owned buffers; recorded copies and queue submission are next.
+discovery, owned buffers, and recorded copies; queue submission is next.
 
 Phase 2 targets the first software triangle; Phase 3 adds programmable shaders
 and pipelines to complete the original graphics milestone. Modern GPU features
@@ -71,5 +73,6 @@ and hardware drivers follow working reference semantics, one capability at a tim
 Read the [starting assessment](docs/ASSESSMENT.md),
 [architecture](docs/ARCHITECTURE.md), [current API contract](docs/API-DRAFT.md),
 [object ownership contract](docs/OBJECT-MODEL.md), and
-[buffer contract](docs/BUFFERS.md). See [coding conventions](docs/CONTRIBUTING.md)
+[buffer contract](docs/BUFFERS.md) and [copy-recording contract](docs/COMMANDS.md).
+See [coding conventions](docs/CONTRIBUTING.md)
 for implementation and commit policy.

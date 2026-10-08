@@ -1,6 +1,6 @@
 # EX current API contract
 
-Status: Phase 1 buffer storage; public names and behavior are provisional.
+Status: Phase 1 buffer-copy recording; public names and behavior are provisional.
 Applications depend on package `ex-api` and import its library as `ex`. The
 implementation remains in `expansex-core`; the public crate re-exports its types.
 This contract describes implemented behavior only. See [architecture](ARCHITECTURE.md)
@@ -63,11 +63,34 @@ limits, and the intentional new descriptor field.
 cargo run -p ex-api --example buffer_roundtrip --locked --offline
 ```
 
-## Recording and finishing
+## Device-bound copy recording
+
+`device.create_command_encoder()` returns an owned `CommandEncoder` in that
+device's domain. `copy_buffer(&source, source_offset, &destination,
+destination_offset, size)` returns `Result<(), CommandEncodeError>`. It validates
+both devices, both transfer usages, checked ranges, and same-allocation overlap
+before appending a `Command::CopyBuffer(BufferCopy)` that retains both resources.
+No host permission or four-byte alignment is required. Zero-byte copies at valid
+end offsets are allowed. Errors append nothing and leave previous work intact.
+
+`finish(self)` consumes the encoder and returns a device-bound `CommandBuffer`.
+Both expose `device()`, `belongs_to()`, and borrowed `commands()`. `BufferCopy`
+exposes `source()`, `destination()`, `source_offset()`, `destination_offset()`, and
+`size()`. The finished sequence is immutable and not cloneable. Buffers stay live,
+not snapshotted; changes through other permitted CPU handles remain observable.
+Recording and finishing do not read/write bytes or execute work. There is no
+submission API yet. See [the recording contract](COMMANDS.md) for precedence,
+ownership, errors, source-sampling plans, and limits.
+
+```text
+cargo run -p ex-api --example record_copy --locked --offline
+```
+
+## Standalone prototype labels
 
 `CommandRecorder` owns a `Vec<String>`. `new()` and `default()` start an empty
 recording. `insert_debug_marker(&mut self, &str)` stores an owned label copy.
-`finish(self)` consumes the recorder and moves the sequence into `CommandBuffer`.
+`finish(self)` consumes the recorder and moves the sequence into `DebugMarkerBuffer`.
 `debug_markers(&self)` returns a borrowed slice in insertion order. Empty command
 buffers are allowed; finished buffers are not cloneable in this prototype.
 
@@ -96,13 +119,14 @@ Ten public buffer tests cover allocation metadata/initialization, permissions,
 range safety, shared identity, and CPU alias access. Three internal resource
 tests verify storage/device retention and poisoned-lock behavior. A third public
 documentation example exercises allocation and readback. The complete workspace
-currently runs 28 tests, including documentation tests. Tests do not induce
-allocator OOM by exhausting host memory.
+now also has ten public command-recording tests, three additional lifecycle tests,
+and executable/compile-fail encoder documentation. It runs 43 tests, including
+documentation tests. Tests do not induce allocator OOM by exhausting host memory.
 
 ## Next contract
 
-Next, Phase 1 must define actual recorded copy operations, validate device-side
-transfer usages and common ownership, and establish submission order, completion
-visibility, and resource retention through completion.
+Next, Phase 1 must execute the recorded copies through queue submission and
+establish submission order, completion visibility, host concurrency, execution
+failure behavior, and resource retention through completion.
 Implement and test a small CPU execution path before adding rasterization.
 There is no implemented execution-backend ABI yet.

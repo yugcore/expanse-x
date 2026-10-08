@@ -13,14 +13,14 @@ The [project design](../DOCUMENTATION.md) governs this roadmap: managed and
 explicit control levels share one core, resources, and execution rules. Build
 and verify the explicit core first. Add managed planning over those contracts
 when a working workload justifies it; this is a future capability, not a second
-renderer or a reason to postpone the next recorded-copy/submission milestone.
+renderer or a reason to postpone the next queue-submission milestone.
 
 ## Status at a glance
 
 | Phase | Status | Completion evidence |
 | --- | --- | --- |
 | 0 — Repository foundation | Complete | Production workspace, public `ex` entry point, checks, contracts, and local Git history |
-| 1 — Minimum runtime | In progress: discovery and owned buffers work | Pending: recorded copies, queue execution, and completion semantics |
+| 1 — Minimum runtime | In progress: discovery, buffers, and copy recording work | Pending: queue execution and completion semantics |
 | 2 — First software triangle | Not started | Pending: public draw commands produce a triangle image through EX's own rasterizer |
 | 3 — Programmability and pipeline milestone | Not started | Pending: EX shader representation and public pipeline produce a programmable triangle |
 | 4 — Modern GPU concepts | Deferred until earlier phases work | Per-feature implementation, validation, and executable evidence |
@@ -81,22 +81,29 @@ Tests reject impossible capacity without exhausting RAM; actual allocator OOM
 recovery is not claimed as verified. Heaps, mapping, residency, and device-local
 hardware storage are not implemented.
 
-### 1.3 Recorded buffer copies: next
+### 1.3 Recorded buffer copies: complete
 
-- [ ] Define a device-bound encoder and an EX-owned executable command representation.
-- [ ] Record a buffer-to-buffer copy independently of execution.
-- [ ] Retain source/destination allocations after application handles drop.
-- [ ] Validate `TransferSource`, `TransferDestination`, and common logical device ownership.
-- [ ] Validate byte ranges, arithmetic overflow, and aliased/overlapping copy policy.
-- [ ] Make finishing consume the encoder and produce immutable finished work.
-- [ ] Demonstrate that recording/finishing alone leaves destination bytes unchanged.
-- [ ] Document how source contents are observed when the recorded operation executes.
+- [x] Define a device-bound encoder and an EX-owned executable command representation.
+- [x] Record a buffer-to-buffer copy independently of execution.
+- [x] Retain source/destination allocations after application handles drop.
+- [x] Validate `TransferSource`, `TransferDestination`, and common logical device ownership.
+- [x] Validate byte ranges, arithmetic overflow, and aliased/overlapping copy policy.
+- [x] Make finishing consume the encoder and produce immutable finished work.
+- [x] Demonstrate that recording/finishing alone leaves destination bytes unchanged.
+- [x] Document live resource references and the planned execution-time source sampling.
 
-The current standalone `CommandRecorder` records labels only. Its `CommandBuffer`
-cannot be submitted. Decide how to evolve that prototype when executable commands
-are implemented; do not treat the existing names as completed execution support.
+Evidence: [recording contract](COMMANDS.md),
+[public example](../crates/ex-api/examples/record_copy.rs), and
+[recording tests](../crates/ex-api/tests/command_recording.rs). The workspace
+passes 43 tests, including documentation tests. Reservation failures are handled
+but tests do not exhaust RAM to induce OOM. Source sampling at execution is a
+documented plan, not verified execution behavior yet.
 
-### 1.4 Queue submission and basic synchronization: pending
+The standalone `CommandRecorder` still records labels only and now returns
+`DebugMarkerBuffer`; `CommandEncoder::finish()` produces the actual device-bound
+`CommandBuffer`. Neither result can be submitted in this milestone.
+
+### 1.4 Queue submission and basic synchronization: next
 
 - [ ] Submit finished work to its owning queue and reject a foreign device's commands.
 - [ ] Execute recorded copies in order through EX's reference implementation.
@@ -110,8 +117,8 @@ are implemented; do not treat the existing names as completed execution support.
 - [ ] Add the public record-submit-readback example and current command/sync contracts.
 
 The intended next flow is upload → record copy → verify unchanged destination →
-finish → submit → read back matching bytes. Encoder/submission methods are planned,
-not available today. CPU-copy mutexes do not already provide this queue contract.
+finish → submit → read back matching bytes. Recording and finishing now work;
+submission remains planned. CPU-copy mutexes do not provide this queue contract.
 
 **Phase 1 completion gate:** this flow runs through `ex`, misuse is reported clearly,
 and order, visibility, error behavior, and resource retention are documented and
@@ -177,7 +184,7 @@ is checked. Performance or hardware-conformance claims require separate evidence
 The [EX Witness direction](../DOCUMENTATION.md#ex-witness-experimental-differentiation)
 explores explanation → replay → smaller executable tests for selected failures.
 It uses the same contracts for managed and explicit work. This track adds no new
-Phase 1 completion requirement; recorded copies and submission remain next.
+Phase 1 completion requirement; queue submission remains next.
 
 After the copy/submission foundation works:
 

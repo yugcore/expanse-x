@@ -93,8 +93,8 @@ struct DeviceState {
     adapter: Adapter,
 }
 
-/// A logical EX device. Allocates reference buffers; queue execution is not
-/// implemented yet.
+/// A logical EX device. Allocates reference buffers and creates copy encoders;
+/// queue execution is not implemented yet.
 ///
 /// Cloning retains the same device; use [`Adapter::create_device`] for a new one.
 #[derive(Debug, Clone)]
@@ -150,6 +150,19 @@ impl Queue {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn empty_recorded_work_retains_device_until_it_drops() {
+        let device = Instance::new().default_adapter().create_device();
+        let state = Arc::downgrade(&device.state);
+        let encoder = device.create_command_encoder();
+        drop(device);
+        assert!(state.upgrade().is_some());
+        let commands = encoder.finish();
+        assert!(state.upgrade().is_some());
+        drop(commands);
+        assert!(state.upgrade().is_none());
+    }
 
     #[test]
     fn the_last_queue_handle_releases_device_state_and_adapter_metadata() {

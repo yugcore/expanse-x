@@ -1,8 +1,8 @@
 //! Public entry point for Expanse-X (EX).
 //!
 //! Phase 1 begins with software discovery, logical devices, and queue ownership,
-//! alongside owned reference buffers with explicit host access and label-only
-//! recording. Queue submission and rendering are not implemented yet.
+//! alongside owned reference buffers with explicit host access and validated
+//! buffer-copy recording. Queue submission and rendering are not implemented yet.
 //! This crate has no dependency on another graphics API.
 //!
 //! ```
@@ -51,11 +51,39 @@
 //! ```
 //!
 //! `finish` consumes the recorder. Markers are labels, not graphics commands.
+//! Its finished output is a `DebugMarkerBuffer`, distinct from `CommandBuffer`.
+//!
+//! Actual copy descriptions are recorded through a device-bound encoder:
+//!
+//! ```
+//! use ex::{BufferDescriptor, BufferUsage, HostAccess, Instance};
+//! let device = Instance::new().default_adapter().create_device();
+//! let source = device.create_buffer(BufferDescriptor {
+//!     label: "source", size: 4, usages: &[BufferUsage::TransferSource],
+//!     host_access: HostAccess::Write,
+//! })?;
+//! let destination = device.create_buffer(BufferDescriptor {
+//!     label: "destination", size: 4, usages: &[BufferUsage::TransferDestination],
+//!     host_access: HostAccess::Read,
+//! })?;
+//! source.write(0, &[1, 2, 3, 4])?;
+//! let mut encoder = device.create_command_encoder();
+//! encoder.copy_buffer(&source, 0, &destination, 0, 4)?;
+//! let commands = encoder.finish();
+//! assert!(commands.belongs_to(&device));
+//! assert_eq!(commands.commands().len(), 1);
+//! let mut bytes = [99; 4];
+//! destination.read(0, &mut bytes)?;
+//! assert_eq!(bytes, [0; 4]); // Recording/finishing do not execute the copy.
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
 //! The public entry point lets future runtime changes happen behind this crate;
 //! it does not imply that these provisional types are a stable specification.
 
 pub use expansex_core::{
-    Adapter, AdapterInfo, BackendKind, Buffer, BufferAccessError, BufferCreateError,
-    BufferDescriptor, BufferDescriptorError, BufferUsage, CommandBuffer, CommandRecorder, Device,
+    Adapter, AdapterInfo, BackendKind, Buffer, BufferAccessError, BufferCopy, BufferCreateError,
+    BufferDescriptor, BufferDescriptorError, BufferUsage, Command, CommandBuffer,
+    CommandEncodeError, CommandEncoder, CommandRecorder, CopyBufferRole, DebugMarkerBuffer, Device,
     HostAccess, Instance, Queue,
 };

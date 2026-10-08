@@ -34,8 +34,8 @@ the field. The descriptor is still `Copy` and owns no resource memory.
 Creation checks zero size, then missing usages, then whether the size fits this
 process's contiguous `Vec<u8>` capacity (`usize` and `isize::MAX`). Duplicate
 usages are preserved and have no extra meaning. An empty label remains valid.
-Current usage roles describe future operations; they do not make draw, compute,
-or transfer commands available before those operations are implemented.
+Transfer usages are now checked when [recording copies](COMMANDS.md); draws and
+compute remain future operations. Recording does not execute a transfer.
 
 Byte and metadata reservations use `try_reserve_exact`. Reservation failures
 become `BufferCreateError::AllocationFailed` with their standard Rust source;
@@ -62,7 +62,7 @@ These methods copy bytes synchronously. Readback writes into caller-provided
 storage, so the caller chooses its size and EX does not allocate a readback vector
 per call. They expose no mapping or persistent slice. A `TransferDestination`
 usage is not required for a CPU write, and `TransferSource` does not grant a CPU
-read. Device-side transfer checks will apply when recorded copies exist.
+read. Recorded-copy checks independently require the appropriate transfer usages.
 
 Checks run in this order: host permission, full byte range, storage lock. Bounds
 use checked addition; overflow returns `OutOfBounds`. Empty copies are allowed
@@ -114,6 +114,7 @@ The impossible-capacity test rejects `u64::MAX` before attempting storage. Tests
 do not exhaust system memory to induce an actual allocator OOM; reservation-error
 mapping exists, but host-memory exhaustion recovery is not claimed as verified.
 
-Next: record a buffer-to-buffer copy, validate TransferSource/TransferDestination
-and common device ownership, retain referenced allocations, submit through the
-queue, and define ordering/completion. No such command exists in this step.
+Recorded copies now validate TransferSource/TransferDestination, common device
+ownership, ranges, and overlap, and retain referenced allocations. They do not
+read storage or snapshot contents. Next: submit them through the queue and define
+ordering, visibility, host concurrency, and completion. No executor exists yet.

@@ -9,18 +9,20 @@ Current behavior:
 - `Instance` discovers one software reference `Adapter`.
 - `Adapter` creates independent logical `Device` ownership domains.
 - `Device` and `Queue` handles retain shared state and expose identity checks.
+- `Device::create_buffer` allocates owned reference storage and retains its device.
+- `Buffer::write/read` enforce explicit CPU-copy permissions and whole-range bounds.
 - `BufferDescriptor` and `BufferUsage` describe bytes and intended roles.
 - Validation rejects zero size and missing usage.
 - `CommandRecorder` owns debug labels on the CPU.
 - `finish(self)` consumes the recorder and returns an immutable `CommandBuffer`.
 
-No buffer storage, shaders, draws, queue execution, or submission are implemented.
+No shaders, draws, queue execution, or submission are implemented.
 Names and contracts remain provisional. Marker text never executes graphics work.
 
 From the workspace root:
 
 ```text
-cargo run -p ex-api --example discover --locked --offline
+cargo run -p ex-api --example buffer_roundtrip --locked --offline
 cargo test --workspace --locked --offline
 ```
 

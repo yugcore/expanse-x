@@ -25,5 +25,7 @@ fn main() {
         "Retained device target: {}",
         retained_device.adapter().info().name
     );
-    println!("Ownership milestone only: no resource storage, submission, or rendering yet.");
+    println!(
+        "Discovery example only: no buffer allocation, submission, or rendering in this example."
+    );
 }

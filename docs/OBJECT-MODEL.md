@@ -17,8 +17,9 @@ submission endpoint; no submission operation exists yet.
 
 The working implementation lives in `expansex-core::object`; the `ex` public crate
 re-exports it. A reference driver crate will be justified when there is actual
-allocation or execution code to separate. These objects currently manage CPU
-metadata and identity only.
+execution code to separate. Discovery/queue objects manage CPU metadata and
+identity; devices now also allocate reference buffers under
+[the buffer contract](BUFFERS.md).
 
 ## Alternatives and rationale
 
@@ -93,17 +94,18 @@ resource-hazard guarantee follows from using `Arc` alone.
 
 ## Creation failures and scope
 
-Constructors are infallible at this step: they only construct fixed reference
+Discovery/device constructors are infallible: they only construct fixed reference
 metadata and shared logical state. Ordinary Rust allocation failure is not
 converted into a recoverable EX error. There are no unsupported feature requests,
 driver calls, discovery failures, or device-loss paths to fabricate errors for.
 Hardware discovery and device configuration may introduce fallible operations
 later; this provisional API is not frozen.
 
-No buffer storage, renderer, executable backend, queue processor, or submission
-exists yet. `CommandRecorder` remains the independent label-only prototype.
-The next step is allocated buffers with usage validation, then an executable CPU
-buffer copy with a defined submission/completion contract.
+Buffers and explicit CPU copies now exist under the separate buffer contract;
+buffer creation is fallible and retains this device ownership domain. No renderer,
+command executor, queue processor, or submission exists yet. `CommandRecorder`
+remains the independent label-only prototype. The next step is an executable
+recorded buffer copy with usage validation and a submission/completion contract.
 
 ## Verification
 

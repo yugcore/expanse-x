@@ -1,7 +1,12 @@
 use std::error::Error;
 use std::fmt;
 
-/// A role that a future buffer will be permitted to serve.
+mod resource;
+
+pub use resource::{Buffer, BufferAccessError, BufferCreateError};
+
+/// A device-side role permitted for a buffer. Operations using these roles are
+/// introduced separately; a role does not grant CPU access.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BufferUsage {
     /// Vertex data consumed by a graphics pipeline.
@@ -18,6 +23,21 @@ pub enum BufferUsage {
     TransferDestination,
 }
 
+/// Permissions for explicit CPU copies, independent of device-side usage.
+///
+/// This is not a heap selection or a promise that device memory can be mapped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostAccess {
+    /// No CPU reads or writes through the buffer's public methods.
+    None,
+    /// CPU writes, for uploading bytes into a resource.
+    Write,
+    /// CPU reads, for reading resource bytes back into caller-owned memory.
+    Read,
+    /// Both CPU reads and writes; useful for reference-backend round trips.
+    ReadWrite,
+}
+
 /// A request describing a buffer; it does not allocate memory.
 ///
 /// Multiple roles can be requested, for example vertex data plus a copy
@@ -30,6 +50,8 @@ pub struct BufferDescriptor<'a> {
     pub size: u64,
     /// Requested roles. Repeated roles have no additional meaning.
     pub usages: &'a [BufferUsage],
+    /// Permissions for explicit CPU upload/readback operations.
+    pub host_access: HostAccess,
 }
 
 impl BufferDescriptor<'_> {
@@ -73,6 +95,7 @@ mod tests {
             label: "triangle positions",
             size: 36,
             usages: &[BufferUsage::Vertex, BufferUsage::TransferDestination],
+            host_access: HostAccess::None,
         };
         assert_eq!(descriptor.validate(), Ok(()));
     }
@@ -83,6 +106,7 @@ mod tests {
             label: "empty",
             size: 0,
             usages: &[BufferUsage::Vertex],
+            host_access: HostAccess::None,
         };
         assert_eq!(descriptor.validate(), Err(BufferDescriptorError::ZeroSize));
     }
@@ -93,6 +117,7 @@ mod tests {
             label: "unclassified",
             size: 36,
             usages: &[],
+            host_access: HostAccess::None,
         };
         assert_eq!(
             descriptor.validate(),

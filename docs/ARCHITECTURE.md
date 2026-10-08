@@ -1,7 +1,7 @@
 # EX architecture
 
-Status: first Phase 1 step. Discovery, logical object ownership, descriptors, and
-label recording are implemented; resource storage and execution are still planned.
+Status: Phase 1 buffer storage. Discovery, logical ownership, reference allocation,
+CPU copies, and label recording work; recorded command execution is still planned.
 
 ## Philosophy and boundaries
 
@@ -27,10 +27,10 @@ not supply those capabilities. Hardware work is deferred.
 
 | Component | Implemented now | Next responsibility |
 | --- | --- | --- |
-| `ex-api`, library name `ex` | Re-exports discovery/device/queue and prototype types; runnable examples | Resource and executable command entry point |
-| `expansex-core` | Software discovery; shared device/queue identity; descriptor validation; marker recording | Resource allocation/lifetimes and submission contracts |
-| Validation | Descriptor errors and Rust ownership checks in core | Usage/order/device/attachment/hazard checks as operations exist |
-| Reference backend | Software target metadata and logical state only; no executor | Allocate storage and execute EX commands on CPU |
+| `ex-api`, library name `ex` | Public discovery, buffers, CPU access, and prototype recording; runnable examples | Executable command/submission entry point |
+| `expansex-core` | Software discovery; object/resource identity and retention; allocation; CPU copies; marker recording | Recorded copies and submission contracts |
+| Validation | Descriptor, capacity, host-access, range, and poisoned-storage errors | Device-side usage/order/ownership/hazard checks as commands exist |
+| Reference backend | Owned system-memory buffer storage in core; no command executor | Execute EX's recorded operations on CPU; split working execution code when justified |
 | Shader subsystem | Absent | Small EX internal representation and interpreter |
 
 The public crate solves a packaging problem: callers have one `ex` import while
@@ -51,7 +51,8 @@ Public names are provisional. See [the current contract](API-DRAFT.md).
 Device clones and default queues share that domain; a queue retains device state
 after the original device handle drops. Discovery does not detect installed GPUs.
 See [the object ownership contract](OBJECT-MODEL.md) for rationale, API comparisons,
-identity checks, and cleanup. Allocated buffers are the next Phase 1 step.
+identity checks, and cleanup. Buffers now retain their creating device, have
+independent allocation identity, and share storage when cloned.
 
 Textures, views, samplers, layouts, graphics/compute pipelines, surfaces, and
 presentation are deferred until they have actual behavior. Offscreen image
@@ -73,16 +74,18 @@ will be introduced only when allocation/reuse requirements warrant them.
 
 ## Resources and memory
 
-Current descriptors borrow labels and usage lists; copying them copies borrowed
-views, not memory. Actual creation will need owned metadata and backend storage.
-A positive size and nonempty role list are the only current validation rules.
+Descriptors borrow labels and usage lists; copying them copies borrowed views,
+not memory. Creation now owns metadata and zero-initialized system-memory storage.
+It validates positive size, nonempty usages, and contiguous-capacity limits, and
+reports reservation errors. See [the buffer contract](BUFFERS.md) for exact scope,
+including ordinary allocation failures that EX does not recover.
 
-The software backend may store bytes in ordinary system memory. Future API
-contracts must distinguish CPU access from device use and validate usage at the
-operation that consumes a resource. Do not permanently expose arbitrary mutable
-CPU slices for every resource. Host visibility, device locality, upload/readback,
-alignment, mapping, residency, and transitions require explicit contracts as
-those features arrive; there are no implemented heaps or resource states today.
+`HostAccess` grants explicit CPU read/write permissions independently of
+device-side usages. CPU upload/readback copy bytes through a private storage
+mutex after full-range checks. Buffer clones retain one allocation. No public
+mutable slice is exposed. Individual CPU copies serialize, but this does not
+define future queue ordering or GPU visibility. Heaps, device-local placement,
+mapping, residency, alignment rules, and resource transitions remain deferred.
 
 ## Synchronization and lifetime
 
@@ -124,6 +127,9 @@ and textures are later steps, not hidden claims of full GPU conformance.
 
 `BufferDescriptorError` is machine-matchable and implements `Display` and
 `std::error::Error`. Current messages explain zero size and missing usage.
+`BufferCreateError` preserves descriptor/reservation sources; `BufferAccessError`
+identifies resource labels, forbidden CPU access, invalid ranges, and storage
+poisoning. No device-side command usage is validated before commands exist.
 Keep checks enabled in all builds initially. Release performance policy is a
 future decision supported by measurement, not a reason to hide correctness bugs.
 

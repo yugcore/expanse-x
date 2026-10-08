@@ -93,7 +93,8 @@ struct DeviceState {
     adapter: Adapter,
 }
 
-/// A logical EX device. Resources and execution are not implemented yet.
+/// A logical EX device. Allocates reference buffers; queue execution is not
+/// implemented yet.
 ///
 /// Cloning retains the same device; use [`Adapter::create_device`] for a new one.
 #[derive(Debug, Clone)]
@@ -170,5 +171,27 @@ mod tests {
         drop(retained_queue);
         assert!(state.upgrade().is_none());
         assert!(metadata.upgrade().is_none());
+    }
+
+    #[test]
+    fn buffers_retain_device_state_until_the_final_buffer_handle_drops() {
+        use crate::{BufferDescriptor, BufferUsage, HostAccess};
+
+        let device = Instance::new().default_adapter().create_device();
+        let state = Arc::downgrade(&device.state);
+        let buffer = device
+            .create_buffer(BufferDescriptor {
+                label: "retained device",
+                size: 4,
+                usages: &[BufferUsage::Storage],
+                host_access: HostAccess::None,
+            })
+            .unwrap();
+        let retained = buffer.clone();
+        drop(device);
+        drop(buffer);
+        assert!(state.upgrade().is_some());
+        drop(retained);
+        assert!(state.upgrade().is_none());
     }
 }

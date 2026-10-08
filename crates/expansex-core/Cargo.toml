@@ -1,0 +1,8 @@
+[package]
+name = "expansex-core"
+version = "0.1.0"
+edition = "2021"
+description = "Early ExpanseX API design prototype"
+publish = false
+
+[dependencies]

@@ -1,8 +1,20 @@
 //! Public entry point for Expanse-X (EX).
 //!
-//! Phase 0 exposes the existing descriptor and CPU recording prototype. No
-//! device, queue, resource allocation, submission, or rendering exists yet.
+//! Phase 1 begins with software discovery, logical devices, and queue ownership,
+//! alongside the descriptor and CPU recording prototype. Resource storage,
+//! submission, and rendering are not implemented yet.
 //! This crate has no dependency on another graphics API.
+//!
+//! ```
+//! use ex::{BackendKind, Instance};
+//!
+//! let instance = Instance::new();
+//! let adapter = instance.default_adapter();
+//! assert_eq!(adapter.info().backend, BackendKind::Reference);
+//! let device = adapter.create_device();
+//! let queue = device.default_queue();
+//! assert!(queue.belongs_to(&device));
+//! ```
 //!
 //! ```
 //! use ex::{BufferDescriptor, BufferUsage, CommandRecorder};
@@ -25,5 +37,6 @@
 //! it does not imply that these provisional types are a stable specification.
 
 pub use expansex_core::{
-    BufferDescriptor, BufferDescriptorError, BufferUsage, CommandBuffer, CommandRecorder,
+    Adapter, AdapterInfo, BackendKind, BufferDescriptor, BufferDescriptorError, BufferUsage,
+    CommandBuffer, CommandRecorder, Device, Instance, Queue,
 };

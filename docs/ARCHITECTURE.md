@@ -1,7 +1,7 @@
 # EX architecture
 
-Status: Phase 0 foundation. The table below separates working code from planned
-responsibilities. Only the descriptor and recording contract is executable today.
+Status: first Phase 1 step. Discovery, logical object ownership, descriptors, and
+label recording are implemented; resource storage and execution are still planned.
 
 ## Philosophy and boundaries
 
@@ -27,10 +27,10 @@ not supply those capabilities. Hardware work is deferred.
 
 | Component | Implemented now | Next responsibility |
 | --- | --- | --- |
-| `ex-api`, library name `ex` | Re-exports tested public prototype types; application example | Public device/resource/command entry point |
-| `expansex-core` | Descriptor validation; owned marker recording; immutable finished buffer | Shared object identity, runtime contracts, resource lifetimes |
+| `ex-api`, library name `ex` | Re-exports discovery/device/queue and prototype types; runnable examples | Resource and executable command entry point |
+| `expansex-core` | Software discovery; shared device/queue identity; descriptor validation; marker recording | Resource allocation/lifetimes and submission contracts |
 | Validation | Descriptor errors and Rust ownership checks in core | Usage/order/device/attachment/hazard checks as operations exist |
-| Reference backend | Absent | Allocate storage and execute EX commands on CPU |
+| Reference backend | Software target metadata and logical state only; no executor | Allocate storage and execute EX commands on CPU |
 | Shader subsystem | Absent | Small EX internal representation and interpreter |
 
 The public crate solves a packaging problem: callers have one `ex` import while
@@ -46,10 +46,12 @@ Today `BufferDescriptor` describes requested bytes and roles; it is not a buffer
 `CommandRecorder` owns labels; `CommandBuffer` owns the finished label sequence.
 Public names are provisional. See [the current contract](API-DRAFT.md).
 
-Phase 1 will establish instance discovery, a reference adapter, a logical device,
-a default queue, and an allocated buffer. Discovery must identify the target as
-software rather than present it as installed GPU hardware. Device ownership and
-identity must be defined before commands refer to allocated resources.
+`Instance` now discovers one adapter named `EX Reference (software)`.
+`Adapter::create_device()` creates a distinct logical ownership domain each time.
+Device clones and default queues share that domain; a queue retains device state
+after the original device handle drops. Discovery does not detect installed GPUs.
+See [the object ownership contract](OBJECT-MODEL.md) for rationale, API comparisons,
+identity checks, and cleanup. Allocated buffers are the next Phase 1 step.
 
 Textures, views, samplers, layouts, graphics/compute pipelines, surfaces, and
 presentation are deferred until they have actual behavior. Offscreen image

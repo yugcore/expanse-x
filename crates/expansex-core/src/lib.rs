@@ -1,10 +1,13 @@
-//! ExpanseX API design prototype.
+//! Shared Expanse-X discovery, ownership, and initial recording contracts.
 //!
-//! Describes buffers and demonstrates a recording-to-finished transition.
-//! This crate does not create GPU resources, submit work, or render images.
+//! Discovers the software target, creates logical devices and queue handles,
+//! describes buffers, and records debug labels. No resource storage, submission,
+//! or rendering is implemented yet.
 
 mod buffer;
 mod command;
+mod object;
 
 pub use buffer::{BufferDescriptor, BufferDescriptorError, BufferUsage};
 pub use command::{CommandBuffer, CommandRecorder};
+pub use object::{Adapter, AdapterInfo, BackendKind, Device, Instance, Queue};

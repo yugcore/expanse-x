@@ -5,16 +5,21 @@ public API, runtime, command model, and execution backend. The first backend wil
 be a software/reference GPU; rendering will not use Vulkan, Direct3D, Metal,
 OpenGL, or wgpu.
 
-## Current status: Phase 0
+## Current status: Phase 1 — discovery and ownership
 
-The production workspace builds and contains a tested buffer-description and
-debug-label recording prototype. Applications import the `ex-api` package as
-`ex`. No instance, adapter, device, queue, resource allocation, submission, shader,
-or renderer is implemented yet. The example does not draw a triangle.
+EX now discovers its built-in software adapter, creates independent logical
+devices, and returns default queue handles with shared ownership. The workspace
+also contains the buffer-description and debug-label recording prototype.
+Applications import the `ex-api` package as `ex`. Buffer storage, submission,
+shaders, and rendering are not implemented yet.
 
 ```text
-cargo run -p ex-api --example api_draft --locked --offline
+cargo run -p ex-api --example discover --locked --offline
 ```
+
+The example prints the software target and queue ownership, then demonstrates
+that a queue retains its device after parent handles are dropped. The earlier
+`api_draft` example still demonstrates descriptions and label-only recording.
 
 ## Build and check
 
@@ -42,14 +47,15 @@ toolchain follows stable releases; it is not a pinned compiler-version guarantee
 | Path | Responsibility |
 | --- | --- |
 | `crates/ex-api/` | Public Rust entry point, imported as `ex`; runnable example |
-| `crates/expansex-core/` | Existing shared descriptor and recording implementation |
+| `crates/expansex-core/` | Discovery, logical object ownership, descriptors, and recording |
 | `docs/` | Current EX contracts, architecture, assessment, and conventions |
 | `scripts/` | Repeatable production checks |
 
 ## Next milestones
 
-1. Phase 1: instance → reference adapter → device → queue; allocated buffers;
-   recorded CPU operations; submission and an explicit completion contract.
+1. Finish Phase 1: allocate buffers, record CPU operations, and establish
+   submission and an explicit completion contract. Discovery/device/queue
+   ownership is implemented; the queues do not execute work yet.
 2. Phase 2: framebuffer, vertex fetch, triangle assembly and rasterization,
    constant fragment colour, image output through EX's own software backend.
 3. Phase 3: minimal internal shader representation, vertex/fragment execution,
@@ -62,4 +68,5 @@ promise hardware support without working driver integration.
 
 Read the [starting assessment](docs/ASSESSMENT.md),
 [architecture](docs/ARCHITECTURE.md), [current API contract](docs/API-DRAFT.md),
-and [coding conventions](docs/CONTRIBUTING.md).
+[object ownership contract](docs/OBJECT-MODEL.md), and
+[coding conventions](docs/CONTRIBUTING.md).

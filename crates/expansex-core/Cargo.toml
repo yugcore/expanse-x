@@ -1,8 +1,11 @@
 [package]
 name = "expansex-core"
 version = "0.1.0"
-edition = "2021"
-description = "Early ExpanseX API design prototype"
-publish = false
+edition.workspace = true
+description = "Shared Expanse-X types and initial recording contracts"
+publish.workspace = true
 
 [dependencies]
+
+[lints]
+workspace = true

@@ -1,39 +1,54 @@
-# ExpanseX API draft: buffers and recording
+# EX current API contract
 
-Status: exploratory design prototype, not a frozen v0.1 specification.
+Status: Phase 0 executable prototype; public names and behavior are provisional.
+Applications depend on package `ex-api` and import its library as `ex`. The
+implementation remains in `expansex-core`; the public crate re-exports its types.
+This contract describes implemented behavior only. See [architecture](ARCHITECTURE.md)
+for planned runtime responsibilities.
 
-## Starting point
+## Buffer descriptions
 
-This prototype covers buffer descriptors and label recording.
-No GPU-facing operations are implemented at this stage.
+`BufferDescriptor<'a>` borrows a label and a usage slice. `size` is a `u64` byte
+count. Multiple roles are permitted; duplicate roles have no extra meaning. An
+empty label is valid. `validate()` rejects zero size first, then missing usages.
+`BufferDescriptorError` exposes `ZeroSize` and `MissingUsage`, implements
+`Display`, and implements `std::error::Error`.
 
-## Current contract
+Successful validation means only those two rules passed. It does not establish
+backend support, allocation success, data initialization, or synchronization.
+The descriptor contains no bytes and owns no GPU storage. Its derived `Copy`
+implementation copies numbers and shared references. Actual resource creation
+must decide how to retain metadata beyond the borrowed descriptor's lifetime.
 
-`BufferDescriptor<'a>` borrows a label and a list of usages. `size` is an unsigned 64-bit byte count. Multiple roles may be requested; repeated roles have no additional meaning. An empty label is allowed. `validate()` rejects zero size first, then rejects an empty usage list. Success means those two checks passed; it does not guarantee any device supports the request or that an allocation will succeed.
+## Recording and finishing
 
-The descriptor contains no data bytes and owns no GPU memory. Copying it copies its size and borrowed views, not an allocation. The future creation operation must decide how to retain any borrowed metadata it needs after the call.
+`CommandRecorder` owns a `Vec<String>`. `new()` and `default()` start an empty
+recording. `insert_debug_marker(&mut self, &str)` stores an owned label copy.
+`finish(self)` consumes the recorder and moves the sequence into `CommandBuffer`.
+`debug_markers(&self)` returns a borrowed slice in insertion order. Empty command
+buffers are allowed; finished buffers are not cloneable in this prototype.
 
-`CommandRecorder` owns a growable list of string labels. `insert_debug_marker(&mut self, &str)` copies the label into owned storage. `finish(self)` moves that list into a `CommandBuffer` and consumes the recorder. The finished type exposes labels for inspection and no recording methods. It is not cloneable in this draft.
-
-Only labels are recorded. No backend command buffer is allocated. Finishing does not submit or execute anything. Preventing recorder reuse after finishing is one CPU-side invariant; it does not establish safe submission, GPU completion, or resource lifetime handling.
-
-## Reference material
-
-- [Vulkan resource specification](../references/vulkan/Vulkan-Docs/chapters/resources.adoc): buffer creation and resource concepts.
-- [Vulkan memory guide](../references/vulkan/Vulkan-Guide/chapters/memory_allocation.adoc): allocation is separate from describing a resource.
-- [Vulkan command-buffer specification](../references/vulkan/Vulkan-Docs/chapters/cmdbuffers.adoc): recording and executable states as reference material.
-
-Our two Rust types illustrate a recording-to-finished transition; they do not yet model all Vulkan command-buffer states or native requirements.
-
-## Next design decisions
-
-1. Define device creation and a buffer handle, including how creation can fail.
-2. Decide how CPU uploads and backend memory allocation fit the public contract.
-3. Define a real recorded operation and how it refers to resources.
-4. Define queue submission, completion tracking, and keeping referenced resources alive while GPU work is pending.
-
-Do not add pretend successful GPU operations to the prototype. Document each contract before attaching an actual backend. Complete the broader Phase 1 design before starting GPU-facing implementation.
+Only labels exist. Finishing never submits, allocates backend command storage, or
+executes graphics work. Rust prevents recording through a finished buffer and
+using a consumed recorder, but establishes no GPU completion guarantee.
 
 ## Verification
 
-Tests cover descriptor validation, stored-label lifetime and order, and finishing an empty recording. A compile-fail documentation example checks that a finished recorder cannot be reused. The runnable example demonstrates the public types; it makes no rendering claim.
+Five core unit tests cover descriptor errors, accepted multiple usages, label
+ownership/order, and empty recording. A compile-fail documentation test checks
+recorder reuse after finishing. A public `ex` documentation example exercises
+description validation and recording. The application example runs through `ex`:
+
+```text
+cargo run -p ex-api --example api_draft --locked --offline
+```
+
+It prints a validated description and stored labels, then explicitly reports
+that no GPU memory or execution occurred. A label named 'draw triangle' is text.
+
+## Next contract
+
+Phase 1 must define device creation, allocated buffer ownership, actual recorded
+operations, submission order, completion visibility, and resource retention
+through completion. Implement and test a small CPU execution path before adding
+rasterization. There is no existing device/queue/backend ABI to preserve yet.

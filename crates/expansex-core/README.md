@@ -1,23 +1,24 @@
-# ExpanseX core: first API draft
+# Expanse-X core
 
-This is a small executable API design prototype with no external dependencies.
+Shared descriptor and recording implementation with no external dependencies.
+The public application entry point is the `ex-api` package, imported as `ex`.
 
-It currently provides:
+Current behavior:
 
-- `BufferDescriptor` and `BufferUsage` to describe requested storage and roles.
-- Descriptor validation rejecting zero size and missing usage.
-- `CommandRecorder` that records debug labels on the CPU.
-- `finish(self)` that consumes the recorder and returns a `CommandBuffer`.
+- `BufferDescriptor` and `BufferUsage` describe bytes and intended roles.
+- Validation rejects zero size and missing usage.
+- `CommandRecorder` owns debug labels on the CPU.
+- `finish(self)` consumes the recorder and returns an immutable `CommandBuffer`.
 
-No GPU buffers, devices, queues, shaders, draw commands, or submission are implemented. Names and contracts remain provisional. Markers naming future operations do not perform those operations.
+No devices, queues, GPU buffers, shaders, draws, or submission are implemented.
+Names and contracts remain provisional. Marker text never executes graphics work.
 
 From the workspace root:
 
 ```text
-cargo run -p expansex-core --example api_draft
-cargo test -p expansex-core
+cargo run -p ex-api --example api_draft --locked --offline
+cargo test --workspace --locked --offline
 ```
 
-Use package-specific commands from the repository root.
-
-The [design contract](../../docs/API-DRAFT.md) records current behavior and open questions.
+Read the [current contract](../../docs/API-DRAFT.md) and
+[architecture](../../docs/ARCHITECTURE.md).

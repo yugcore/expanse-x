@@ -1,4 +1,4 @@
-use expansex_core::{BufferDescriptor, BufferUsage, CommandRecorder};
+use ex::{BufferDescriptor, BufferUsage, CommandRecorder};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Three vertices, each with three 4-byte f32 coordinates: 3 * 3 * 4.

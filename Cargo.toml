@@ -1,5 +1,19 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/ex-api",
     "crates/expansex-core",
 ]
+
+[workspace.package]
+edition = "2021"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = "warn"
+
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "deny"

@@ -1,0 +1,15 @@
+[package]
+name = "ex-api"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+description = "Public Rust entry point for the independent Expanse-X graphics API"
+
+[lib]
+name = "ex"
+
+[dependencies]
+expansex-core = { path = "../expansex-core" }
+
+[lints]
+workspace = true

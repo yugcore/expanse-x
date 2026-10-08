@@ -35,6 +35,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(error) => println!("Expected access error: {error}"),
         Ok(()) => return Err("a CPU write unexpectedly bypassed HostAccess::None".into()),
     }
-    println!("Synchronous CPU copies only: no queue submission or rendering yet.");
+    println!("Synchronous CPU copies only: this example submits no work and renders no pixels.");
     Ok(())
 }

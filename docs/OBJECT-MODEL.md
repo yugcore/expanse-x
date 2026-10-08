@@ -13,7 +13,8 @@ allocation or command execution can validate cross-device use.
 reference adapter, explicitly named as software. `Adapter` describes that target;
 it is not a logical device or a claim that a hardware GPU was detected. `Device`
 establishes a fresh ownership domain. `Queue` refers to that device's one default
-submission endpoint; no submission operation exists yet.
+submission endpoint; synchronous copy execution is defined in
+[the submission contract](SUBMISSION.md).
 
 The working implementation lives in `expansex-core::object`; the `ex` public crate
 re-exports it. A reference driver crate will be justified when there is actual
@@ -89,8 +90,9 @@ and metadata references still obey ordinary Rust borrowing rules.
 
 All queue handles for one device represent its single endpoint and therefore
 share the device state. Future multiple queues will need distinct queue state
-without ownership cycles. No concurrency, submission, completion, fence, or
-resource-hazard guarantee follows from using `Arc` alone.
+without ownership cycles. `Arc` alone provides ownership; the shared device
+execution mutex establishes current submission and CPU-access serialization.
+No hardware fence or general resource-hazard guarantee follows from ownership alone.
 
 ## Creation failures and scope
 
@@ -102,12 +104,12 @@ Hardware discovery and device configuration may introduce fallible operations
 later; this provisional API is not frozen.
 
 Buffers and explicit CPU copies now exist under the separate buffer contract;
-buffer creation is fallible and retains this device ownership domain. No renderer,
-command executor, queue processor, or submission exists yet. `CommandRecorder`
+buffer creation is fallible and retains this device ownership domain. Synchronous
+reference copy execution now exists; rendering remains planned. `CommandRecorder`
 remains the independent label-only prototype, returning `DebugMarkerBuffer`.
 Device-bound copy recording now exists under the [command contract](COMMANDS.md),
-with usage/range/device validation and retained resources. The next step is queue
-execution and its submission/completion contract.
+with usage/range/device validation and retained resources. The queue executes
+finished copies under the separate submission/completion contract.
 
 ## Verification
 

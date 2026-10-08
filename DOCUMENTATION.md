@@ -281,10 +281,12 @@ theoretical scheduler before work can execute.
 Today EX implements software discovery, logical device/queue ownership, owned
 buffers, checked synchronous CPU access, and device-bound buffer-copy recording
 with transfer/device/range/overlap validation and resource retention. Standalone
-prototype labels remain separate. Copy execution, submission, rendering, shaders,
-managed planning, execution hazard validation, EX Witness, EX Proof, and hardware
-drivers are not implemented. The next step is queue submission and copy execution,
-as defined by the roadmap.
+prototype labels remain separate. Synchronous reference submission now executes
+copies in order, samples live bytes, serializes CPU access, and reports partial
+failure. This completes the minimum runtime phase. Rendering, shaders, managed
+planning, general execution hazard validation, EX Witness, EX Proof, and hardware
+drivers remain planned. The next milestone is the first software triangle,
+as defined by the roadmap and [submission contract](docs/SUBMISSION.md).
 
 ## Design commitments
 

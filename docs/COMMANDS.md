@@ -1,7 +1,7 @@
 # EX recorded buffer copies
 
-Status: implemented Phase 1 recording contract. Queue submission/execution is the
-next step; this contract does not make recording execute a copy. Public names
+Status: implemented Phase 1 recording contract. Synchronous execution now exists
+under [SUBMISSION.md](SUBMISSION.md); recording still does not execute a copy. Public names
 remain provisional.
 
 ## Design
@@ -14,7 +14,7 @@ with retained buffer handles. `finish(self)` moves those commands and their
 device into an immutable `CommandBuffer`.
 
 The core representation is an enum rather than a closure or an existing API's
-command handle. A future EX executor can interpret the operations, validate
+command handle. EX's reference executor interprets the operations, validates
 submission ownership, and retain resources independently of the application.
 No command pool, shader, driver ABI, or scheduler is needed just to record copies.
 
@@ -70,11 +70,11 @@ offsets, and size through getters. Commands are not cloneable in this step.
 Immutable commands do not imply immutable buffer contents: public CPU access
 through another handle still obeys `HostAccess` and may change the bytes.
 
-Recording retains references, not a snapshot. The intended execution contract
+Recording retains references, not a snapshot. The implemented submission contract
 reads source contents when a copy executes, including writes made before its
-execution and earlier commands' results. There is no executor today to verify
-that behavior. Concurrent host access, submission order, completion, poisoning,
-and partial-execution errors must be defined in the submission step. Recording
+execution and earlier commands' results. Whole submissions serialize against CPU
+access on the same device. See the submission contract for ordering, completion,
+poisoning, and partial-execution errors. Recording
 does not establish a GPU dependency or reserve an allocation against CPU access.
 
 ## Prototype compatibility
@@ -87,7 +87,7 @@ API change makes the real `CommandBuffer` always device-bound; explicitly typed
 old label results must use `DebugMarkerBuffer`. Inferred existing examples work.
 
 The new `CommandEncoder` records copies only in this step; it does not yet offer
-marker insertion. Neither kind of finished recording can be submitted yet.
+marker insertion. Only the device-bound `CommandBuffer` can be submitted.
 
 ## Verification and next step
 
@@ -97,6 +97,5 @@ after errors. Compile-fail documentation checks use after consuming an encoder.
 Internal lifecycle checks verify release after the final command buffer drops.
 Tests do not induce allocator OOM by exhausting memory.
 
-Next: queue submission must execute these operations under a documented order,
-visibility, host-concurrency, and failure contract. Only after submission/readback
-works is Phase 1 complete.
+The `submit_copy` example now executes these operations under the documented
+submission contract. Phase 1 is complete; the first software triangle is next.

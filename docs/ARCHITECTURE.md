@@ -1,7 +1,7 @@
 # EX architecture
 
-Status: Phase 1 copy recording. Discovery, ownership, reference allocation, CPU
-access, and validated copy recording work; command execution is still planned.
+Status: Phase 1 complete. Discovery, ownership, reference allocation, CPU access,
+validated recording, and ordered synchronous copy execution work.
 
 The [development roadmap](ROADMAP.md) tracks verified work, pending steps, and
 phase completion gates. This document describes architectural responsibilities.
@@ -12,8 +12,8 @@ The [project design](../DOCUMENTATION.md) governs this architecture.
 EX has two intended control levels over one core: managed work derives a valid
 plan from resource-use declarations; explicit work supplies a plan that EX
 validates. Both share resources, execution rules, and completion semantics.
-Neither control level is implemented as an execution API today. Build the
-explicit core first, then add managed conveniences over proven contracts.
+The first explicit recording/submission path now executes reference buffer copies.
+Managed planning remains future work over those proven contracts.
 
 EX is an independent graphics API. An application specifies resources and work;
 EX's runtime validates and schedules that work; EX's driver layer implements the
@@ -38,10 +38,10 @@ not supply those capabilities. Hardware work is deferred.
 
 | Component | Implemented now | Next responsibility |
 | --- | --- | --- |
-| `ex-api`, library name `ex` | Public discovery, buffers, CPU access, and copy recording; runnable examples | Submission entry point |
-| `expansex-core` | Discovery, ownership, allocation, CPU access, and EX command enum with retained copy resources | Reference execution and submission contracts |
-| Validation | Descriptor, capacity, host access, ranges, transfer roles, recording device/overlap, and poisoned CPU storage | Submission ownership, execution failures, and richer hazards |
-| Reference backend | Owned system-memory buffer storage in core; no command executor | Execute EX's recorded operations on CPU; split working execution code when justified |
+| `ex-api`, library name `ex` | Public discovery, buffers, recording, synchronous submission/readback; examples | First draw entry points |
+| `expansex-core` | Ownership, allocation, EX copy enum, and ordered CPU executor | Minimal framebuffer/draw contracts |
+| Validation | Descriptor, capacity, CPU permissions, copy roles/ranges/device/overlap, submission device, and storage poison | Draw state and richer hazards |
+| Reference backend | System-memory buffers, copy execution, and shared device gate in core | Software rasterization; split execution code when justified |
 | Shader subsystem | Absent | Small EX internal representation and interpreter |
 
 The public crate solves a packaging problem: callers have one `ex` import while
@@ -81,9 +81,9 @@ recording validates both devices, transfer roles, checked ranges, and same-buffe
 overlap. See [the recording contract](COMMANDS.md), including the provisional
 rename of the prototype's finished labels to `DebugMarkerBuffer`.
 
-Next connect these descriptions to queue submission and EX's CPU executor.
-Define execution order, visibility, failures, and host access before introducing
-draws. Command pools and allocator reuse follow demonstrated requirements.
+`Queue::submit` now borrows reusable descriptions and executes them in order on
+the CPU. See [submission](SUBMISSION.md) for completion, failure, and concurrency.
+Next introduce minimal draws. Command pools and allocator reuse follow real needs.
 
 ## Resources and memory
 
@@ -96,22 +96,23 @@ including ordinary allocation failures that EX does not recover.
 `HostAccess` grants explicit CPU read/write permissions independently of
 device-side usages. CPU upload/readback copy bytes through a private storage
 mutex after full-range checks. Buffer clones retain one allocation. No public
-mutable slice is exposed. Individual CPU copies serialize, but this does not
-define future queue ordering or GPU visibility. Heaps, device-local placement,
+mutable slice is exposed. Whole submissions and CPU copies serialize per device;
+this does not define future asynchronous GPU visibility. Heaps, device-local placement,
 mapping, residency, alignment rules, and resource transitions remain deferred.
 
 ## Synchronization and lifetime
 
-No queue execution or completion primitive exists yet. The first submission
-contract must specify execution order, when writes become visible, how completion
-is observed, and whether submission blocks the caller. A synchronous reference
-implementation can establish those rules, but asynchronous hardware must not be
-forced by accident into the same blocking implementation.
+Reference submission blocks the caller and executes copies in recording order.
+Successful return establishes completion. Storage failure preserves the completed
+prefix and skips remaining work. The device gate serializes entire submissions
+against CPU access; storage locks are acquired only afterward. No separate fence
+is needed for this path. Future asynchronous hardware needs explicit completion
+and is not forced into the reference implementation's CPU scheduling mechanism.
 
 Rust moving a handle does not prove a GPU has finished reading its allocation.
-Recorded work now retains its resources; submitted work must preserve them until
-completion. Cross-device resources and overlapping ranges within a copy are
-already checked. Dependencies between executed operations remain future work.
+Recorded work retains its resources, and the synchronous borrow preserves them
+through completion. Cross-device work and overlapping copy ranges are checked.
+Ordered chains observe earlier copy writes; general execution dependencies remain future work.
 Multiple queues,
 barriers, semaphores, and richer timelines remain future decisions, not claimed
 features. Synchronization will be part of Phase 1's contract, not postponed until
@@ -145,12 +146,14 @@ and textures are later steps, not hidden claims of full GPU conformance.
 identifies resource labels, forbidden CPU access, invalid ranges, and storage
 poisoning. `CommandEncodeError` reports foreign source/destination resources,
 missing transfer roles, invalid ranges, overlap, and command reservation failures.
+`QueueSubmitError` reports foreign work or poisoned storage with a failed command
+index, buffer role, and label; it defines the completed prefix explicitly.
 Keep checks enabled in all builds initially. Release performance policy is a
 future decision supported by measurement, not a reason to hide correctness bugs.
 
-Before submission exists, define failures for wrong device, unsupported usage,
-invalid command order, incompatible pipeline/attachment state, and resource
-hazards. Report the resource label/identity, operation, and expected condition.
+Before adding rendering, define failures for unsupported usage, invalid draw
+state, incompatible pipeline/attachment state, and resource hazards. Report the
+resource label/identity, operation, and expected condition.
 Only introduce error variants when an operation can actually produce them.
 
 ## Decision and verification discipline

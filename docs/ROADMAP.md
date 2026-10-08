@@ -20,7 +20,7 @@ renderer or a reason to postpone the next queue-submission milestone.
 | Phase | Status | Completion evidence |
 | --- | --- | --- |
 | 0 — Repository foundation | Complete | Production workspace, public `ex` entry point, checks, contracts, and local Git history |
-| 1 — Minimum runtime | In progress: discovery, buffers, and copy recording work | Pending: queue execution and completion semantics |
+| 1 — Minimum runtime | Complete | Ordered synchronous copy execution, readback, concurrency/failure contract, public example, and tests |
 | 2 — First software triangle | Not started | Pending: public draw commands produce a triangle image through EX's own rasterizer |
 | 3 — Programmability and pipeline milestone | Not started | Pending: EX shader representation and public pipeline produce a programmable triangle |
 | 4 — Modern GPU concepts | Deferred until earlier phases work | Per-feature implementation, validation, and executable evidence |
@@ -48,7 +48,7 @@ Evidence: [assessment](ASSESSMENT.md), [workspace](../Cargo.toml),
 There is no hosted CI workflow in this repository; CI-friendly commands do not imply one.
 This phase is repository foundation, not completion of the archived Rust syllabus.
 
-## Phase 1 — Minimum API and runtime: in progress
+## Phase 1 — Minimum API and runtime: complete
 
 ### 1.1 Discovery and logical ownership: complete
 
@@ -95,32 +95,39 @@ hardware storage are not implemented.
 Evidence: [recording contract](COMMANDS.md),
 [public example](../crates/ex-api/examples/record_copy.rs), and
 [recording tests](../crates/ex-api/tests/command_recording.rs). The workspace
-passes 43 tests, including documentation tests. Reservation failures are handled
-but tests do not exhaust RAM to induce OOM. Source sampling at execution is a
-documented plan, not verified execution behavior yet.
+passed 43 tests at the recording milestone, including documentation tests.
+Reservation failures are handled but tests do not exhaust RAM to induce OOM.
+Execution-time source sampling is now implemented and tested in step 1.4.
 
 The standalone `CommandRecorder` still records labels only and now returns
 `DebugMarkerBuffer`; `CommandEncoder::finish()` produces the actual device-bound
-`CommandBuffer`. Neither result can be submitted in this milestone.
+`CommandBuffer`. Step 1.4 submits the device-bound result; labels remain separate.
 
-### 1.4 Queue submission and basic synchronization: next
+### 1.4 Queue submission and basic synchronization: complete
 
-- [ ] Submit finished work to its owning queue and reject a foreign device's commands.
-- [ ] Execute recorded copies in order through EX's reference implementation.
-- [ ] Establish synchronous reference submission: successful return means copies
+- [x] Submit finished work to its owning queue and reject a foreign device's commands.
+- [x] Execute recorded copies in order through EX's reference implementation.
+- [x] Establish synchronous reference submission: successful return means copies
       have finished and their results are visible to subsequent permitted CPU reads.
-- [ ] Define validation/execution failure behavior, including whether earlier
+- [x] Define validation/execution failure behavior, including whether earlier
       commands may already have executed when a later operation fails.
-- [ ] Define concurrent submissions/CPU access and deadlock-safe resource locking.
-- [ ] Test ordered copy chains, retained resource lifetime, ownership/usage/range errors,
+- [x] Define concurrent submissions/CPU access and deadlock-safe resource locking.
+- [x] Test ordered copy chains, retained resource lifetime, ownership/usage/range errors,
       and the documented completion/failure behavior.
-- [ ] Add the public record-submit-readback example and current command/sync contracts.
+- [x] Add the public record-submit-readback example and current command/sync contracts.
 
-The intended next flow is upload → record copy → verify unchanged destination →
-finish → submit → read back matching bytes. Recording and finishing now work;
-submission remains planned. CPU-copy mutexes do not provide this queue contract.
+The complete flow is upload → record copy → verify unchanged destination →
+finish → submit → read back matching bytes. Borrowed command buffers are reusable;
+each submission samples live source bytes. Device gates serialize whole submissions
+against CPU access. Failure preserves completed commands and skips later work.
 
-**Phase 1 completion gate:** this flow runs through `ex`, misuse is reported clearly,
+Evidence: [submission contract](SUBMISSION.md),
+[public example](../crates/ex-api/examples/submit_copy.rs),
+[submission tests](../crates/ex-api/tests/queue_submission.rs), and internal
+poisoning/lifetime/gate checks. The workspace now passes 57 tests, including
+documentation tests. This does not claim hardware or asynchronous execution.
+
+**Phase 1 completion gate: met.** This flow runs through `ex`, misuse is reported clearly,
 and order, visibility, error behavior, and resource retention are documented and
 tested. A synchronous reference contract is the starting point; future asynchronous
 execution must introduce explicit completion without losing these semantics.
@@ -184,7 +191,7 @@ is checked. Performance or hardware-conformance claims require separate evidence
 The [EX Witness direction](../DOCUMENTATION.md#ex-witness-experimental-differentiation)
 explores explanation → replay → smaller executable tests for selected failures.
 It uses the same contracts for managed and explicit work. This track adds no new
-Phase 1 completion requirement; queue submission remains next.
+Phase 1 completion requirement; the next main milestone is the first triangle.
 
 After the copy/submission foundation works:
 

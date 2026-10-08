@@ -1,7 +1,8 @@
 # EX allocated reference buffers
 
 Status: Phase 1 buffer storage. Names and contracts remain provisional. Buffers
-allocate and copy actual bytes on the reference target; queues still do not execute.
+allocate and copy actual bytes on the reference target; queues now execute copies
+under [SUBMISSION.md](SUBMISSION.md).
 
 ## Design
 
@@ -93,10 +94,11 @@ A buffer can outlive its original device, adapter, instance, and descriptor.
 The final buffer handle drops storage and its device reference. Devices do not
 own lists of buffers, so this retention chain creates no ownership cycle.
 
-Each CPU read/write locks the storage for its whole copy, preventing data races
-through cloned handles. This only serializes individual CPU operations; it does
-not make a sequence of calls transactional or define future GPU visibility,
-resource barriers, submission order, or in-flight access. If an internal panic
+Each CPU read/write acquires the device gate before locking storage for its whole
+copy, preventing races through cloned handles and interleaving inside a submission.
+Whole submissions and valid CPU accesses serialize on that device. A sequence of
+separate calls is not transactional; concurrent arrival order is unspecified.
+This does not define future hardware barriers or asynchronous access. If an internal panic
 poisons the lock, later accesses report `StoragePoisoned` rather than trusting
 possibly interrupted contents. Public copies provide no user callback under the
 lock and do not deliberately panic.
@@ -116,5 +118,6 @@ mapping exists, but host-memory exhaustion recovery is not claimed as verified.
 
 Recorded copies now validate TransferSource/TransferDestination, common device
 ownership, ranges, and overlap, and retain referenced allocations. They do not
-read storage or snapshot contents. Next: submit them through the queue and define
-ordering, visibility, host concurrency, and completion. No executor exists yet.
+read storage or snapshot contents. Queue submission now executes those descriptions,
+with ordering, visibility, host concurrency, and failure defined in the submission
+contract. Rendering and hardware storage are still future work.

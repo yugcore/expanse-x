@@ -1,5 +1,5 @@
 use super::{BufferDescriptor, BufferDescriptorError, BufferUsage, HostAccess};
-use crate::Device;
+use crate::{CopyBufferRole, Device};
 use std::collections::TryReserveError;
 use std::error::Error;
 use std::fmt;
@@ -99,8 +99,8 @@ struct BufferState {
 /// Owned, zero-initialized reference buffer storage associated with one device.
 ///
 /// Clones retain the same allocation. CPU operations copy bytes and serialize
-/// through a private mutex; no mapped slices, GPU work, or queue synchronization
-/// are exposed. The final handle releases storage and its retained device.
+/// through the device execution gate and private storage mutex. No mapped slices
+/// or hardware GPU work are exposed. The final handle releases storage and device.
 #[derive(Clone)]
 pub struct Buffer {
     state: Arc<BufferState>,
@@ -222,6 +222,7 @@ impl Buffer {
             });
         }
         let range = self.checked_range(offset, data.len())?;
+        let _execution = self.state.device.lock_execution();
         let mut bytes = self.state.bytes.lock().map_err(|_| self.poisoned_error())?;
         bytes[range].copy_from_slice(data);
         Ok(())
@@ -239,8 +240,50 @@ impl Buffer {
             });
         }
         let range = self.checked_range(offset, destination.len())?;
+        let _execution = self.state.device.lock_execution();
         let bytes = self.state.bytes.lock().map_err(|_| self.poisoned_error())?;
         destination.copy_from_slice(&bytes[range]);
+        Ok(())
+    }
+
+    /// Reference executor only: caller holds this device's execution gate, and
+    /// uses immutable ranges/roles validated by CommandEncoder. Do not call the
+    /// public read/write methods here: they acquire the same non-reentrant gate.
+    pub(crate) fn copy_to(
+        &self,
+        source_offset: u64,
+        destination: &Self,
+        destination_offset: u64,
+        size: u64,
+    ) -> Result<(), CopyBufferRole> {
+        if size == 0 {
+            return Ok(());
+        }
+        // Creation bounds size by isize::MAX; recording checked addition/ranges.
+        // Storage never resizes and descriptions cannot be publicly fabricated.
+        let source_range = source_offset as usize..(source_offset + size) as usize;
+        let destination_start = destination_offset as usize;
+        if self.is_same(destination) {
+            let mut bytes = self
+                .state
+                .bytes
+                .lock()
+                .map_err(|_| CopyBufferRole::Source)?;
+            bytes.copy_within(source_range, destination_start);
+        } else {
+            let source = self
+                .state
+                .bytes
+                .lock()
+                .map_err(|_| CopyBufferRole::Source)?;
+            let mut destination = destination
+                .state
+                .bytes
+                .lock()
+                .map_err(|_| CopyBufferRole::Destination)?;
+            let destination_range = destination_start..destination_start + size as usize;
+            destination[destination_range].copy_from_slice(&source[source_range]);
+        }
         Ok(())
     }
 
@@ -359,5 +402,120 @@ mod tests {
         assert!(state.upgrade().is_none());
         assert!(encoder.commands().is_empty());
         assert!(error.to_string().contains("TransferSource"));
+    }
+
+    fn transfer(device: &Device, label: &str) -> Buffer {
+        device
+            .create_buffer(BufferDescriptor {
+                label,
+                size: 4,
+                usages: &[
+                    BufferUsage::TransferSource,
+                    BufferUsage::TransferDestination,
+                ],
+                host_access: HostAccess::ReadWrite,
+            })
+            .unwrap()
+    }
+
+    fn poison(buffer: &Buffer) {
+        assert!(std::panic::catch_unwind(|| {
+            let _storage = buffer.state.bytes.lock().unwrap();
+            panic!("simulate interrupted internal execution");
+        })
+        .is_err());
+    }
+
+    #[test]
+    fn submission_failure_preserves_the_completed_prefix_and_skips_later_work() {
+        use crate::QueueSubmitError;
+        for role in [CopyBufferRole::Source, CopyBufferRole::Destination] {
+            let device = Instance::new().default_adapter().create_device();
+            let source = transfer(&device, "good source");
+            let completed = transfer(&device, "completed");
+            let bad = transfer(&device, "poisoned");
+            let failed_destination = transfer(&device, "failed destination");
+            let later = transfer(&device, "later");
+            source.write(0, &[7; 4]).unwrap();
+            let mut encoder = device.create_command_encoder();
+            encoder.copy_buffer(&source, 0, &completed, 0, 4).unwrap();
+            match role {
+                CopyBufferRole::Source => encoder
+                    .copy_buffer(&bad, 0, &failed_destination, 0, 4)
+                    .unwrap(),
+                CopyBufferRole::Destination => encoder.copy_buffer(&source, 0, &bad, 0, 4).unwrap(),
+            }
+            encoder.copy_buffer(&source, 0, &later, 0, 4).unwrap();
+            let commands = encoder.finish();
+            poison(&bad);
+            let error = device.default_queue().submit(&commands).unwrap_err();
+            assert_eq!(
+                error,
+                QueueSubmitError::StoragePoisoned {
+                    command_index: 1,
+                    role,
+                    label: "poisoned".to_owned(),
+                }
+            );
+            assert!(error.to_string().contains("earlier commands completed"));
+            assert!(std::error::Error::source(&error).is_none());
+            let mut bytes = [99; 4];
+            completed.read(0, &mut bytes).unwrap();
+            assert_eq!(bytes, [7; 4]);
+            later.read(0, &mut bytes).unwrap();
+            assert_eq!(bytes, [0; 4]);
+            failed_destination.read(0, &mut bytes).unwrap();
+            assert_eq!(bytes, [0; 4]);
+            let poisoned_bytes = bad.state.bytes.lock().unwrap_err().into_inner();
+            assert_eq!(*poisoned_bytes, [0; 4]);
+            drop(poisoned_bytes);
+            // A recoverable error does not make unrelated storage unavailable.
+            source.write(0, &[8; 4]).unwrap();
+            assert_eq!(commands.commands().len(), 3);
+        }
+    }
+
+    #[test]
+    fn empty_copies_skip_poisoned_storage_but_nonempty_aliases_report_source() {
+        use crate::QueueSubmitError;
+        let device = Instance::new().default_adapter().create_device();
+        let buffer = transfer(&device, "alias");
+        let mut empty = device.create_command_encoder();
+        empty.copy_buffer(&buffer, 4, &buffer, 4, 0).unwrap();
+        let mut nonempty = device.create_command_encoder();
+        nonempty
+            .copy_buffer(&buffer, 0, &buffer.clone(), 2, 2)
+            .unwrap();
+        poison(&buffer);
+        device.default_queue().submit(&empty.finish()).unwrap();
+        assert_eq!(
+            device.default_queue().submit(&nonempty.finish()),
+            Err(QueueSubmitError::StoragePoisoned {
+                command_index: 0,
+                role: CopyBufferRole::Source,
+                label: "alias".to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn completed_submission_does_not_leave_queue_owned_resource_references() {
+        let device = Instance::new().default_adapter().create_device();
+        let queue = device.default_queue();
+        let source = transfer(&device, "source");
+        let destination = transfer(&device, "destination");
+        let source_state = Arc::downgrade(&source.state);
+        let destination_state = Arc::downgrade(&destination.state);
+        let mut encoder = device.create_command_encoder();
+        encoder.copy_buffer(&source, 0, &destination, 0, 4).unwrap();
+        let commands = encoder.finish();
+        drop(source);
+        drop(destination);
+        queue.submit(&commands).unwrap();
+        assert!(source_state.upgrade().is_some());
+        assert!(destination_state.upgrade().is_some());
+        drop(commands);
+        assert!(source_state.upgrade().is_none());
+        assert!(destination_state.upgrade().is_none());
     }
 }

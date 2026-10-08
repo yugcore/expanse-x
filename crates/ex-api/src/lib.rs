@@ -2,7 +2,7 @@
 //!
 //! Phase 1 begins with software discovery, logical devices, and queue ownership,
 //! alongside owned reference buffers with explicit host access and validated
-//! buffer-copy recording. Queue submission and rendering are not implemented yet.
+//! buffer-copy recording and synchronous reference submission. Rendering is absent.
 //! This crate has no dependency on another graphics API.
 //!
 //! ```
@@ -75,6 +75,9 @@
 //! let mut bytes = [99; 4];
 //! destination.read(0, &mut bytes)?;
 //! assert_eq!(bytes, [0; 4]); // Recording/finishing do not execute the copy.
+//! device.default_queue().submit(&commands)?;
+//! destination.read(0, &mut bytes)?;
+//! assert_eq!(bytes, [1, 2, 3, 4]); // Successful submission has completed.
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
@@ -85,5 +88,5 @@ pub use expansex_core::{
     Adapter, AdapterInfo, BackendKind, Buffer, BufferAccessError, BufferCopy, BufferCreateError,
     BufferDescriptor, BufferDescriptorError, BufferUsage, Command, CommandBuffer,
     CommandEncodeError, CommandEncoder, CommandRecorder, CopyBufferRole, DebugMarkerBuffer, Device,
-    HostAccess, Instance, Queue,
+    HostAccess, Instance, Queue, QueueSubmitError,
 };

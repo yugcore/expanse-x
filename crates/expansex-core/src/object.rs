@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 /// An EX target identified during discovery, independent of other graphics APIs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,6 +79,7 @@ impl Adapter {
         Device {
             state: Arc::new(DeviceState {
                 adapter: self.clone(),
+                execution: Mutex::new(()),
             }),
         }
     }
@@ -91,10 +92,11 @@ impl Adapter {
 #[derive(Debug)]
 struct DeviceState {
     adapter: Adapter,
+    execution: Mutex<()>,
 }
 
 /// A logical EX device. Allocates reference buffers and creates copy encoders;
-/// queue execution is not implemented yet.
+/// executes recorded copies through its synchronous reference queue.
 ///
 /// Cloning retains the same device; use [`Adapter::create_device`] for a new one.
 #[derive(Debug, Clone)]
@@ -110,8 +112,7 @@ impl Device {
 
     /// Returns a handle to this device's single default endpoint.
     ///
-    /// Repeated calls share the endpoint. No worker thread or submission is
-    /// started, and no queue execution or synchronization guarantee exists yet.
+    /// Repeated calls share the endpoint and execution gate. No worker is started.
     pub fn default_queue(&self) -> Queue {
         Queue {
             state: Arc::clone(&self.state),
@@ -122,12 +123,22 @@ impl Device {
     pub fn is_same(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.state, &other.state)
     }
+
+    /// Acquire before any storage lock. This gate contains no resource data;
+    /// recovering a poisoned guard preserves serialization. Storage poisoning
+    /// is still reported separately and never recovered by byte operations.
+    pub(crate) fn lock_execution(&self) -> MutexGuard<'_, ()> {
+        self.state
+            .execution
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+    }
 }
 
 /// An owned handle to a device's single default queue endpoint.
 ///
 /// Retains the owning device state after the original device handle is dropped.
-/// This step establishes ownership only; there is no submission operation yet.
+/// Submission executes recorded copies synchronously on the reference target.
 #[derive(Debug, Clone)]
 pub struct Queue {
     state: Arc<DeviceState>,
@@ -150,6 +161,87 @@ impl Queue {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn execution_gate_blocks_cpu_access_and_queue_clones_but_not_other_devices() {
+        use crate::{BufferDescriptor, BufferUsage, HostAccess};
+        use std::sync::mpsc;
+        use std::time::Duration;
+        let device = Instance::new().default_adapter().create_device();
+        let buffer = device
+            .create_buffer(BufferDescriptor {
+                label: "gated",
+                size: 4,
+                usages: &[
+                    BufferUsage::TransferSource,
+                    BufferUsage::TransferDestination,
+                ],
+                host_access: HostAccess::ReadWrite,
+            })
+            .unwrap();
+        let other = device.adapter().create_device();
+        let queue = device.default_queue().clone();
+        let commands = device.create_command_encoder().finish();
+        let gate = device.lock_execution();
+        let (done, received) = mpsc::channel();
+        let write_done = done.clone();
+        let read_done = done.clone();
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                buffer.write(0, &[7; 4]).unwrap();
+                write_done.send(()).unwrap();
+            });
+            scope.spawn(|| {
+                buffer.read(0, &mut [0; 4]).unwrap();
+                read_done.send(()).unwrap();
+            });
+            scope.spawn(|| {
+                queue.submit(&commands).unwrap();
+                done.send(()).unwrap();
+            });
+            assert!(matches!(
+                received.recv_timeout(Duration::from_millis(50)),
+                Err(mpsc::RecvTimeoutError::Timeout)
+            ));
+            // Device gates are independent; this succeeds while the first is held.
+            other
+                .default_queue()
+                .submit(&other.create_command_encoder().finish())
+                .unwrap();
+            drop(gate);
+            for _ in 0..3 {
+                received.recv_timeout(Duration::from_secs(2)).unwrap();
+            }
+        });
+    }
+
+    #[test]
+    fn recovering_a_poisoned_empty_gate_preserves_usable_storage() {
+        use crate::{BufferDescriptor, BufferUsage, HostAccess};
+        let device = Instance::new().default_adapter().create_device();
+        let buffer = device
+            .create_buffer(BufferDescriptor {
+                label: "usable after gate poison",
+                size: 4,
+                usages: &[BufferUsage::Storage],
+                host_access: HostAccess::ReadWrite,
+            })
+            .unwrap();
+        assert!(std::panic::catch_unwind(|| {
+            let _gate = device.lock_execution();
+            panic!("simulate panic without touching resource storage");
+        })
+        .is_err());
+        assert!(device.state.execution.is_poisoned());
+        device
+            .default_queue()
+            .submit(&device.create_command_encoder().finish())
+            .unwrap();
+        buffer.write(0, &[7; 4]).unwrap();
+        let mut bytes = [0; 4];
+        buffer.read(0, &mut bytes).unwrap();
+        assert_eq!(bytes, [7; 4]);
+    }
 
     #[test]
     fn empty_recorded_work_retains_device_until_it_drops() {

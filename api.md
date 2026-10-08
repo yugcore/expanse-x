@@ -2,7 +2,7 @@
 
 Updated: 2026-10-08. Scope: every currently exported EX type, inherent method,
 public field, enum variant, and explicit standard trait implementation.
-There are **21 public types and 39 inherent methods**. These are provisional
+There are **22 public types and 40 inherent methods**. These are provisional
 Phase 1 APIs, not a completed or stable v1 specification.
 
 Applications depend on package `ex-api` and import its library as `ex`:
@@ -27,7 +27,7 @@ currently exported.
 | Buffers | [BufferDescriptor](#bufferdescriptor), [BufferUsage](#bufferusage), [HostAccess](#hostaccess), [Buffer](#buffer) |
 | Copy recording | [CommandEncoder](#commandencoder), [CommandBuffer](#commandbuffer), [Command](#command), [BufferCopy](#buffercopy), [CopyBufferRole](#copybufferrole) |
 | Prototype labels | [CommandRecorder](#commandrecorder), [DebugMarkerBuffer](#debugmarkerbuffer) |
-| Errors | [BufferDescriptorError](#bufferdescriptorerror), [BufferCreateError](#buffercreateerror), [BufferAccessError](#bufferaccesserror), [CommandEncodeError](#commandencodeerror) |
+| Errors | [BufferDescriptorError](#bufferdescriptorerror), [BufferCreateError](#buffercreateerror), [BufferAccessError](#bufferaccesserror), [CommandEncodeError](#commandencodeerror), [QueueSubmitError](#queuesubmiterror) |
 
 Signatures below use the listed type as the meaning of `Self`. Omitted return
 types mean `()`. References borrow their values; returned handles own their
@@ -112,8 +112,13 @@ error path. Buffer creation has its documented fallible reservation path.
 | --- | --- |
 | `Queue::device(&self) -> Device` | Retain the original owning device. |
 | `Queue::belongs_to(&self, device: &Device) -> bool` | Test device membership. |
+| `Queue::submit(&self, commands: &CommandBuffer) -> Result<(), QueueSubmitError>` | Execute reusable finished copies synchronously in recording order on the CPU. |
 
-There is no `Queue::submit` or execution/completion API yet.
+Successful submission means all submitted copies finished. Concurrent submissions
+and CPU access on the device serialize for the whole operation; concurrent arrival
+order is unspecified. Foreign work changes nothing. Storage failure leaves earlier
+commands completed, changes nothing in the failed copy, and skips later work.
+See [SUBMISSION.md](docs/SUBMISSION.md). No asynchronous completion API exists.
 
 ## Buffers
 
@@ -142,7 +147,7 @@ and values, not storage. There is no `Default` implementation.
 ### BufferUsage
 
 `ex::BufferUsage` has no inherent methods. All variants can be requested in a
-descriptor; only transfer roles currently participate in command recording.
+descriptor; only transfer roles currently participate in command recording/execution.
 
 | Variant | Role |
 | --- | --- |
@@ -153,7 +158,7 @@ descriptor; only transfer roles currently participate in command recording.
 | `BufferUsage::TransferSource` | Required source role for recorded copies. |
 | `BufferUsage::TransferDestination` | Required destination role for recorded copies. |
 
-A usage flag alone does not implement drawing, shaders, or copy execution.
+A usage flag alone does not implement drawing or shaders. Copies execute on submission.
 
 ### HostAccess
 
@@ -183,11 +188,12 @@ All fields are private; create it through `Device::create_buffer`.
 | `Buffer::write(&self, offset: u64, data: &[u8]) -> Result<(), BufferAccessError>` | Copy CPU bytes after permission/range checks. |
 | `Buffer::read(&self, offset: u64, destination: &mut [u8]) -> Result<(), BufferAccessError>` | Copy bytes into caller-owned CPU storage after permission/range checks. |
 
-Clones share live bytes. Reads/writes are synchronous and serialize per
-allocation through private storage. Rejected accesses do not partially change
+Clones share live bytes. Reads/writes are synchronous and serialize with submissions
+through the device gate, then private storage. Rejected accesses do not partially change
 their destination. Empty accesses require permission and an offset at or before
 the end. Transfer usages do not grant CPU access. No mapping or public mutable
-slice is exposed; CPU copies do not establish queue synchronization.
+slice is exposed. CPU access cannot interleave inside a same-device submission;
+a sequence of separate calls is not transactional.
 
 ## Copy recording
 
@@ -227,7 +233,7 @@ finish. All fields are private.
 
 There is no public constructor or clone implementation. The command sequence is
 immutable; buffer contents remain live. Resources are retained, not snapshotted.
-Submission and execution-time source sampling are not implemented yet.
+`Queue::submit` borrows this reusable work and samples live bytes per executed copy.
 
 ### Command
 
@@ -345,10 +351,22 @@ Source: [command.rs](crates/expansex-core/src/command.rs).
 Creation/encoding reservation errors do not provide universal OOM recovery:
 small handle and error-label allocations still use ordinary Rust allocation behavior.
 
+### QueueSubmitError
+
+Source: [submission.rs](crates/expansex-core/src/submission.rs).
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `QueueSubmitError::ForeignCommandBuffer` | Finished work belongs to another device; nothing executed. |
+| `QueueSubmitError::StoragePoisoned { command_index: usize, role: CopyBufferRole, label: String }` | Failed nonempty copy at this zero-based index; earlier copies completed, failed destination unchanged, later work skipped. |
+
+This error has no underlying `Error::source`. Aliased copies report poisoned
+storage as `Source`; zero-byte copies never lock storage. No rollback is promised.
+
 ## Explicit standard trait support
 
 This lists implemented/derived traits, not Rust's blanket implementations or
-auto traits. They are separate from the 39 inherent methods above.
+auto traits. They are separate from the 40 inherent methods above.
 
 | Type | Traits |
 | --- | --- |
@@ -373,6 +391,7 @@ auto traits. They are separate from the 39 inherent methods above.
 | `BufferCreateError` | `Debug`, `Display`, `Error` |
 | `BufferAccessError` | `Debug`, `Clone`, `PartialEq`, `Eq`, `Display`, `Error` |
 | `CommandEncodeError` | `Debug`, `Display`, `Error` |
+| `QueueSubmitError` | `Debug`, `Clone`, `PartialEq`, `Eq`, `Display`, `Error` |
 
 Standard trait operations include:
 
@@ -380,10 +399,10 @@ Standard trait operations include:
 | --- | --- |
 | `Clone::clone(&self) -> Self` | Types marked `Clone` above. Device/queue/buffer handles retain shared state; `AdapterInfo` clones its owned metadata. |
 | `Default::default() -> Self` | `Instance`, `CommandRecorder`; same behavior as their `new()`. |
-| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 21 types; buffer formatting exposes metadata rather than stored bytes. |
+| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 22 types; buffer formatting exposes metadata rather than stored bytes. |
 | `PartialEq::eq(&self, other: &Self) -> bool` | Types marked `PartialEq`; handle identity instead uses explicit `is_same`/`belongs_to` methods. |
-| `Display::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | Four error types and `CopyBufferRole`. |
-| `Error::source(&self) -> Option<&(dyn std::error::Error + 'static)>` | All four error types. Creation's invalid-descriptor/reservation variants and encoding's reservation variant retain a source; other current variants return `None`. |
+| `Display::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | Five error types and `CopyBufferRole`. |
+| `Error::source(&self) -> Option<&(dyn std::error::Error + 'static)>` | All five error types. Creation's invalid-descriptor/reservation variants and encoding's reservation variant retain a source; other current variants return `None`. |
 
 Other inherited standard trait methods, such as `clone_from` and `ne`, follow
 their standard-library contracts. Error trait objects also support standard
@@ -392,7 +411,7 @@ their standard-library contracts. Error trait objects also support standard
 
 ## Not implemented
 
-There are currently no public APIs for queue submission/completion, textures,
+There are currently no public APIs for asynchronous submission/completion, textures,
 samplers, shaders, graphics/compute pipelines, draw/dispatch, render passes,
 presentation, mapped memory, hardware discovery/drivers, managed planning,
 EX Witness, or EX Proof. Resource branching is an unaccepted discussion idea,

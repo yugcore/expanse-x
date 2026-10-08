@@ -125,8 +125,8 @@ impl BufferCopy {
 
 /// Records copies for one device, retaining the device and referenced buffers.
 ///
-/// There is no public constructor independent of a device, and no submission
-/// operation yet. Finishing consumes the encoder without executing its work.
+/// There is no public constructor independent of a device. Finishing consumes
+/// the encoder without executing its work; use Queue::submit afterward.
 #[derive(Debug)]
 pub struct CommandEncoder {
     device: Device,
@@ -165,7 +165,7 @@ impl CommandEncoder {
     /// command sequence and buffer contents remain unchanged.
     ///
     /// Only handles and offsets are recorded: no bytes are read, snapshotted,
-    /// or written. Execution-time source sampling is for the next milestone.
+    /// or written. Queue submission reads live source contents at execution.
     pub fn copy_buffer(
         &mut self,
         source: &Buffer,
@@ -268,7 +268,7 @@ fn checked_end(
         })
 }
 
-/// Immutable recorded work for one device. No queue submission exists yet.
+/// Immutable recorded work for one device, reusable with synchronous submission.
 ///
 /// Retains resources until dropped. Immutability applies to the command sequence,
 /// not the live buffer contents. This type cannot be constructed from debug labels.

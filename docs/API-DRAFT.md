@@ -1,6 +1,6 @@
 # EX current API contract
 
-Status: Phase 1 buffer-copy recording; public names and behavior are provisional.
+Status: Phase 1 minimum runtime complete; public names and behavior are provisional.
 Applications depend on package `ex-api` and import its library as `ex`. The
 implementation remains in `expansex-core`; the public crate re-exports its types.
 This contract describes implemented behavior only. See [architecture](ARCHITECTURE.md)
@@ -59,7 +59,8 @@ device. Borrowed metadata getters expose label, size, usages, and host access.
 copies into caller-owned memory. Both require their respective host permission,
 validate the full byte range with overflow checks, and lock private storage
 through the copy. Errors never partially modify the copy destination. They are
-synchronous CPU operations, independent of device-side transfer roles and queues.
+synchronous CPU operations, independent of device-side transfer roles. They
+serialize against whole submissions through the shared device execution gate.
 See [the buffer contract](BUFFERS.md) for permissions, creation errors, lifetime,
 limits, and the intentional new descriptor field.
 
@@ -82,12 +83,32 @@ Both expose `device()`, `belongs_to()`, and borrowed `commands()`. `BufferCopy`
 exposes `source()`, `destination()`, `source_offset()`, `destination_offset()`, and
 `size()`. The finished sequence is immutable and not cloneable. Buffers stay live,
 not snapshotted; changes through other permitted CPU handles remain observable.
-Recording and finishing do not read/write bytes or execute work. There is no
-submission API yet. See [the recording contract](COMMANDS.md) for precedence,
-ownership, errors, source-sampling plans, and limits.
+Recording and finishing do not read/write bytes or execute work.
+See [the recording contract](COMMANDS.md) for precedence,
+ownership, errors, and limits.
 
 ```text
 cargo run -p ex-api --example record_copy --locked --offline
+```
+
+## Synchronous reference submission
+
+`queue.submit(&commands)` returns `Result<(), QueueSubmitError>`. Finished work
+must belong to the queue's exact device, including empty work. Commands execute
+in order, read live source bytes, and complete before successful return. Work is
+borrowed and reusable. Device-side transfers ignore public CPU host permissions.
+
+All valid CPU reads/writes and whole submissions on a device serialize through
+its shared gate. Concurrent arrival order is unspecified. Same-buffer copies take
+one storage lock; distinct-buffer copies lock source and destination under that
+gate. Empty copies access no storage. Foreign submission changes nothing;
+poisoned storage reports a zero-based failed command and role, preserves earlier
+results, leaves the failing destination unchanged, and skips later commands.
+There is no rollback, asynchronous execution, or hardware completion primitive.
+See [the submission contract](SUBMISSION.md) for exact lock and failure rules.
+
+```text
+cargo run -p ex-api --example submit_copy --locked --offline
 ```
 
 ## Standalone prototype labels
@@ -124,13 +145,15 @@ range safety, shared identity, and CPU alias access. Three internal resource
 tests verify storage/device retention and poisoned-lock behavior. A third public
 documentation example exercises allocation and readback. The complete workspace
 now also has ten public command-recording tests, three additional lifecycle tests,
-and executable/compile-fail encoder documentation. It runs 43 tests, including
+and executable/compile-fail encoder documentation. Nine public submission tests
+and five internal execution tests check results, order, reuse, lifetime, aliasing,
+foreign work, concurrency, poisoning, partial failure, and gate recovery.
+The workspace runs 57 tests, including
 documentation tests. Tests do not induce allocator OOM by exhausting host memory.
 
 ## Next contract
 
-Next, Phase 1 must execute the recorded copies through queue submission and
-establish submission order, completion visibility, host concurrency, execution
-failure behavior, and resource retention through completion.
-Implement and test a small CPU execution path before adding rasterization.
+Phase 1 is complete: upload, recording, submission, and readback now work.
+Next define framebuffer storage, minimal draw commands, vertex fetch, and the
+first software rasterizer with observable triangle pixels.
 There is no implemented execution-backend ABI yet.

@@ -42,6 +42,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => return Err("expected the recorded copy".into()),
     }
-    println!("Recording retains resources but does not execute: queue submission is next.");
+    println!(
+        "Recording retains resources but does not execute; submit_copy demonstrates submission."
+    );
     Ok(())
 }

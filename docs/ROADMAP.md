@@ -172,6 +172,30 @@ Each feature needs a chosen EX contract, a working reference implementation,
 misuse validation, executable evidence, and updated documentation before its box
 is checked. Performance or hardware-conformance claims require separate evidence.
 
+## EX Witness — experimental track: not started
+
+The [EX Witness direction](../DOCUMENTATION.md#ex-witness-experimental-differentiation)
+explores explanation → replay → smaller executable tests for selected failures.
+It uses the same contracts for managed and explicit work. This track adds no new
+Phase 1 completion requirement; recorded copies and submission remain next.
+
+After the copy/submission foundation works:
+
+- [ ] Define a supported failure condition and capture point for a copy validation
+      error or application-provided readback assertion.
+- [ ] Capture the resource descriptions, starting state, operation inputs, and
+      dependencies needed for an independent reference replay.
+- [ ] Export a standalone case with EX version/environment requirements and verify
+      that it reproduces the selected failure without the originating application.
+- [ ] Attempt reduction while preserving the target failure; reject candidates
+      that only introduce unrelated validation errors.
+- [ ] Demonstrate converting the fixed reproduction into a passing regression test.
+- [ ] Document tracing/replay overhead and the supported scope and limitations.
+
+Pixel explanations, shader tracing, and frame reduction depend on those features
+actually executing in EX. They are later experiments, not implemented diagnostics
+or a promise to reproduce hardware-specific bugs or find an absolute minimum.
+
 ## Future — Hardware backends: deferred
 
 Hardware integration needs a driver interface, virtual memory model, command

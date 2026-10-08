@@ -126,6 +126,68 @@ Rust, automatic dependency handling, and two control levels alone are not claims
 of a feature unique to EX. Performance and usability benefits require examples
 and measurements rather than assertions.
 
+## EX Witness: experimental differentiation
+
+Status: accepted for exploration on 2026-10-08; not implemented. EX Witness is a
+working name for turning a selected graphics failure into an explanation, a
+replay, and a smaller runnable test. Its usefulness must be demonstrated before
+it becomes a promised capability.
+
+The intended workflow is:
+
+1. Select a validation error, unexpected buffer value, or pixel with an explicit
+   condition describing the failure to preserve.
+2. Explain the relevant commands, resource accesses, and available intermediate
+   results. Report observed facts; application intent remains the developer's
+   responsibility.
+3. Capture the work, resource descriptions, starting contents, dependencies, and
+   other inputs needed to replay the supported case through EX's reference backend.
+4. Attempt to remove unrelated commands and data while keeping the selected
+   failure reproducible. Revalidate each candidate and distinguish the target
+   failure from unrelated errors introduced by reduction.
+5. Export a runnable reproduction with its required EX version and environment
+   information. After a fix, the developer can turn it into a regression test.
+
+For example, a future pixel explanation could show that a character fragment
+reached a pixel but failed its depth test against a value written by a background
+draw. A reproduction could retain those draws and their relevant resources.
+This example requires rendering and depth support that EX does not yet have;
+it does not establish that the background draw was logically wrong.
+
+Witness must use the same EX command and execution contracts for managed and
+explicit work. It is optional debugging machinery, not a third control level or
+a second renderer. Capturing a rejected operation must reproduce the validation
+failure without executing unsafe or invalid work. Detailed tracing and repeated
+replay have memory and execution costs and should be explicitly enabled.
+
+The smallest useful experiment comes after recorded copies and submission work:
+capture a supported buffer-copy failure and the resource state/operation inputs
+needed to reproduce it, then export a standalone reference test. A failure may
+be a rejected copy request or an application-provided readback assertion. First
+prove capture and replay; then attempt reduction. Pixel explanations, shader
+tracing, and frame reduction follow the corresponding execution features.
+
+Limits and success criteria:
+
+- Reduction requires an observable failure condition. A wrong-looking image
+  alone does not tell EX what the application intended.
+- Aim for a smaller reproduction, not a guarantee of the absolute smallest case.
+- Replay covers only supported operations and captured inputs. Hardware-specific
+  faults and timing behavior may not reproduce in the reference backend.
+- A standalone case should need EX and its stated build/runtime requirements,
+  rather than the original engine or asset pipeline. Portability must be tested
+  for the supported scope; arbitrary-machine or bit-identical GPU replay is not
+  promised.
+- The first experiment succeeds when an exported copy case reproduces the
+  selected failure independently of its originating application. A reduced case
+  must preserve that condition, and the fixed case must support a passing test.
+
+Pixel history, shader debugging, and capture exports already exist in tools such
+as [RenderDoc](https://github.com/baldurk/renderdoc/blob/v1.x/docs/how/how_inspect_pixel.rst)
+and [Nsight](https://docs.nvidia.com/nsight-graphics/UserGuide/frame-debugger-overview.html).
+The proposed distinction is integrating explanation, reduction, and executable
+tests into EX's own execution model, not claiming those individual ideas are new.
+
 ## Implementation order and current reality
 
 Build the explicit core first and prove its rules with small working operations.
@@ -136,8 +198,8 @@ theoretical scheduler before work can execute.
 Today EX implements software discovery, logical device/queue ownership, owned
 buffers, checked synchronous CPU access, and label-only command recording.
 Executable copies, submission, rendering, shaders, managed planning, GPU hazard
-validation, and hardware drivers are not implemented. The next step remains
-recorded buffer copies and queue submission, as defined by the roadmap.
+validation, EX Witness, and hardware drivers are not implemented. The next step
+remains recorded buffer copies and queue submission, as defined by the roadmap.
 
 ## Design commitments
 
@@ -154,3 +216,7 @@ means a stable design direction, not a frozen API or a claim of completeness.
 Decision record: 2026-10-08 — accepted one core with managed and explicit control
 levels, Rust-based ownership, validated execution, explicit core first, and EX's
 own reference execution before hardware drivers.
+
+Decision record: 2026-10-08 — addition of EX Witness as an
+experimental direction. Start with supported buffer-copy failures after the
+execution foundation; retain the locked core philosophy and existing phase gates.

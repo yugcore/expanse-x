@@ -54,18 +54,13 @@ toolchain follows stable releases; it is not a pinned compiler-version guarantee
 
 ## Next milestones
 
-1. Finish Phase 1: record buffer-copy commands, validate resource usages and
-   ownership, and establish queue submission with an explicit completion contract.
-   Allocated buffers and CPU copies work; the queues do not execute work yet.
-2. Phase 2: framebuffer, vertex fetch, triangle assembly and rasterization,
-   constant fragment colour, image output through EX's own software backend.
-3. Phase 3: minimal internal shader representation, vertex/fragment execution,
-   pipeline objects, attributes, interpolation, and indexed drawing.
-4. Phase 4: textures, depth/stencil, blending, compute, binding, richer
-   synchronization, multiple queues, and parallel recording, added progressively.
+The [development roadmap](docs/ROADMAP.md) is the current progress tracker and
+defines completion checks for each phase. Phase 0 is complete. Phase 1 has
+discovery and owned buffers; recorded copies and queue submission are next.
 
-Hardware backends are future work. Do not implement empty vendor modules or
-promise hardware support without working driver integration.
+Phase 2 targets the first software triangle; Phase 3 adds programmable shaders
+and pipelines to complete the original graphics milestone. Modern GPU features
+and hardware drivers follow working reference semantics, one capability at a time.
 
 Read the [starting assessment](docs/ASSESSMENT.md),
 [architecture](docs/ARCHITECTURE.md), [current API contract](docs/API-DRAFT.md),

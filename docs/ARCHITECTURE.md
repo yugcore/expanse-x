@@ -3,6 +3,9 @@
 Status: Phase 1 buffer storage. Discovery, logical ownership, reference allocation,
 CPU copies, and label recording work; recorded command execution is still planned.
 
+The [development roadmap](ROADMAP.md) tracks verified work, pending steps, and
+phase completion gates. This document describes architectural responsibilities.
+
 ## Philosophy and boundaries
 
 EX is an independent graphics API. An application specifies resources and work;

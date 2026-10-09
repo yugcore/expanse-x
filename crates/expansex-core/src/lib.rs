@@ -4,7 +4,8 @@
 //! allocates reference buffers with explicit CPU access, and records validated
 //! buffer-copy descriptions independently of execution. Queues execute recorded
 //! copies and fixed/programmed triangles synchronously on the CPU. Owned shaders,
-//! pipelines, layouts, perspective interpolation, and sampled textures work.
+//! pipelines, layouts, perspective interpolation, sampled textures, depth tests,
+//! and colour blending work.
 //! Prototype labels remain.
 
 mod buffer;
@@ -55,5 +56,8 @@ pub use texture::{
 pub use depth::{
     DepthBuffer, DepthBufferAccessError, DepthBufferCreateError, DepthBufferDescriptor,
     DepthBufferDescriptorError,
+};
+pub use pipeline::{
+    BlendComponent, BlendFactor, BlendOperation, BlendState, GraphicsPipelineOptions,
 };
 pub use pipeline::{CompareFunction, DepthState};

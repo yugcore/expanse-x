@@ -2,7 +2,7 @@
 
 Updated: 2026-10-09. Scope: every currently exported EX type, inherent method,
 public field, enum variant, and explicit standard trait implementation.
-There are **70 public types and 140 inherent methods**. Phase 3 is complete;
+There are **75 public types and 145 inherent methods**. Phase 3 is complete;
 these remain provisional APIs, not a completed or stable v1 specification.
 
 Applications depend on package `ex-api` and import its library as `ex`:
@@ -31,6 +31,7 @@ currently exported.
 | Textures and sampling | [Texture](#texture), [TextureDescriptor](#texturedescriptor), [TextureFormat](#textureformat), [TextureView](#textureview), [TextureViewDescriptor](#textureviewdescriptor), [Sampler](#sampler), [SamplerDescriptor](#samplerdescriptor), [FilterMode](#filtermode), [AddressMode](#addressmode), [TextureBinding](#texturebinding) |
 | Texture errors | [TextureDescriptorError](#texturedescriptorerror), [TextureCreateError](#texturecreateerror), [TextureAccessError](#textureaccesserror), [SamplerCreateError](#samplercreateerror), [TextureSampleError](#texturesampleerror) |
 | Depth | [DepthBuffer](#depthbuffer), [DepthBufferDescriptor](#depthbufferdescriptor), [DepthBufferDescriptorError](#depthbufferdescriptorerror), [DepthBufferCreateError](#depthbuffercreateerror), [DepthBufferAccessError](#depthbufferaccesserror), [DepthState](#depthstate), [CompareFunction](#comparefunction) |
+| Blending | [GraphicsPipelineOptions](#graphicspipelineoptions), [BlendState](#blendstate), [BlendComponent](#blendcomponent), [BlendFactor](#blendfactor), [BlendOperation](#blendoperation) |
 | Shaders | [Shader](#shader), [ShaderDescriptor](#shaderdescriptor), [ShaderStage](#shaderstage), [ShaderInstruction](#shaderinstruction) |
 | Pipelines and layouts | [GraphicsPipeline](#graphicspipeline), [GraphicsPipelineDescriptor](#graphicspipelinedescriptor), [VertexBufferLayout](#vertexbufferlayout), [VertexAttribute](#vertexattribute), [VertexFormat](#vertexformat), [GraphicsPipelineCreateError](#graphicspipelinecreateerror) |
 | Prototype labels | [CommandRecorder](#commandrecorder), [DebugMarkerBuffer](#debugmarkerbuffer) |
@@ -519,9 +520,10 @@ Source: [pipeline.rs](crates/expansex-core/src/pipeline.rs).
 Contract: [PIPELINES.md](docs/PIPELINES.md). Programmable vertex output requires
 positive w, clips against -w <= x,y,z <= w, and divides by w before viewport
 mapping. Varyings interpolate with perspective correction at pixel centres on
-the 1/256-pixel grid. Fragment output clamps to [0,1], scales by 255, and rounds
-to bytes. Indexed fetch and sampled fragment textures are implemented.
-Depth testing uses optional immutable pipeline state. Stencil, blending, and instancing remain unsupported.
+the 1/256-pixel grid. Without blending, fragment output clamps to [0,1], scales by
+255, and rounds to bytes. Optional blending combines clamped output with staged
+destination bytes. Indexed fetch and sampled fragment textures are implemented.
+Depth testing and blending use optional immutable pipeline state. Stencil and instancing remain unsupported.
 Every scope shades into a temporary image and commits only after all draws succeed.
 
 ### VertexFormat
@@ -1101,7 +1103,9 @@ Clip position uses -w <= z <= w. Convert to z/w*0.5+0.5 and interpolate linearly
 with screen barycentric weights on the quantized coverage grid, clamp rounding
 drift to [0,1], then convert to f32. Failed tests skip fragment shading and all
 writes. Vertex/resource preflight still executes. Greater with clear 0 supports
-reverse-Z. Shader-written depth, stencil, bias, multisampling, and blending are absent.
+reverse-Z. Shader-written depth, stencil, bias, and multisampling are absent.
+Optional blending combines passing fragments with staged colour; zero alpha and
+disabled colour writes do not suppress depth writes.
 
 ### DepthBufferDescriptorError
 
@@ -1131,10 +1135,103 @@ No inherent methods or lower-level source.
 | `DepthBufferAccessError::OutOfBounds { x: u32, y: u32, width: u32, height: u32 }` | Coordinate is outside the attachment. |
 | `DepthBufferAccessError::StoragePoisoned { label: String }` | Depth values are untrusted. |
 
+## Colour blending and pipeline options
+
+Source: [blend.rs](crates/expansex-core/src/pipeline/blend.rs) and
+[pipeline.rs](crates/expansex-core/src/pipeline.rs). Contract: [BLENDING.md](docs/BLENDING.md).
+Direct/indexed, interpolated/textured programmable draws share this implementation.
+Legacy fixed-colour draws ignore bound pipeline blending. Original pipeline
+creation and depth-only creation disable blending without changing descriptors.
+
+| Method | Behavior |
+| --- | --- |
+| `Device::create_graphics_pipeline_with_options(&self, descriptor: GraphicsPipelineDescriptor<'_>, options: GraphicsPipelineOptions) -> Result<GraphicsPipeline, GraphicsPipelineCreateError>` | Existing shader/layout checks and retained ownership, with independently optional depth/blend state. |
+| `GraphicsPipeline::blend_state(&self) -> Option<BlendState>` | Copy retained optional blending state. |
+
+### GraphicsPipelineOptions
+
+No inherent methods. `Default` disables depth and blending. All state combinations
+are valid; no additional validation errors exist.
+
+| Public field | Type | Meaning |
+| --- | --- | --- |
+| `depth` | `Option<DepthState>` | None bypasses depth; Some enables comparison and selected write control. |
+| `blend` | `Option<BlendState>` | None uses existing overwrite conversion; Some applies equations and mask. |
+
+### BlendState
+
+State is copied into the immutable retained pipeline. False mask entries preserve
+destination bytes exactly; masks affect neither clears nor depth writes nor shader
+evaluation/errors. Tests still require all normal vertex and shader resources.
+
+| Public field | Type | Meaning |
+| --- | --- | --- |
+| `colour` | `BlendComponent` | Equation for R/G/B. |
+| `alpha` | `BlendComponent` | Separate equation for A. |
+| `write_mask` | `[bool; 4]` | R/G/B/A channel writes. |
+
+| Method | Behavior |
+| --- | --- |
+| `BlendState::alpha_blending() -> Self` | RGB SrcAlpha/OneMinusSrcAlpha Add; alpha One/OneMinusSrcAlpha Add; all writes. Straight source RGB source-over. |
+| `BlendState::premultiplied_alpha() -> Self` | Both equations One/OneMinusSrcAlpha Add; all writes. Source RGB must already include alpha. |
+| `BlendState::additive() -> Self` | Both equations One/One Add; all writes, with storage clamping. |
+
+### BlendComponent
+
+No inherent methods; no invalid combinations.
+
+| Public field | Type | Meaning |
+| --- | --- | --- |
+| `source_factor` | `BlendFactor` | Multiplier for source. |
+| `destination_factor` | `BlendFactor` | Multiplier for destination. |
+| `operation` | `BlendOperation` | Combine scaled lanes, except Min/Max ignore factors. |
+
+### BlendFactor
+
+Exhaustive enum; no public inherent methods. Source S is clamped shader output;
+destination D is the staged byte normalized by 255. For lane i:
+
+| Variant | Factor |
+| --- | --- |
+| `BlendFactor::Zero` | 0 |
+| `BlendFactor::One` | 1 |
+| `BlendFactor::SrcColour` | S[i] |
+| `BlendFactor::OneMinusSrcColour` | 1-S[i] |
+| `BlendFactor::DstColour` | D[i] |
+| `BlendFactor::OneMinusDstColour` | 1-D[i] |
+| `BlendFactor::SrcAlpha` | S[3] |
+| `BlendFactor::OneMinusSrcAlpha` | 1-S[3] |
+| `BlendFactor::DstAlpha` | D[3] |
+| `BlendFactor::OneMinusDstAlpha` | 1-D[3] |
+| `BlendFactor::SrcAlphaSaturate` | min(S[3],1-D[3]) for RGB; 1 for alpha. |
+
+### BlendOperation
+
+Exhaustive enum; no public inherent methods. In byte units, s=S[i]*255*source_factor,
+d=destination_byte*destination_factor. Compute f64 arithmetic, clamp to [0,255],
+round to the nearest byte (represented positive ties up), then apply the mask.
+Min/Max use the unscaled source/destination. This avoids destination normalization
+round trips for equations, but arbitrary f64 arithmetic retains rounding limits.
+
+| Variant | Equation |
+| --- | --- |
+| `BlendOperation::Add` | s+d |
+| `BlendOperation::Subtract` | s-d |
+| `BlendOperation::ReverseSubtract` | d-s |
+| `BlendOperation::Min` | min(S[i]*255,destination_byte), ignoring factors. |
+| `BlendOperation::Max` | max(S[i]*255,destination_byte), ignoring factors. |
+
+Subsequent fragments read the quantized staged bytes. Depth rejection skips
+shading/blending; successful scopes publish colour/depth together. Alpha zero does
+not discard. Transparent applications typically disable depth writes and sort back
+to front themselves. No sRGB conversion, automatic premultiplication, sorting,
+blend constants, dual-source factors, logic operations, multiple targets, stencil,
+or floating colour targets exist.
+
 ## Explicit standard trait support
 
 This lists implemented/derived traits, not Rust's blanket implementations or
-auto traits. They are separate from the 140 inherent methods above.
+auto traits. They are separate from the 145 inherent methods above.
 
 | Type | Traits |
 | --- | --- |
@@ -1208,14 +1305,19 @@ auto traits. They are separate from the 140 inherent methods above.
 | `DepthBufferAccessError` | `Debug`, `Clone`, `PartialEq`, `Eq`, `Display`, `Error` |
 | `DepthState` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
 | `CompareFunction` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `GraphicsPipelineOptions` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`, `Default` |
+| `BlendState` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `BlendComponent` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `BlendFactor` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `BlendOperation` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
 
 Standard trait operations include:
 
 | Operation | Implementing types / behavior |
 | --- | --- |
 | `Clone::clone(&self) -> Self` | Types marked `Clone` above. Device/queue/buffer/framebuffer/depth/shader/pipeline/texture/view/sampler/binding handles retain shared state; `AdapterInfo` clones its owned metadata. |
-| `Default::default() -> Self` | `Instance`, `CommandRecorder`; same behavior as their `new()`. |
-| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 70 types; buffer/framebuffer formatting exposes metadata rather than stored bytes/pixels. |
+| `Default::default() -> Self` | `Instance`, `CommandRecorder`: same as `new()`. GraphicsPipelineOptions: depth/blend None. |
+| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 75 types; buffer/framebuffer/depth formatting exposes metadata rather than stored data. |
 | `PartialEq::eq(&self, other: &Self) -> bool` | Types marked `PartialEq`; handle identity instead uses explicit `is_same`/`belongs_to` methods. |
 | `Display::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | Twenty-two error types and `CopyBufferRole`. |
 | `Error::source(&self) -> Option<&(dyn std::error::Error + 'static)>` | All twenty-two error types. Buffer/framebuffer/depth/shader/texture creation retain descriptor/reservation sources, sampler creation retains reservation sources, pipeline creation/command/render recording and shader evaluation retain reservation sources, and submission RenderFailed retains RenderExecutionError. Other current variants return None. |

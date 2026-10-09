@@ -4,7 +4,7 @@ Status: Phases 0–3 complete. Owned resources, validated recording, synchronous
 copies, shaders, graphics pipelines, vertex layouts, interpolation, and indexed
 software triangles work. Phase 4 now adds sampled textures/views, samplers, and
 fragment resource bindings, plus retained depth attachments and pipeline tests.
-Stencil and blending remain pending.
+Colour blending also works; stencil remains pending.
 
 The [development roadmap](ROADMAP.md) tracks verified work, pending steps, and
 phase completion gates. This document describes architectural responsibilities.
@@ -41,10 +41,10 @@ not supply those capabilities. Hardware work is deferred.
 
 | Component | Implemented now | Next responsibility |
 | --- | --- | --- |
-| `ex-api`, library name `ex` | Resources, render scopes, submission/readback, shaders/pipelines/layouts, indexed/textured drawing, and public examples | Blending and stencil entry points |
-| `expansex-core` | Ownership, allocation, recording, queue policy, shaders, validated pipelines, indices, sampled textures, and depth attachments | Blend/stencil contracts |
-| Validation | Resource identity/usages/ranges, layouts/stages, render state, finite shader arithmetic, clip w, storage poison, live index references, texture views/slots/devices, depth attachment/clear checks | Blend/stencil compatibility and richer hazards |
-| Reference backend | reference.rs and reference/programmable.rs execute copies and fixed/programmed triangles, including indexed fetch, texture sampling, depth testing, and staged colour/depth commits | Blending/stencil |
+| `ex-api`, library name `ex` | Resources, render scopes, submission/readback, shaders/pipelines/layouts, indexed/textured/blended drawing, and public examples | Stencil entry points |
+| `expansex-core` | Ownership, allocation, recording, queue policy, shaders, validated pipelines, indices, sampled textures, depth attachments, and immutable blend state | Stencil contracts |
+| Validation | Resource identity/usages/ranges, layouts/stages, render state, finite shader arithmetic, clip w, storage poison, live index references, texture views/slots/devices, depth attachment/clear checks | Stencil compatibility and richer hazards |
+| Reference backend | reference.rs and reference/programmable.rs execute copies and fixed/programmed triangles, including indexed fetch, texture sampling, depth testing, blending, and staged colour/depth commits | Stencil |
 | Shader subsystem | shader.rs owns/validates EX instructions and evaluates standalone or allocation-free renderer invocations | Richer instructions and later external import |
 
 The public crate solves a packaging problem: callers have one `ex` import while
@@ -162,7 +162,8 @@ No per-fragment allocation/locking is introduced; snapshots add memory per used
 view per nonempty draw. [Depth testing](DEPTH.md) uses z/w mapped to [0,1],
 screen-linear interpolation, optional comparison/write state, and a separate
 f32 attachment. Both attachments stage/commit under the device gate and distinct
-storage guards. Stencil and blending are later steps,
+storage guards. [Blending](BLENDING.md) applies independent RGB/alpha equations and
+channel masks against staged destination bytes after shading. Stencil is a later step,
 not hidden claims of full GPU conformance.
 
 ## Validation and errors

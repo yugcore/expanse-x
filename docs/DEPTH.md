@@ -22,7 +22,7 @@ colour output. EX retains a separate depth attachment and immutable pipeline sta
   Clamp rounding drift to [0,1], convert to f32, then compare with stored f32.
   Equal/NotEqual are exact; Less uses smaller as nearer. Greater allows reverse-Z.
 - Test occurs before fragment shading. Failed comparisons skip the fragment shader
-  and all writes. Successful shading overwrites colour, then writes depth only
+  and all writes. Successful shading overwrites or blends colour, then writes depth only
   when enabled. Vertex/resource preflight still executes before rasterization,
   including resources used only by occluded geometry.
 - Stage both colour and depth. Hold their distinct storage locks under the device
@@ -30,7 +30,7 @@ colour output. EX retains a separate depth attachment and immutable pipeline sta
   preserves both attachments, including clears/prior draws in the failed scope.
   Earlier commands remain complete and later commands skip. Readback/submissions
   serialize on the same gate. Empty/clear-only scopes still check attachment poison.
-- No stencil, blending, depth bias/clamp options, shader-written depth, alternate
+- No stencil, depth bias/clamp options, shader-written depth, alternate
   viewport depth range, multisampling, attachments as textures, or hardware claims.
   Temporary depth storage adds four bytes per target pixel to staged colour/vertices/
   texture snapshots. Large reservations are fallible, without universal OOM recovery.
@@ -40,7 +40,7 @@ preserved/cleared depth, indexed/textured integration, projected depth interpola
 clipping, missing/foreign/mismatched attachments, invalid clears, atomic failure,
 poison/lifetime, and an independently verified offscreen overlap example.
 [Eleven public tests](../crates/ex-api/tests/depth.rs) and two internal tests pass
-with all 150 workspace tests. The [example](../crates/ex-api/examples/depth_overlap.rs)
+with all 150 workspace tests at the depth checkpoint. The [example](../crates/ex-api/examples/depth_overlap.rs)
 verifies identical colour/depth readback in both orders and writes a 512x384 PNG
 with 85,434 covered pixels (27,648 red, 32,146 green, 25,640 blue). Independent
 PNG checksum/coverage/visibility calculations verify every pixel; the image was

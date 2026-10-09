@@ -50,7 +50,9 @@ EX uses its own small contract and CPU executor, with safe Rust retained handles
   vectors feed one fragment invocation per covered sample passing depth testing
   (or with depth disabled). RGBA output clamps
   each finite lane to [0,1], multiplies by 255, and rounds to nearest byte.
-  Later draws overwrite; no blending, gamma conversion, multisampling, or culling.
+  Later draws overwrite unless optional [blending](BLENDING.md) combines source
+  and destination with separate RGB/alpha equations and channel masks. No gamma
+  conversion, multisampling, or culling.
 - Fragment arithmetic can fail late. Render into a fallibly allocated temporary
   image and commit only after every draw succeeds. Any expected failure leaves
   this scope's target unchanged (including its clear); earlier submission commands

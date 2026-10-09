@@ -27,8 +27,8 @@ explicit vertex layouts, and perspective-correct interpolation. Vertex shaders
 control clip positions; fragment shaders control stored pixel colours. Indexed
 drawing shares vertex records using u16/u32 indices and a signed base vertex.
 RGBA8 textures, rectangular views, nearest/bilinear samplers, and fragment texture
-bindings now work. Depth attachments and pipeline depth tests also work. Phase 4 is in progress;
-hardware drivers remain deferred.
+bindings, depth attachments/tests, and colour blending now work. Phase 4 is in
+progress; hardware drivers remain deferred.
 
 ```text
 cargo run -p ex-api --example software_triangle --locked --offline
@@ -92,6 +92,15 @@ matches independent coverage/visibility calculations. The example writes
 `target/phase4-depth-overlap.png` with 85,434 covered pixels.
 See [depth testing](docs/DEPTH.md).
 
+```text
+cargo run -p ex-api --example blended_triangles --locked --offline
+```
+
+The same triangles demonstrate RGB replacement (left), alpha source-over (middle),
+and additive blending (right), with depth tests and disabled depth writes. The
+example writes `target/phase4-blended-triangles.png`; independent coverage and
+blend calculations verify every pixel of the 768x384 image. See [blending](docs/BLENDING.md).
+
 ## Build and check
 
 Install Rust through rustup. `rust-toolchain.toml` selects stable Rust with
@@ -132,8 +141,8 @@ owned resources, copies, fixed-function drawing, and synchronous readback now wo
 
 Phase 3 completes programmable pipelines, layouts, interpolation, and indexed
 drawing. Phase 4 now has sampled textures, views, samplers, and eight fragment
-resource slots, plus depth attachments and tests. The workspace passes 150 tests,
-including documentation tests. Next: blending; stencil remains pending. Other modern GPU features
+resource slots, depth attachments/tests, and blending. The workspace passes 163 tests,
+including documentation tests. Next: stencil. Other modern GPU features
 and hardware drivers follow working reference semantics, one capability at a time.
 
 Read the [starting assessment](docs/ASSESSMENT.md),

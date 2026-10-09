@@ -440,8 +440,11 @@ fn rasterize(
                     .as_deref_mut()
                     .ok_or(RenderExecutionError::MissingDepthBuffer)?[pixel_index] = z;
             }
-            pixels[invocation as usize] =
-                output[0].map(|lane| (lane.clamp(0.0, 1.0) * 255.0).round() as u8);
+            pixels[pixel_index] = if let Some(blend) = pipeline.blend_state() {
+                blend.apply(output[0], pixels[pixel_index])
+            } else {
+                output[0].map(|lane| (lane.clamp(0.0, 1.0) * 255.0).round() as u8)
+            };
         }
     }
     Ok(())

@@ -4,6 +4,16 @@ use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
 
+mod blend;
+pub use blend::{BlendComponent, BlendFactor, BlendOperation, BlendState};
+
+/// Optional immutable rendering state. Default preserves overwrite without depth testing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct GraphicsPipelineOptions {
+    pub depth: Option<DepthState>,
+    pub blend: Option<BlendState>,
+}
+
 /// Little-endian f32 vertex storage; omitted components expand to (0,0,0,1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VertexFormat {
@@ -128,6 +138,7 @@ struct PipelineState {
     attributes: Vec<VertexAttribute>,
     colour_format: FramebufferFormat,
     depth: Option<DepthState>,
+    blend: Option<BlendState>,
 }
 
 /// An immutable validated graphics pipeline, shared by clones and recorded draws.
@@ -142,7 +153,7 @@ impl Device {
         &self,
         descriptor: GraphicsPipelineDescriptor<'_>,
     ) -> Result<GraphicsPipeline, GraphicsPipelineCreateError> {
-        self.create_pipeline(descriptor, None)
+        self.create_graphics_pipeline_with_options(descriptor, GraphicsPipelineOptions::default())
     }
     /// Add immutable depth comparison/write state without changing existing descriptors.
     pub fn create_graphics_pipeline_with_depth(
@@ -150,12 +161,19 @@ impl Device {
         descriptor: GraphicsPipelineDescriptor<'_>,
         depth: DepthState,
     ) -> Result<GraphicsPipeline, GraphicsPipelineCreateError> {
-        self.create_pipeline(descriptor, Some(depth))
+        self.create_graphics_pipeline_with_options(
+            descriptor,
+            GraphicsPipelineOptions {
+                depth: Some(depth),
+                blend: None,
+            },
+        )
     }
-    fn create_pipeline(
+    /// Validate and retain one pipeline with independently optional depth and blending.
+    pub fn create_graphics_pipeline_with_options(
         &self,
         descriptor: GraphicsPipelineDescriptor<'_>,
-        depth: Option<DepthState>,
+        options: GraphicsPipelineOptions,
     ) -> Result<GraphicsPipeline, GraphicsPipelineCreateError> {
         for (shader, expected) in [
             (descriptor.vertex_shader, ShaderStage::Vertex),
@@ -247,12 +265,16 @@ impl Device {
                 stride: layout.stride,
                 attributes,
                 colour_format: descriptor.colour_format,
-                depth,
+                depth: options.depth,
+                blend: options.blend,
             }),
         })
     }
 }
 impl GraphicsPipeline {
+    pub fn blend_state(&self) -> Option<BlendState> {
+        self.state.blend
+    }
     pub fn depth_state(&self) -> Option<DepthState> {
         self.state.depth
     }

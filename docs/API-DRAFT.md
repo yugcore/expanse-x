@@ -251,11 +251,37 @@ successful shading updates depth only when enabled. Preflight still runs.
 
 Both colour/depth stage and commit together under the device gate and distinct
 storage locks. Expected errors preserve both failed-scope attachments. Eight
-comparisons include exact equality and Greater for reverse-Z; stencil, blending,
+comparisons include exact equality and Greater for reverse-Z; stencil,
 shader-written depth, bias, and multisampling remain future work. See [DEPTH.md](DEPTH.md).
 
 ```text
 cargo run -p ex-api --example depth_overlap --locked --offline
+```
+
+## Colour blending and unified pipeline options
+
+`create_graphics_pipeline_with_options(descriptor, GraphicsPipelineOptions)`
+combines optional depth and blend state through the same validation/retention path.
+Default options disable both. Existing ordinary and depth-only creators remain
+compatible and disable blending. `GraphicsPipeline::blend_state` copies the state.
+
+BlendState selects separate RGB/alpha BlendComponent equations and an RGBA bool
+write mask. Eleven BlendFactor variants and five BlendOperation variants support
+custom arithmetic; alpha, premultiplied, and additive presets supply common values.
+Finite source lanes clamp to [0,1]; factors use source and normalized destination.
+Equations use f64 byte units, clamp/round once per fragment, then preserve disabled
+destination channels. Min/Max ignore factors. No gamma conversion occurs.
+
+Depth rejection skips shading and blending. Zero alpha and false colour masks do
+not suppress depth writes or shader errors. Masks do not affect clears. Direct,
+indexed, sampled, and interpolated programmable output share this path; legacy
+draws still overwrite. Atomic scope failure applies to both attachments. Applications
+sort transparent surfaces and choose depth-write policy themselves. Blend constants,
+dual-source factors, logic operations, and multiple targets remain absent.
+See [BLENDING.md](BLENDING.md).
+
+```text
+cargo run -p ex-api --example blended_triangles --locked --offline
 ```
 
 ## Standalone prototype labels
@@ -314,7 +340,10 @@ contracts. Independent checkerboard pixel calculations verify the example image.
 Eleven public depth tests and two internal poison/lifetime tests verify depth
 resources, comparisons, interpolation, clipping, integration, and atomic failure.
 Independent overlap-image calculations verify visibility and order independence.
-The workspace runs 150 tests, including documentation tests.
+Twelve public blending tests and an executable depth/blend example verify factors,
+operations, masks, presets, numeric behavior, ordering, integration, compatibility,
+and failure. Independent calculations verify every comparison-example pixel.
+The workspace runs 163 tests, including documentation tests.
 Tests do not induce allocator OOM by exhausting host memory.
 
 ## Next contract
@@ -323,6 +352,6 @@ Phases 1–3 are complete: copies and fixed-function triangles execute through
 EX and produce observable bytes/pixels. Shader representation, stage interfaces,
 and programmable execution now work through pipeline validation, vertex layouts,
 interpolation, and indexed drawing. Sampled textures, views, samplers, and eight
-fragment resource slots and depth testing also work. Blending is next; stencil and
-language/format import remain future work.
+fragment resource slots, depth testing, and colour blending also work. Stencil is next;
+language/format import remains future work.
 There is no implemented execution-backend ABI yet.

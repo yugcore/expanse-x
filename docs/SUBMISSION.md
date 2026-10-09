@@ -105,7 +105,10 @@ the same failed-scope boundary. See [TEXTURES.md](TEXTURES.md).
 Depth scopes retain their attachment, acquire distinct colour/depth storage locks
 under the gate, and stage both images. Successful commit publishes both together
 before readers can enter; any expected failure preserves both. Empty scopes still
-check attachment poison. See [DEPTH.md](DEPTH.md). No GPU driver,
+check attachment poison. See [DEPTH.md](DEPTH.md).
+Blending reads/writes staged colour in draw order after shading, without additional
+storage locks or per-fragment allocations. Late shader errors discard blended
+writes and depth together. See [BLENDING.md](BLENDING.md). No GPU driver,
 asynchronous job, multiple queues, fence, semaphore,
 barrier, timeline, cancellation, or execution-backend ABI is implemented here.
 Completion covers the submitted command buffer, not future calls from other threads.

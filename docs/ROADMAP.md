@@ -23,7 +23,7 @@ renderer or a reason to postpone the programmable rendering milestone.
 | 1 — Minimum runtime | Complete | Ordered synchronous copy execution, readback, concurrency/failure contract, public example, and tests |
 | 2 — First software triangle | Complete | Public render scopes produce a verified PNG through EX's own clipped fixed-function rasterizer |
 | 3 — Programmability and pipeline milestone | Complete | Pipeline-controlled triangles, layouts, perspective interpolation, and validated u16/u32 indexed drawing |
-| 4 — Modern GPU concepts | In progress | Sampled RGBA8 textures/views, nearest/bilinear samplers, eight fragment resource slots, depth attachments/tests; stencil/blending pending |
+| 4 — Modern GPU concepts | In progress | Sampled RGBA8 textures/views, nearest/bilinear samplers, eight fragment resource slots, depth attachments/tests and blending; stencil pending |
 | Future — Hardware drivers | Deferred | A selected target, viable driver interfaces, and demonstrated execution |
 
 Checked items mean implemented and verified behavior.
@@ -157,7 +157,7 @@ a 512x384 PNG with 48,556 foreground pixels; centre/corner assertions and indepe
 PNG decoding verify the output. The Phase 2 milestone passed 79 tests, including
 executable and compile-fail documentation. Floating clipping and 1/256-pixel
 coverage rules are documented. Programmable drawing followed in Phase 3;
-depth, blending, presentation, and hardware remain future work.
+depth and blending have since arrived in Phase 4; presentation and hardware remain future work.
 
 ## Phase 3 — Programmability and pipelines: complete
 
@@ -218,7 +218,7 @@ Add one capability at a time after the earlier contracts work. Select the order
 by an actual example's needs rather than implementing every object immediately.
 
 - [x] Sampled 2D RGBA8 textures, rectangular views, nearest/bilinear samplers, and eight fragment texture/sampler slots.
-- [ ] Depth/stencil and blending - depth comparison/write/attachments are implemented; stencil and blending remain.
+- [ ] Depth/stencil and blending - depth and colour blending are implemented; stencil remains.
 - [ ] Compute pipelines and dispatch.
 - [ ] Explicit resource transitions, read/write hazards, and execution/memory dependencies.
 - [ ] Asynchronous completion, fences/timelines, multiple queues, and cross-queue dependencies.
@@ -244,9 +244,19 @@ projected depth, reverse-Z, and atomic colour/depth commits. [Eleven public test
 and two internal poison/lifetime tests verify the contract. The [overlap example](../crates/ex-api/examples/depth_overlap.rs)
 renders three triangles identically in both orders, with 85,434 covered pixels.
 Independent PNG checksum/coverage/nearest-surface calculations verify all 196,608
-pixels; the image was visually inspected. All 150 workspace tests pass.
+pixels; the image was visually inspected. The depth checkpoint passed 150 workspace tests.
 
-Phase 4 is still incomplete. Next: blending; stencil remains pending. Texture mipmaps, transfer
+The blending component works under [BLENDING.md](BLENDING.md): separate RGB/alpha
+equations, eleven factors, five operations, all channel write masks, and alpha,
+premultiplied, and additive presets. Unified immutable pipeline options combine
+depth/blend state without changing existing descriptor literals. Twelve public
+tests and executable documentation verify arithmetic, ordering, textures/indices,
+depth, compatibility, and rollback. The [comparison example](../crates/ex-api/examples/blended_triangles.rs)
+renders identical triangles in three panels; independent PNG checksum, coverage,
+and rational blend calculations verify all 294,912 pixels, including 128,031
+covered pixels. The image was visually inspected. All 163 workspace tests pass.
+
+Phase 4 is still incomplete. Next: stencil. Texture mipmaps, transfer
 commands, attachments, storage images, arbitrary bind groups, and general shader
 resources need separate demonstrated contracts.
 
@@ -259,7 +269,7 @@ is checked. Performance or hardware-conformance claims require separate evidence
 The [EX Witness direction](../DOCUMENTATION.md#ex-witness-experimental-differentiation)
 explores explanation → replay → smaller executable tests for selected failures.
 It uses the same contracts for managed and explicit work. This track adds no new
-Phase 1 completion requirement; the main roadmap continues with blending.
+Phase 1 completion requirement; the main roadmap continues with stencil.
 
 After the copy/submission foundation works:
 

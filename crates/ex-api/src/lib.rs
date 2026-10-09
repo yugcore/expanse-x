@@ -181,6 +181,51 @@
 //!
 //! The public entry point lets future runtime changes happen behind this crate;
 //! it does not imply that these provisional types are a stable specification.
+//!
+//! Blend state combines a fragment with the destination; depth is independently optional:
+//!
+//! ```
+//! use ex::*;
+//! let d = Instance::new().default_adapter().create_device();
+//! let target = d.create_framebuffer(FramebufferDescriptor {
+//!     label: "blend", width: 2, height: 2, format: FramebufferFormat::Rgba8Unorm,
+//! })?;
+//! let depth = d.create_depth_buffer(DepthBufferDescriptor {label: "z", width: 2, height: 2})?;
+//! let v = d.create_shader(ShaderDescriptor {
+//!     label: "position", stage: ShaderStage::Vertex, input_count: 1,
+//!     instructions: &[ShaderInstruction::Input { location: 0 }], outputs: &[0],
+//! })?;
+//! let f = d.create_shader(ShaderDescriptor {
+//!     label: "red", stage: ShaderStage::Fragment, input_count: 0,
+//!     instructions: &[ShaderInstruction::Constant([1.0, 0.0, 0.0, 0.5])], outputs: &[0],
+//! })?;
+//! let pipeline = d.create_graphics_pipeline_with_options(GraphicsPipelineDescriptor {
+//!     label: "transparent", vertex_shader: &v, fragment_shader: &f,
+//!     vertex_layout: VertexBufferLayout { stride: 16, attributes: &[VertexAttribute {
+//!         location: 0, offset: 0, format: VertexFormat::Float32x4,
+//!     }] }, colour_format: FramebufferFormat::Rgba8Unorm,
+//! }, GraphicsPipelineOptions {
+//!     depth: Some(DepthState { compare: CompareFunction::Less, write_enabled: false }),
+//!     blend: Some(BlendState::alpha_blending()),
+//! })?;
+//! let bytes: Vec<_> = [[-1_f32, 1., 0., 1.], [1., 1., 0., 1.], [-1., -1., 0., 1.]]
+//!     .iter().flat_map(|p| p.iter().flat_map(|v| v.to_le_bytes())).collect();
+//! let vertices = d.create_buffer(BufferDescriptor {
+//!     label: "triangle", size: bytes.len() as u64,
+//!     usages: &[BufferUsage::Vertex], host_access: HostAccess::Write,
+//! })?;
+//! vertices.write(0, &bytes)?;
+//! let mut e = d.create_command_encoder();
+//! let mut pass = e.begin_render_pass_with_depth(&target, Some([0, 0, 255, 255]), &depth, Some(1.))?;
+//! pass.set_pipeline(&pipeline)?;
+//! pass.set_vertex_buffer(&vertices, 0)?;
+//! pass.draw_programmable(0..3)?;
+//! pass.finish()?;
+//! d.default_queue().submit(&e.finish())?;
+//! assert_eq!(target.pixel(0, 0)?, [128, 0, 128, 255]);
+//! assert_eq!(depth.depth(0, 0)?, 1.0); // Testing need not write depth.
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
 
 pub use expansex_core::{
     Adapter, AdapterInfo, BackendKind, Buffer, BufferAccessError, BufferCopy, BufferCreateError,
@@ -201,6 +246,9 @@ pub use expansex_core::{
     TextureDescriptorError, TextureFormat, TextureSampleError, TextureView, TextureViewDescriptor,
 };
 
+pub use expansex_core::{
+    BlendComponent, BlendFactor, BlendOperation, BlendState, GraphicsPipelineOptions,
+};
 pub use expansex_core::{
     CompareFunction, DepthBuffer, DepthBufferAccessError, DepthBufferCreateError,
     DepthBufferDescriptor, DepthBufferDescriptorError, DepthState,

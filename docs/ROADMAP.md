@@ -1,6 +1,6 @@
 # Expanse-X development roadmap
 
-Updated: 2026-10-09 (Asia/Calcutta).
+Updated: 2026-10-10 (Asia/Calcutta).
 
 This roadmap tracks EX implementation and remaining work.
 
@@ -30,7 +30,7 @@ Phase 4 feature roadmap without treating every future feature as a core-launch g
 | 3 — Programmability and pipeline milestone | Complete | Pipeline-controlled triangles, layouts, perspective interpolation, and validated u16/u32 indexed drawing |
 | 4 — Modern GPU concepts | In progress | Sampled RGBA8 textures/views, nearest/bilinear samplers, eight fragment resource slots, depth/stencil attachments/tests, blending, and storage-buffer compute dispatch, reusable bindings/uniforms, checked whole-resource dependencies, and multi-pass image flows |
 | Core Preview 1 | Complete | Bounded software profile, selected executor, reusable profile corpus and maintained integrated proof in CORE-PROOF.md; 257 tests and all project checks pass |
-| SDK Preview | In progress | Source foundation in SDK.md: setup/build checks, linked profile queries, safe standalone Rust starter generation and offline build/run tests; shader import/reflection and broader tooling remain pending |
+| SDK Preview | In progress | Source workflow and bounded EX-GLSL-1 shader build/import/reflection in SDK.md/SHADER-IMPORT.md; standalone GLSL/Rust starter, Cargo incremental builds and 272 passing tests; reload and broader integrations remain pending |
 | Future — Hardware drivers | Deferred | A selected target, viable driver interfaces, and demonstrated execution |
 
 Checked items mean implemented and verified behavior.
@@ -347,21 +347,28 @@ Each feature needs a chosen EX contract, a working reference implementation,
 misuse validation, executable evidence, and updated documentation before its box
 is checked. Performance or hardware-conformance claims require separate evidence.
 
-## SDK Preview — source foundation working
+## SDK Preview — source and first shader workflow working
 
-[SDK.md](SDK.md) defines the selected source workflow and remaining gates.
-The ex-sdk package builds the ex CLI: info queries the linked runtime; doctor
-reports tool versions and builds the core example offline; new creates a
-standalone Rust app with editable shaders, explicit rendering, checked PNG
-output and an independent lockfile. It refuses existing destinations and cleans
-up its own files on failure. Five real CLI tests cover misuse/cleanup/missing
-tools and generated-project format/build/run in paths with spaces, including a
-shader edit changing output. Independent checks match every starter PNG pixel.
-All 262 tests and project checks pass; library API counts and core semantics stay
-the same. No packages are published and no platform beyond this tested Windows
-environment is certified. Next: choose/implement shader import/build and reflection
-for the supported core subset. Reload, windowing, assets, capture and releases
-remain separate SDK gates.
+[SDK.md](SDK.md) and [SHADER-IMPORT.md](SHADER-IMPORT.md) define the implemented
+source workflow and bounded EX-GLSL-1 import gate. info queries runtime limits;
+doctor checks Rust and native shader tools; new generates an independent Rust
+starter with editable GLSL, a Cargo build hook, explicit rendering and a lockfile.
+Shader build/import commands emit Rust modules and JSON reflection. Compiler
+SPIR-V is validated before lowering to EX's existing instructions. Straight-line
+float/vec4 graphics and uniform blocks work; unsupported language constructs
+fail explicitly. Cargo tracks shader/tool inputs and caches successful builds.
+
+Six real CLI tests cover misuse/cleanup/missing tools, command build/import/
+reflection and generated format/build/run in paths with spaces. Shader edits
+change pixels; invalid GLSL and changed tool selection stop stale builds; repair
+recovers output. Import tests verify math, static uniform layouts, two geometry/
+colour frames and every varying gradient pixel, plus malformed/unsupported input
+and lowering limits. All 272 tests and required checks pass; graphics API counts
+remain unchanged. No release or additional platform certification is claimed.
+
+Next: safe shader reload with last-good-state preservation and explicit interface
+compatibility checks. Broader imports/independent artifact cache, windowing,
+assets, capture, onboarding and packaged releases remain separate SDK gates.
 
 ## EX Witness — experimental track: not started
 

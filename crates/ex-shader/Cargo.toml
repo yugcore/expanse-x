@@ -1,0 +1,11 @@
+[package]
+name = "ex-shader"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+ex = { package = "ex-api", path = "../ex-api" }
+
+[lints]
+workspace = true

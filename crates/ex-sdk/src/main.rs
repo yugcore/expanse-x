@@ -1,4 +1,5 @@
 mod project;
+mod shader;
 use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -10,13 +11,17 @@ Usage:
   ex info
   ex doctor [--sdk PATH]
   ex new PATH [--name NAME] [--sdk PATH]
+  ex shader build FILE --stage vertex|fragment --output FILE.rs
+  ex shader import FILE.spv --output FILE.rs
+  ex shader reflect FILE --stage vertex|fragment
   ex help
 
 Development: cargo run -p ex-sdk --locked --offline -- COMMAND
 new creates an independent headless Rust project; default package name: ex-app.
 doctor checks tools/build without installing anything. info queries the linked runtime.
 Use --sdk to select a source checkout when running outside one.
-Shader import, windowing, reload and capture are future SDK gates.";
+Shader tools: glslangValidator and spirv-val (PATH, EX_GLSLANG, EX_SPIRV_VAL).
+Shader import supports EX-GLSL-1; windowing, reload and capture are future SDK gates.";
 
 fn main() -> ExitCode {
     match run(std::env::args_os().skip(1).collect()) {
@@ -49,6 +54,9 @@ fn run(args: Vec<OsString>) -> Result<()> {
     if command == "info" && args.len() == 1 {
         info();
         return Ok(());
+    }
+    if command == "shader" {
+        return shader::run(&args[1..]);
     }
     if !matches!(command, "new" | "doctor") {
         return Err(argument_error(
@@ -100,7 +108,10 @@ fn run(args: Vec<OsString>) -> Result<()> {
             project::create(&path, name.as_deref().unwrap_or("ex-app"), &root)?;
             println!("Created EX starter: {}", path.display());
             println!("Build and run from that directory: cargo run --locked --offline");
-            println!("Edit src/shaders.rs; the app writes target/ex-starter.png.");
+            println!(
+                "Edit shaders/triangle.vert or triangle.frag; cargo compiles them into EX shaders."
+            );
+            println!("The app writes target/ex-starter.png; native shader build tools must be installed.");
             Ok(())
         }
         _ => Err(argument_error("unknown command")),
@@ -196,8 +207,16 @@ fn doctor(root: &Path) -> Result<()> {
             }
         }
     }
+    match ex_shader::check_tools() {
+        Ok(versions) => {
+            for version in versions {
+                println!("OK: {version}");
+            }
+        }
+        Err(error) => failures.push(error.to_string()),
+    }
     if !failures.is_empty() {
-        return Err(io::Error::other(format!("{}\nInstall the repository's Rust toolchain/components, then rerun doctor. See README.md.", failures.join("\n"))).into());
+        return Err(io::Error::other(format!("{}\nInstall the repository's Rust toolchain/components and GLSL/SPIR-V build tools, then rerun doctor. See docs/SDK.md.", failures.join("\n"))).into());
     }
     let status = Command::new("cargo")
         .env("RUSTUP_AUTO_INSTALL", "0")

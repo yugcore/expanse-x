@@ -178,11 +178,11 @@ fn standalone_starter_builds_runs_and_formats_offline_in_a_path_with_spaces() {
     // The manifest stores a quoted path, and this project has its own workspace.
     let manifest = fs::read_to_string(destination.join("Cargo.toml")).unwrap();
     assert!(manifest.contains("[workspace]") && manifest.contains("sample-engine"));
-    let shader = destination.join("src/shaders.rs");
+    let shader = destination.join("shaders/triangle.frag");
     let original = fs::read_to_string(&shader).unwrap();
-    let changed = original.replace("[0.25, 0.75, 1.0, 1.0]", "[1.0, 0.5, 0.25, 1.0]");
+    let changed = original.replace("vec4(0.25, 0.75, 1.0, 1.0)", "vec4(1.0, 0.5, 0.25, 1.0)");
     assert_ne!(original, changed);
-    fs::write(shader, changed).unwrap();
+    fs::write(&shader, changed).unwrap();
     passed(
         &Command::new("cargo")
             .args(["run", "--locked", "--offline"])
@@ -195,6 +195,150 @@ fn standalone_starter_builds_runs_and_formats_offline_in_a_path_with_spaces() {
         fs::read(destination.join("target/ex-starter.png")).unwrap(),
         png
     );
+    let changed_png = fs::read(destination.join("target/ex-starter.png")).unwrap();
+    // Invalid GLSL must stop Cargo rather than silently execute its older shader.
+    fs::write(&shader, "#version 450\nvoid main() { syntax error }\n").unwrap();
+    let failed = Command::new("cargo")
+        .args(["run", "--locked", "--offline"])
+        .current_dir(&destination)
+        .env("CARGO_TARGET_DIR", f.root.join("isolated build"))
+        .output()
+        .unwrap();
+    assert!(!failed.status.success());
+    assert!(String::from_utf8_lossy(&failed.stderr).contains("ERROR"));
+    assert_eq!(
+        fs::read(destination.join("target/ex-starter.png")).unwrap(),
+        changed_png
+    );
+    // Tool selection is a declared build input and invalidates cached build output.
+    fs::write(&shader, original).unwrap();
+    passed(
+        &Command::new("cargo")
+            .args(["run", "--locked", "--offline"])
+            .current_dir(&destination)
+            .env("CARGO_TARGET_DIR", f.root.join("isolated build"))
+            .output()
+            .unwrap(),
+    );
+    // Source is now unchanged: only the selected compiler changes below.
+    let failed = Command::new("cargo")
+        .args(["build", "--locked", "--offline"])
+        .current_dir(&destination)
+        .env("CARGO_TARGET_DIR", f.root.join("isolated build"))
+        .env("EX_GLSLANG", f.root.join("missing compiler.exe"))
+        .output()
+        .unwrap();
+    assert!(!failed.status.success());
+    assert!(String::from_utf8_lossy(&failed.stderr).contains("missing compiler.exe"));
+    passed(
+        &Command::new("cargo")
+            .args(["run", "--locked", "--offline"])
+            .current_dir(&destination)
+            .env("CARGO_TARGET_DIR", f.root.join("isolated build"))
+            .output()
+            .unwrap(),
+    );
+    assert_eq!(
+        fs::read(destination.join("target/ex-starter.png")).unwrap(),
+        png
+    );
+}
+
+#[test]
+fn shader_cli_build_reflect_import_and_errors_preserve_files() {
+    let f = Fixture::new();
+    let source = f.root.join("colour with spaces.frag");
+    fs::write(&source, include_str!("../templates/triangle.frag")).unwrap();
+    let reflected = cli(&[
+        "shader".as_ref(),
+        "reflect".as_ref(),
+        source.as_os_str(),
+        "--stage".as_ref(),
+        "fragment".as_ref(),
+    ]);
+    passed(&reflected);
+    assert!(String::from_utf8_lossy(&reflected.stdout).contains("\"name\":\"colour\""));
+    let output = f.root.join("generated.rs");
+    let args = [
+        "shader".as_ref(),
+        "build".as_ref(),
+        source.as_os_str(),
+        "--stage".as_ref(),
+        "fragment".as_ref(),
+        "--output".as_ref(),
+        output.as_os_str(),
+    ];
+    passed(&cli(&args));
+    let generated = fs::read(&output).unwrap();
+    assert!(String::from_utf8_lossy(&generated).contains("ShaderInstruction::Constant"));
+    assert!(!cli(&args).status.success());
+    assert_eq!(fs::read(&output).unwrap(), generated);
+    for args in [
+        vec!["shader".as_ref()],
+        vec!["shader".as_ref(), "reflect".as_ref(), source.as_os_str()],
+        vec![
+            "shader".as_ref(),
+            "build".as_ref(),
+            source.as_os_str(),
+            "--stage".as_ref(),
+            "compute".as_ref(),
+        ],
+        vec![
+            "shader".as_ref(),
+            "reflect".as_ref(),
+            source.as_os_str(),
+            "--stage".as_ref(),
+            "fragment".as_ref(),
+            "--stage".as_ref(),
+            "fragment".as_ref(),
+        ],
+    ] {
+        assert!(!cli(&args).status.success());
+    }
+    let binary = f.root.join("colour.spv");
+    passed(
+        &Command::new(std::env::var_os("EX_GLSLANG").unwrap_or_else(|| "glslangValidator".into()))
+            .args(["-V", "--target-env", "vulkan1.0", "-Od", "-S", "frag", "-o"])
+            .arg(&binary)
+            .arg(&source)
+            .output()
+            .unwrap(),
+    );
+    let imported = f.root.join("imported.rs");
+    passed(&cli(&[
+        "shader".as_ref(),
+        "import".as_ref(),
+        binary.as_os_str(),
+        "--output".as_ref(),
+        imported.as_os_str(),
+    ]));
+    assert!(fs::read_to_string(&imported)
+        .unwrap()
+        .contains("ShaderStage::Fragment"));
+    fs::write(&source, "#version 450\nvoid main() { invalid }\n").unwrap();
+    let invalid = f.root.join("invalid.rs");
+    assert!(!cli(&[
+        "shader".as_ref(),
+        "build".as_ref(),
+        source.as_os_str(),
+        "--stage".as_ref(),
+        "fragment".as_ref(),
+        "--output".as_ref(),
+        invalid.as_os_str()
+    ])
+    .status
+    .success());
+    assert!(!invalid.exists());
+    let missing = Command::new(env!("CARGO_BIN_EXE_ex"))
+        .args(["shader", "reflect"])
+        .arg(&source)
+        .args(["--stage", "fragment"])
+        .env("EX_GLSLANG", f.root.join("missing.exe"))
+        .output()
+        .unwrap();
+    assert!(!missing.status.success());
+    assert!(String::from_utf8_lossy(&missing.stderr).contains("EX_GLSLANG"));
+    assert_eq!(fs::read(&output).unwrap(), generated);
 }
 
 #[test]

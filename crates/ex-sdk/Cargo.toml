@@ -13,6 +13,7 @@ doc = false
 
 [dependencies]
 ex = { package = "ex-api", path = "../ex-api" }
+ex-shader = { path = "../ex-shader" }
 
 [lints]
 workspace = true

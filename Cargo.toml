@@ -4,6 +4,7 @@ members = [
     "crates/ex-api",
     "crates/expansex-core",
     "crates/ex-sdk",
+    "crates/ex-shader",
 ]
 
 [workspace.package]

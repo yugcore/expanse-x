@@ -57,7 +57,11 @@ pub(super) fn create(destination: &Path, name: &str, sdk: &Path) -> Result<()> {
     let dependency = dependency.to_str().ok_or_else(|| {
         argument_error("SDK path cannot be represented in a UTF-8 Cargo manifest")
     })?;
-    let manifest = format!("[package]\nname = {}\nversion = \"0.1.0\"\nedition = \"2021\"\npublish = false\n\n[dependencies]\nex = {{ package = \"ex-api\", path = {} }}\n\n# Standalone, including when created inside the SDK checkout.\n[workspace]\n\n[lints.rust]\nunsafe_code = \"deny\"\n", quoted_toml(name), quoted_toml(dependency));
+    let shader_dependency = sdk.join("crates/ex-shader");
+    let shader_dependency = shader_dependency.to_str().ok_or_else(|| {
+        argument_error("shader SDK path cannot be represented in a UTF-8 Cargo manifest")
+    })?;
+    let manifest = format!("[package]\nname = {}\nversion = \"0.1.0\"\nedition = \"2021\"\npublish = false\n\n[dependencies]\nex = {{ package = \"ex-api\", path = {} }}\n\n[build-dependencies]\nex-shader = {{ path = {} }}\nex = {{ package = \"ex-api\", path = {} }}\n\n# Standalone, including when created inside the SDK checkout.\n[workspace]\n\n[lints.rust]\nunsafe_code = \"deny\"\n", quoted_toml(name), quoted_toml(dependency), quoted_toml(shader_dependency), quoted_toml(dependency));
     // Exclusive creation refuses files, symlinks, and even empty directories.
     fs::create_dir(destination).map_err(|error| {
         argument_error(format!(
@@ -74,6 +78,9 @@ pub(super) fn create(destination: &Path, name: &str, sdk: &Path) -> Result<()> {
     let source = destination.join("src");
     fs::create_dir(&source)?;
     created.directories.push(source);
+    let shaders = destination.join("shaders");
+    fs::create_dir(&shaders)?;
+    created.directories.push(shaders);
     for (relative, contents) in [
         ("Cargo.toml", manifest.as_str()),
         ("README.md", include_str!("../templates/README.md")),
@@ -85,6 +92,15 @@ pub(super) fn create(destination: &Path, name: &str, sdk: &Path) -> Result<()> {
         ("rustfmt.toml", include_str!("../../../rustfmt.toml")),
         ("src/main.rs", include_str!("../templates/main.rs")),
         ("src/shaders.rs", include_str!("../templates/shaders.rs")),
+        ("build.rs", include_str!("../templates/build.rs")),
+        (
+            "shaders/triangle.vert",
+            include_str!("../templates/triangle.vert"),
+        ),
+        (
+            "shaders/triangle.frag",
+            include_str!("../templates/triangle.frag"),
+        ),
         ("src/renderer.rs", include_str!("../templates/renderer.rs")),
         (
             "src/png.rs",

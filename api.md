@@ -1,13 +1,15 @@
 # EX public API catalog
 
-Updated: 2026-10-09. Scope: every currently exported EX type, inherent method,
+Updated: 2026-10-10. Scope: every currently exported EX type, inherent method,
 public field, enum variant, and explicit standard trait implementation.
 There are **121 public types and 229 inherent methods**. Phase 3 is complete;
 these remain provisional APIs, not a completed or stable v1 specification.
 The bounded [Core Preview milestone](docs/CORE-MILESTONE.md) is complete under
 [the integrated proof](docs/CORE-PROOF.md). The [source SDK CLI](docs/SDK.md)
-now provides info, doctor and project creation; wider SDK Preview work remains
-in progress. SDK binary commands are separate from this library API inventory.
+now provides info, doctor, GLSL/Rust project creation and shader build/import/
+reflection; wider SDK Preview work remains
+in progress. SDK tooling is cataloged [separately below](#sdk-shader-tooling)
+and is excluded from the 121 graphics types/229 methods counted here.
 
 Applications depend on package `ex-api` and import its library as `ex`:
 
@@ -2090,7 +2092,7 @@ their standard-library contracts. Error trait objects also support standard
 
 There are currently no public APIs for asynchronous submission/completion, mipmaps,
 storage images, subrectangle attachments, multiple groups, binding arrays/dynamic offsets,
-external shader language/format importer or frontend/compiler,
+general shader language/format import or a full frontend/compiler,
 instanced draws, primitive restart, indirect drawing/dispatch,
 presentation, mapped memory, hardware discovery/drivers, managed planning,
 EX Witness, or EX Proof. Resource branching is an unaccepted discussion idea,
@@ -2099,6 +2101,47 @@ not an implemented or locked API.
 See the [roadmap](docs/ROADMAP.md) for planned capabilities and
 [DOCUMENTATION.md](DOCUMENTATION.md) for the project design and experimental
 directions. Future methods must not be mixed into the implemented tables.
+
+## SDK shader tooling
+
+This separate package ex-shader, imported as ex_shader, is build-time tooling.
+It adds **5 SDK types, 4 free functions and 4 inherent methods**; none changes the
+ex graphics library inventory above. [SHADER-IMPORT.md](docs/SHADER-IMPORT.md)
+defines EX-GLSL-1, tool requirements, supported lowering and rejection boundaries.
+Functions below return std::result::Result<T, ShaderBuildError>; paths are borrowed.
+
+| Free function | Behavior |
+| --- | --- |
+| build_glsl(source: &std::path::Path, stage: ex::ShaderStage) -> Result<ShaderModule, ShaderBuildError> | Snapshot bounded GLSL, invoke glslangValidator, validate SPIR-V and lower supported vertex/fragment main |
+| import_spirv(source: &std::path::Path) -> Result<ShaderModule, ShaderBuildError> | Validate the same private binary snapshot that is imported; infer supported stage |
+| check_tools() -> Result<Vec<String>, ShaderBuildError> | Query actual installed compiler/validator versions |
+| cargo_build(source: &std::path::Path, stage: ex::ShaderStage, output_name: &str) -> Result<(), ShaderBuildError> | Build-script helper: emit Cargo rebuild inputs and write validated generated Rust into OUT_DIR; simple .rs filename only |
+
+| Type | Public fields / ownership |
+| --- | --- |
+| ShaderModule | Private owned label, reflection, instruction and output arrays; created only by successful import/build; Debug, Clone |
+| Reflection | stage: ex::ShaderStage, inputs: Vec<Interface>, outputs: Vec<Interface>, uniforms: Vec<UniformBinding>, instruction_count: usize; user output locations exclude mandatory vertex position; Debug, Clone, PartialEq, Eq |
+| Interface | name: String, location: u32; declared vec4 interface; Debug, Clone, PartialEq, Eq |
+| UniformBinding | name: String, binding: u32, minimum_bytes: u64; declared set-zero uniform block; Debug, Clone, PartialEq, Eq |
+| ShaderBuildError | Private diagnostic String; Debug, Display, Error, From<std::io::Error>; Display prints context, Error::source returns None |
+
+| Inherent method | Behavior |
+| --- | --- |
+| ShaderModule::descriptor(&self) -> ex::ShaderDescriptor<'_> | Borrow validated arrays; Device::create_shader copies them into ordinary owned EX state |
+| ShaderModule::reflection(&self) -> &Reflection | Borrow declared metadata in deterministic location/slot order |
+| ShaderModule::rust_source(&self) -> String | Generate a Rust module with create(&ex::Device) -> Result<ex::Shader, ex::ShaderCreateError>; includes JSON reflection in a comment |
+| Reflection::to_json(&self) -> String | Deterministic JSON with EX-GLSL-1 profile, stage, vec4 interfaces, vertex_position, set-zero uniform requirements and instruction count |
+
+Standard Clone/Debug/PartialEq/Eq operations have their usual meaning here; clones
+copy owned SDK data. No new graphics handles, public traits, constants or macros.
+The SDK library's Rustdoc entry point is target/doc/ex_shader/index.html.
+
+The separate ex-sdk executable implements info, doctor, new, shader build/import/
+reflect, help and version. [SDK.md](docs/SDK.md#source-sdk-commands) lists exact CLI
+arguments. Generated shader Rust is build output, not a portable EX binary ABI.
+The runtime still consumes ShaderDescriptor; native compilers are not used during
+rendering. Cargo provides incremental build caching; independent artifact caches,
+shader hot reload and broader import are future workflows.
 
 ## Maintenance and generated reference
 

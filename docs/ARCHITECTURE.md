@@ -46,11 +46,12 @@ not supply those capabilities. Hardware work is deferred.
 | Component | Implemented now | Next responsibility |
 | --- | --- | --- |
 | `ex-api`, library name `ex` | Resources, render scopes, submission/readback, shaders/pipelines/layouts, graphics, compute, explicit dependencies, profile queries, and public examples/tests | SDK workflows using the verified core |
-| `ex-sdk`, binary name `ex` | Source-checkout/tool diagnostics, profile queries and standalone project generation through the public ex library | Established shader build/import/reflection over the supported profile |
+| `ex-sdk`, binary name `ex` | Source diagnostics, profile queries, standalone GLSL/Rust projects and shader build/import/reflection commands | Safe shader reload and later integrations |
+| `ex-shader`, library name `ex_shader` | Build-time GLSL/SPIR-V validation/lowering, declared reflection and Rust generation through public shader contracts | Broader import only with meaningful supported operations |
 | `expansex-core` | Ownership, allocation, recording, queue policy, shared profile bounds, and the private selected executor alongside resource/shader contracts | Preserve Preview1 contracts as demonstrated workloads expand |
 | Validation | Resource identity/usages/ranges, layouts/stages, render state, finite arithmetic, attachment checks, compute bounds, and alias-aware explicit-plan preflight | Broader profiles only with implemented behavior |
 | Reference backend | ReferenceBackend executes copies, image transfers, fixed/programmed triangles and compute using the existing staged algorithms, under the runtime's device gate | Future targets require real storage and execution integration |
-| Shader subsystem | shader.rs owns/validates EX instructions and evaluates standalone or allocation-free renderer invocations | Richer instructions and later external import |
+| Shader subsystem | shader.rs owns/validates EX instructions and evaluates standalone or allocation-free renderer invocations; SDK import produces that same IR | Richer instructions and broader source subsets |
 
 The public crate solves a packaging problem: callers have one `ex` import while
 implementation responsibilities can grow behind it. The old core crate and its
@@ -269,3 +270,13 @@ test verify observable behavior and runtime policy. See [CORE-PROFILE.md](CORE-P
 The [maintained integrated workload and completion review](CORE-PROOF.md) now
 meet the bounded Core Preview gate. SDK development follows; broader Phase 4
 capabilities and hardware integration remain future work.
+
+## Shader build dependency direction
+
+ex-sdk and generated build.rs use ex-shader, which depends on ex-api for the
+existing ShaderDescriptor/validation contract. ex-api and expansex-core have no
+dependency on native shader tools or the SDK. Native glslangValidator/spirv-val
+run only at build/import time; generated Rust creates ordinary EX Shader handles.
+Reflection remains declared SDK metadata, not another runtime binding model.
+[SHADER-IMPORT.md](SHADER-IMPORT.md) defines the bounded lowering boundary; Cargo
+tracks source/tool inputs for incremental builds. No new executor is introduced.

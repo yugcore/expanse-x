@@ -61,7 +61,9 @@ drawing, and writes `target/phase3-programmable-triangle.png`. EX's vertex shade
 scales/translates the triangle and its fragment shader tints interpolated colours.
 The verified image contains 47,794 shaded pixels and 36,374 distinct foreground
 colours. See [the pipeline contract](docs/PIPELINES.md).
-HLSL/GLSL/SPIR-V import is planned; current examples use EX instructions directly.
+The SDK now imports a bounded GLSL/SPIR-V graphics subset; these core examples
+still use EX instructions directly. See [shader import](docs/SHADER-IMPORT.md).
+HLSL source compilation and broader language features remain future work.
 
 ```text
 cargo run -p ex-api --example indexed_quad --locked --offline
@@ -81,8 +83,8 @@ The example uploads an 8x8 checkerboard and renders two indexed quads with the
 same texture: nearest repeat sampling on the left and bilinear repeat on the
 right. It writes `target/phase4-textured-quad.png`; independent calculations verify
 every pixel, including 119,808 covered samples. See [textures](docs/TEXTURES.md).
-Uploads are explicit CPU copies in this step; texture transfer commands and
-mipmaps remain future work.
+This example uses explicit CPU uploads. Recorded texture transfers now work in
+[texture_flow](docs/TEXTURE-FLOW.md); mipmaps remain future work.
 
 ```text
 cargo run -p ex-api --example depth_overlap --locked --offline
@@ -132,7 +134,10 @@ in-place updates, atomic dispatch failure, and current limits.
 Install Rust through rustup. `rust-toolchain.toml` selects stable Rust with
 rustfmt, Clippy, and Rust source; no extra platform target is required. Current
 packages use only the Rust standard library and local workspace dependencies.
-After the toolchain is installed, these commands work without network access:
+After the Rust toolchain and native shader tools (glslangValidator/spirv-val) are
+installed, these commands work without network access. Native tools are required
+by SDK integration tests and generated shader builds; core-only builds/tests do
+not invoke them. Set EX_GLSLANG/EX_SPIRV_VAL to executable paths if needed:
 
 ```text
 cargo fmt --all -- --check
@@ -192,7 +197,7 @@ change live colours/parameters; missing-barrier and late-compute-failure checks
 verify rejection, rollback and repaired reuse. It writes `target/core-preview.png`.
 The test runs with normal workspace checks and verifies every pixel/attachment.
 
-## Source SDK foundation
+## Source SDK and shader tools
 
 ```text
 cargo run -p ex-sdk --locked --offline -- doctor
@@ -203,10 +208,13 @@ cargo run -p ex-sdk --locked --offline -- new target/my-ex-app --name my-ex-app
 The source SDK checks installed tools and an offline executable build, reports
 the supported profile/limits, and creates an independent Rust application. From
 the generated directory, run `cargo run --locked --offline` to render a checked
-triangle to `target/ex-starter.png`. Edit `src/shaders.rs` for current EX IR and
-`src/renderer.rs` for explicit resource/draw flow. Existing destinations are refused.
+triangle to `target/ex-starter.png`. Edit `shaders/triangle.vert` or
+`shaders/triangle.frag`; its build script compiles GLSL to validated EX instructions.
+Install glslangValidator and spirv-val first, or select their executable paths with
+EX_GLSLANG/EX_SPIRV_VAL. Edit `src/renderer.rs` for explicit resource/draw flow.
+Existing destinations are refused.
 See [SDK.md](docs/SDK.md) for checkout selection, path handling, errors and the
-remaining shader/import/reload/window/tooling gates. SDK Preview is in progress.
+shader subset, reflection/build commands and remaining reload/window/tooling gates. SDK Preview is in progress.
 
 ## Repository map
 
@@ -216,7 +224,8 @@ remaining shader/import/reload/window/tooling gates. SDK Preview is in progress.
 | `api.md` | Complete catalog of currently exposed public APIs |
 | `crates/ex-api/` | Public Rust entry point, imported as `ex`; runnable example |
 | `crates/expansex-core/` | Ownership, resources, recording/submission, shader interpreter, and private reference rasterizer |
-| `crates/ex-sdk/` | Source SDK CLI, setup/capability checks and standalone Rust starter templates |
+| `crates/ex-sdk/` | Source SDK CLI, shader commands and standalone GLSL/Rust starter templates |
+| `crates/ex-shader/` | Build-time native-tool invocation, bounded SPIR-V lowering, reflection and Rust generation |
 | `docs/` | Current EX contracts, architecture, assessment, and conventions |
 | `scripts/` | Repeatable production checks |
 
@@ -229,12 +238,12 @@ owned resources, copies, fixed-function drawing, and synchronous readback now wo
 Phase 3 completes programmable pipelines, layouts, interpolation, and indexed
 drawing. Phase 4 now has sampled textures, views, samplers, and eight fragment
 resource slots, depth/stencil attachments/tests, blending, and compute pipelines/dispatch.
-The workspace passes 262 tests, including documentation tests.
+The workspace passes 272 tests, including documentation tests.
 [Core Preview 1](docs/CORE-MILESTONE.md) is complete for the bounded explicit
 software profile. SDK Preview is in progress: setup checks, capability reporting
-and standalone Rust project generation work. Shader import/build and reflection
-are next; a complete/stable v1 API remains a later
-goal. Other modern GPU
+and standalone GLSL/Rust project generation work. Bounded shader import/build,
+reflection and Cargo incremental rebuilds work; safe shader reload is next.
+A complete/stable v1 API remains a later goal. Other modern GPU
 features and hardware drivers follow demonstrated workloads, one capability at a time.
 
 Read the [starting assessment](docs/ASSESSMENT.md),

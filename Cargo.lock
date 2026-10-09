@@ -14,6 +14,14 @@ name = "ex-sdk"
 version = "0.1.0"
 dependencies = [
  "ex-api",
+ "ex-shader",
+]
+
+[[package]]
+name = "ex-shader"
+version = "0.1.0"
+dependencies = [
+ "ex-api",
 ]
 
 [[package]]

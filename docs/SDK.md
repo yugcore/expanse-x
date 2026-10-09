@@ -1,102 +1,67 @@
 # SDK Preview development
 
-Selected foundation contract (2026-10-09), before implementation. Core Preview 1
-is complete; this begins the SDK developer workflow. SDK Preview as a whole
-remains in progress until its additional shader/tool/integration gates are met.
-The initial source SDK supports the existing explicit software profile only.
+Core Preview 1 is complete. SDK Preview remains in progress: the source workflow
+and the first bounded shader import/build/reflection workflow are implemented.
+The SDK uses the existing explicit software profile.
 
-## Foundation scope
+## Source SDK commands
 
-Add a standard-library-only `ex-sdk` workspace package with an `ex` command-line
-tool using the public `ex` library. Keep the SDK separate from core execution.
-Commands must return clear errors and a failing exit status on expected misuse.
+The standard-library-only ex-sdk package builds the ex executable, separate from
+core execution. Expected misuse reports a diagnostic and a failing exit status.
 
-| Command | Contract |
+| Command | Implemented behavior |
 | --- | --- |
-| `ex info` | Report the linked runtime's adapters, supported profile and numeric limits; identify software execution |
-| `ex doctor [--sdk PATH]` | Check the source checkout, Rust/Cargo/rustfmt/Clippy availability and an offline locked core_preview example build including linking; report failures without installing or changing system configuration |
-| `ex new PATH [--name NAME] [--sdk PATH]` | Create a standalone Rust starter with an explicit path dependency on the selected checkout; refuse an existing destination, including an empty directory; default package name ex-app |
-| `ex help` / `--help`, `--version` | Show executable commands or the tool's package version |
+| ex info | Query the linked runtime's adapters, profile and ten numeric limits; identify software execution |
+| ex doctor [--sdk PATH] | Check the source checkout, Rust/Cargo/rustfmt/Clippy and native shader tool versions; build the core_preview executable locked/offline, including linking |
+| ex new PATH [--name NAME] [--sdk PATH] | Generate a standalone Rust starter with local runtime/build dependencies, GLSL files, build.rs, checked PNG rendering and its own lockfile |
+| ex shader build FILE --stage vertex\|fragment --output FILE.rs | Compile GLSL, validate SPIR-V, lower supported EX instructions and exclusively create a Rust module; print JSON reflection |
+| ex shader import FILE.spv --output FILE.rs | Validate a private binary snapshot, lower its supported main entry and exclusively create a Rust module; print JSON reflection |
+| ex shader reflect FILE --stage vertex\|fragment | Compile/lower GLSL and print JSON reflection without writing an artifact |
+| ex help / --help, --version | Show implemented commands or the package version |
 
-Find a source checkout by inspecting ancestors of the current directory and
-tool executable, or accept --sdk explicitly. Do not hard-code the developer's
-machine path in the executable. --sdk selects the starter dependency/build
-checkout; info reports the runtime compiled into the tool. Paths containing
-spaces, backslashes and TOML quoting characters must be handled as path values,
-not interpolated shell commands. Non-Unicode manifest paths return a clear error.
+Find the checkout in ancestors of the current directory/executable, or use --sdk.
+The executable has no compiled-in machine path. --sdk selects the starter/build
+checkout; info reports the runtime linked into the tool. Shader commands do not
+need checkout discovery. Paths are subprocess arguments, never shell fragments.
 
-The starter must build/run independently of the SDK workspace, with its own
-manifest and lockfile and no registry dependencies. Separate shaders.rs makes
-current EX IR editable without core changes. Render an offscreen programmable
-triangle through explicit upload/vertex dependencies, verify representative
-pixels, and export a PNG. Include project-specific instructions and ignore rules.
-This is a headless Rust starting point; it does not add shader-language import,
-presentation, reload, an asset database or a managed API.
+Creation refuses every existing destination, even an empty directory. Validate
+arguments/checkout before exclusive creation; the parent must already exist.
+On failure, remove only this attempt's files/directories. Cleanup is best effort
+if the OS denies removal; interruption can leave a partial new project. No Git
+initialization, installation, publication or global configuration change occurs.
+Cargo generates the starter lockfile offline from metadata, without building or
+running the application. A malformed selected checkout fails with diagnostics.
+Non-Unicode manifest paths are rejected; TOML quoting preserves spaces/backslashes.
 
-Creation must use exclusive directory/file creation and never overwrite user
-files. If writing the new project fails, remove only files created by this
-attempt and its own newly created directory; preserve unrelated entries. Cleanup
-is best effort if the OS denies removal; interrupted/killed processes can leave
-an incomplete new directory. Validate
-arguments and the SDK before creating the destination. Do not run project code
-or build automatically during creation. Cargo generates the app's lockfile offline
-from metadata; the developer explicitly builds/runs the application. The
-destination's parent must already exist. No Git initialization is performed.
-Tool subprocesses disable Rustup automatic toolchain installation with
-RUSTUP_AUTO_INSTALL=0, as defined by the [Rustup documentation](https://rust-lang.github.io/rustup/devel/environment-variables.html).
-An absent toolchain is reported rather than installed.
+## Shader build boundary
 
-## Verification and remaining gates
+[SHADER-IMPORT.md](SHADER-IMPORT.md) records the contract chosen before implementation.
+The installed glslangValidator compiles GLSL to SPIR-V 1.0; spirv-val checks the
+same private snapshot that EX imports. EX-GLSL-1 supports vertex/fragment main,
+straight-line float/vec4 arithmetic, constants, local values, swizzles, dot,
+component extraction/construction, consecutive vec4 locations and uniform vec4
+blocks in descriptor set zero. Reflection describes declared interfaces, uniform
+slots/minimum bytes and actual EX instruction count. EX owns shader execution.
 
-Exercise the CLI through real subprocesses. Check argument errors, info metadata,
-existing-destination refusal, encoded manifest paths and project creation under a
-path containing spaces. Build and run the generated project locked/offline with
-an isolated build directory, inspect its output, and verify doctor against the
-checkout. Include the tool and its tests in normal workspace checks.
+This is limited language import: other vector sizes, textures, matrices, compute,
+branches, loops, calls, includes and extensions are explicitly rejected. Existing
+Rust-built EX IR remains available, including its broader core operations.
+Compiler errors preserve native diagnostics; lowering errors identify opcode and
+SPIR-V word offset. There is no source-level debugger or complete interpreter.
 
-| SDK gate | Initial status |
-| --- | --- |
-| Setup, capabilities and standalone starter | Working; CLI and generated-project evidence below |
-| Established shader import/build, supported lowering and reflection/cache | Planned; current shaders use bounded EX IR |
-| Safe reload and optional asset helpers | Planned |
-| Window/engine integrations and diagnostic/capture tooling | Planned |
-| Contributor onboarding and packaged release policy | Planned; no publication or license selection in this step |
+Native tools must be installed separately and available through PATH, or selected
+with EX_GLSLANG and EX_SPIRV_VAL executable paths. They run only during import/
+build; rendered applications do not need them at runtime. EX does not install
+anything. [glslang](https://github.com/KhronosGroup/glslang) and
+[SPIRV-Tools](https://github.com/KhronosGroup/SPIRV-Tools) describe those tools.
+Full SDK tests also require them; core-only builds/tests remain independent.
+Rust subprocesses use RUSTUP_AUTO_INSTALL=0 as documented by
+[Rustup](https://rust-lang.github.io/rustup/devel/environment-variables.html).
+The stable channel moves; doctor reports the actual versions, not a release pin.
 
-Stable Rust is selected by the repository; its moving channel is not an exact
-release compiler pin. Report actual tool versions. A distributable SDK release
-still needs tested platform/toolchain/dependency versions and licensing policy.
-There is no network installation, global PATH change, published package or
-hardware claim in this foundation.
+## Quickstart
 
-## Tests and examples
-
-Implemented in [ex-sdk](../crates/ex-sdk/Cargo.toml), with
-[CLI dispatch/diagnostics](../crates/ex-sdk/src/main.rs),
-[exclusive creation and cleanup](../crates/ex-sdk/src/project.rs), and
-[templates](../crates/ex-sdk/templates/README.md). The binary is named ex;
-its manual is this document, so binary Rustdoc is disabled to preserve the
-public library's ex/ documentation output. No library APIs changed.
-
-Five [subprocess integration tests](../crates/ex-sdk/tests/cli.rs) cover real help/
-info and argument errors, existing directory/file refusal, invalid names/SDKs,
-failed-lockfile cleanup, missing-tool diagnostics and an independent project in
-a path with spaces. That project formats, builds and runs locked/offline using
-an isolated build directory. Editing its fragment instructions changes the
-rendered PNG on the next build/run. Cargo metadata creates its own lockfile;
-only the two existing local core packages are dependencies.
-
-The starter renders a 64x64 programmable triangle using explicit transfer-to-
-vertex ordering. The retained command buffer submits synchronously, and CPU
-readback feeds the PNG writer. Representative coverage checks run in the app.
-Independent PNG CRC/decompression/geometry calculations verify all 4096 pixels,
-including 1152 shaded samples; the image was visually inspected. doctor and info
-also ran successfully against the source checkout on this Windows environment.
-All 262 workspace tests and required project checks pass. The public library
-inventory remains 121 types, 229 methods and 34 error types.
-
-## Source SDK quickstart
-
-From the EX checkout, after installing its Rust toolchain:
+From the checkout, with its Rust components and shader tools installed:
 
 ```text
 cargo run -p ex-sdk --locked --offline -- doctor
@@ -104,21 +69,68 @@ cargo run -p ex-sdk --locked --offline -- info
 cargo run -p ex-sdk --locked --offline -- new target/my-ex-app --name my-ex-app
 ```
 
-The doctor build creates target/ if needed. Move into target/my-ex-app and run:
+From target/my-ex-app:
 
 ```text
 cargo run --locked --offline
 cargo build --release --locked --offline
+cargo fmt -- --check
 ```
 
-Open target/ex-starter.png inside that project. Edit src/shaders.rs to change
-supported instructions/colour; edit src/renderer.rs for resources and explicit
-rendering. Expected API errors use Result; export errors describe file I/O after
-rendering. Generated projects remain independent workspaces. Their absolute
-SDK path must be updated if the source checkout moves. Quote shell path arguments
-when they contain spaces. Use --sdk PATH if discovery cannot find the checkout.
-The generator does not overwrite an existing destination or initialize Git.
+Open target/ex-starter.png inside that project. Edit shaders/triangle.vert or
+triangle.frag, then build/run again. build.rs compiles into Cargo's OUT_DIR and
+src/shaders.rs includes the generated modules. src/renderer.rs owns resources,
+explicit transfer-to-vertex ordering, drawing and readback. The Float32x2 position
+attribute supplies Z=0/W=1 to the GLSL vec4 input. Export errors describe file I/O.
+The starter checks corner background/centre coverage before PNG export.
 
-This source foundation is complete; the wider SDK Preview remains in progress.
-Next: a chosen established shader import/build and reflection contract for the
-supported EX IR, with explicit errors for unsupported language features.
+Cargo caches successful build results. Source files, shader directory, selected
+tool environment variables, PATH and resolved native executable files are rebuild
+inputs; SDK dependency changes also invalidate results. Broken shaders stop Cargo
+instead of using old generated instructions. Includes are unsupported. There is
+no separate persistent artifact cache, portable EX binary format or hot reload.
+
+The generated project is its own workspace with its own lockfile and absolute
+SDK paths. Update both runtime and build dependency paths if the checkout moves.
+There are no registry crates. Quote shell paths containing spaces. Creation and
+shader CLI output refuse existing destinations; choose a new artifact path.
+
+Example from the checkout, after project creation:
+
+```text
+cargo run -p ex-sdk --locked --offline -- shader reflect target/my-ex-app/shaders/triangle.frag --stage fragment
+cargo run -p ex-sdk --locked --offline -- shader build target/my-ex-app/shaders/triangle.frag --stage fragment --output target/fragment.rs
+```
+
+## Evidence and remaining gates
+
+[CLI tests](../crates/ex-sdk/tests/cli.rs) exercise arguments, file preservation,
+cleanup, missing tools, build/import/reflection and standalone format/build/run
+in a path with spaces. GLSL edits change the rendered image, invalid source stops
+the build, tool selection invalidates the build even with unchanged source, and
+repair recovers the original image. [Importer tests](../crates/ex-shader/tests/import.rs)
+evaluate math/swizzles/locals, validate binary import, reject malformed/unsupported
+inputs, enforce instruction limits, and use reflected uniform layouts to change
+both geometry and colours across reused submissions. Every 16x16 pixel is checked.
+[A varying test](../crates/ex-shader/tests/varying.rs) verifies all gradient and
+background samples after actual GLSL vertex/fragment interpolation.
+
+The starter produces a 64x64 image with 1152 shaded samples; independent PNG
+CRC/decompression/geometry checks verify all 4096 pixels. Native tools and doctor
+ran successfully on this Windows environment. All 272 workspace tests and project
+checks pass. The graphics library remains 121 types, 229 methods and 34 error types;
+[api.md](../api.md#sdk-shader-tooling) catalogs the separate SDK shader library.
+
+| SDK gate | Status |
+| --- | --- |
+| Setup, capabilities and standalone starter | Working |
+| First established shader import/build, supported lowering and reflection | Working for EX-GLSL-1 |
+| Incremental shader builds | Working through Cargo's input tracking/cache |
+| Broader source import and independent artifact cache | Future extensions |
+| Safe reload and optional asset helpers | Planned; next selected workflow is safe shader reload |
+| Window/engine integrations and diagnostic/capture tooling | Planned |
+| Contributor onboarding and packaged release policy | Planned; no publication or license selection |
+
+SDK Preview is not complete. Distributable releases still need tested platform/
+toolchain/dependency versions and licensing policy. This step adds no hardware,
+window presentation or managed API claim.

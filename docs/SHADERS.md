@@ -108,12 +108,13 @@ evaluation still returns an owned Vec and does not itself render.
 
 Use established shader languages/toolchains when external shader ingestion is
 added; reconsider a custom EX source language only for a demonstrated benefit.
-A possible route is HLSL/GLSL -> SPIR-V -> validated EX IR -> EX execution.
+The first implemented route is GLSL -> SPIR-V -> validated EX IR -> EX execution.
 [DXC](https://github.com/microsoft/DirectXShaderCompiler) supports HLSL-to-SPIR-V;
 [glslang](https://github.com/KhronosGroup/glslang) supports GLSL-to-SPIR-V. The
-importer and supported subset are future work, not current language support.
-EX's current vector instructions need to grow before general shader import is
-possible. This decision preserves EX's ownership of rendering and execution.
+SDK now imports the bounded EX-GLSL-1 vertex/fragment subset described in
+[SHADER-IMPORT.md](SHADER-IMPORT.md). HLSL source compilation and broader language
+support remain future work; general import requires richer core instructions.
+This decision preserves EX's ownership of rendering and execution.
 
 
 ## Parameter interface
@@ -124,5 +125,5 @@ instruction. Standalone evaluate has no bindings and reports MissingUniformBindi
 Bound execution reads snapshots of used views under the device gate; loaded values
 pass the same finite-result checks as arithmetic. Unloaded elements can contain
 arbitrary bytes. [BINDINGS.md](BINDINGS.md) defines reusable layout/group behavior.
-This is the supported EX IR profile; no external shader language/format importer
-or complete SPIR-V interpreter is claimed.
+The core still consumes this EX IR profile. The separate ex-shader SDK library
+imports only its documented graphics subset; no complete SPIR-V interpreter is claimed.

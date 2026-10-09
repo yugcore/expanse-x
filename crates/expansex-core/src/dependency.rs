@@ -76,6 +76,9 @@ impl Resource {
         match (self, other) {
             (Self::Buffer(a), Self::Buffer(b)) => a.is_same(b),
             (Self::Texture(a), Self::Texture(b)) => a.is_same(b),
+            (Self::Texture(a), Self::Framebuffer(b)) | (Self::Framebuffer(b), Self::Texture(a)) => {
+                a.is_same(&b.as_texture())
+            }
             (Self::Framebuffer(a), Self::Framebuffer(b)) => a.is_same(b),
             (Self::DepthBuffer(a), Self::DepthBuffer(b)) => a.is_same(b),
             (Self::StencilBuffer(a), Self::StencilBuffer(b)) => a.is_same(b),
@@ -111,8 +114,14 @@ impl Resource {
                     _ => false,
                 }
             }
-            Self::Texture(_) => access == A::SampledRead,
-            Self::Framebuffer(_) => access == A::ColourReadWrite,
+            Self::Texture(_) | Self::Framebuffer(_) => matches!(
+                access,
+                A::SampledRead
+                    | A::ColourReadWrite
+                    | A::TransferRead
+                    | A::TransferWrite
+                    | A::TransferReadWrite
+            ),
             Self::DepthBuffer(_) => access == A::DepthReadWrite,
             Self::StencilBuffer(_) => access == A::StencilReadWrite,
         }
@@ -386,6 +395,30 @@ impl CommandBuffer {
             let mut add = |resource, access| add_use(&mut uses, command_index, resource, access);
             match command {
                 Command::ResourceTransitions(_) => {}
+                Command::CopyBufferToTexture(copy) => {
+                    add(Resource::Buffer(copy.buffer().clone()), A::TransferRead)?;
+                    add(
+                        Resource::Texture(copy.texture().texture().clone()),
+                        A::TransferWrite,
+                    )?;
+                }
+                Command::CopyTextureToBuffer(copy) => {
+                    add(
+                        Resource::Texture(copy.texture().texture().clone()),
+                        A::TransferRead,
+                    )?;
+                    add(Resource::Buffer(copy.buffer().clone()), A::TransferWrite)?;
+                }
+                Command::CopyTexture(copy) => {
+                    add(
+                        Resource::Texture(copy.source().texture().clone()),
+                        A::TransferRead,
+                    )?;
+                    add(
+                        Resource::Texture(copy.destination().texture().clone()),
+                        A::TransferWrite,
+                    )?;
+                }
                 Command::CopyBuffer(copy) if copy.size() != 0 => {
                     add(Resource::Buffer(copy.source().clone()), A::TransferRead)?;
                     add(

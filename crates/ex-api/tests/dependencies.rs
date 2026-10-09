@@ -614,7 +614,7 @@ fn used_texture_views_are_tracked_by_allocation_and_unused_slots_are_ignored() {
         e.transition_resources(&[ResourceTransition {
             resource: r.clone(),
             before: None,
-            after: A::TransferWrite
+            after: A::StorageWrite
         }]),
         Err(DependencyEncodeError::InvalidAccess { .. })
     ));

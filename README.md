@@ -29,7 +29,8 @@ control clip positions; fragment shaders control stored pixel colours. Indexed
 drawing shares vertex records using u16/u32 indices and a signed base vertex.
 RGBA8 textures, rectangular views, nearest/bilinear samplers, and fragment texture
 bindings, depth/stencil attachments/tests, and colour blending now work. Phase 4 is in
-progress; [explicit whole-resource dependencies](docs/DEPENDENCIES.md) now work. Hardware drivers remain deferred.
+progress; device texture transfers and shared render-to-texture images work under
+[TEXTURE-FLOW.md](docs/TEXTURE-FLOW.md), and [explicit whole-resource dependencies](docs/DEPENDENCIES.md) now work. Hardware drivers remain deferred.
 
 ```text
 cargo run -p ex-api --example software_triangle --locked --offline
@@ -147,6 +148,21 @@ commands from the project root in CI. Tests include executable and compile-fail
 documentation examples. Keep the workspace lockfile committed. The stable
 toolchain follows stable releases; it is not a pinned compiler-version guarantee.
 
+## Multi-pass image flow
+
+```text
+cargo run -p ex-api --example texture_flow --locked --offline
+```
+
+The [example](crates/ex-api/examples/texture_flow.rs) uploads padded checkerboard
+rows, copies an atlas rectangle, computes quad geometry, renders to a shared
+texture attachment, samples it in a later pass, and reads back padded buffer
+rows. It checks every pixel and padding byte across two submissions with changed
+upload data, then writes `target/core-texture-flow.png`. All device images use
+HostAccess::None; explicit image/buffer dependencies connect the operations.
+Texture/framebuffer aliases preserve allocation identity and host permissions.
+See the [contract](docs/TEXTURE-FLOW.md) for feedback rejection and failure rules.
+
 ## Repository map
 
 | Path | Responsibility |
@@ -167,9 +183,9 @@ owned resources, copies, fixed-function drawing, and synchronous readback now wo
 Phase 3 completes programmable pipelines, layouts, interpolation, and indexed
 drawing. Phase 4 now has sampled textures, views, samplers, and eight fragment
 resource slots, depth/stencil attachments/tests, blending, and compute pipelines/dispatch.
-The workspace passes 227 tests, including documentation tests.
+The workspace passes 245 tests, including documentation tests.
 The immediate target is [core completion](docs/CORE-MILESTONE.md), followed by the
-SDK; a complete/stable v1 API remains a later goal. Next: texture transfers and render-to-texture resource flows. The core milestone defines a
+SDK; a complete/stable v1 API remains a later goal. Next: the execution/backend boundary and reusable supported-profile tests. The core milestone defines a
 bounded supported reference profile and its completion gates. Other modern GPU
 features and hardware drivers follow demonstrated workloads, one capability at a time.
 

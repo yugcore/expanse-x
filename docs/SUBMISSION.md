@@ -153,3 +153,15 @@ sources are acquired, including same-allocation aliases. Snapshot poison or load
 nonfinite values retain the same atomic failed-operation/completed-prefix rules.
 Unused slots and zero source operations skip parameter reads. [BINDINGS.md](BINDINGS.md)
 defines the retained, live group contract.
+
+## Texture flow integration
+
+Texture transfers follow the same completed-prefix rules: TextureTransferFailed
+retains command index and TextureTransferExecutionError; failed destinations stay
+unchanged and later commands skip. Buffer/image copies lock both operands before
+writing rows, preserving padding. Image/image copies reserve and snapshot the
+source before destination commit, including disjoint aliases. These executor calls
+never acquire the device gate again. Shared texture attachments retain whole-scope
+colour/depth/stencil rollback. CPU framebuffer reads enforce the allocation's
+HostAccess before metadata/storage checks; standalone framebuffers still allow
+reads. [TEXTURE-FLOW.md](TEXTURE-FLOW.md) defines the bounded formats and layouts.

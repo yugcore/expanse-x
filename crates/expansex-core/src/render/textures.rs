@@ -73,16 +73,27 @@ impl RenderPass<'_> {
                         view: view.clone(),
                         sampler: sampler.clone(),
                     });
-                    continue;
+                } else {
+                    *target = Some(
+                        self.textures[slot]
+                            .as_ref()
+                            .ok_or(RenderEncodeError::MissingTextureBinding {
+                                binding: slot as u32,
+                            })?
+                            .clone(),
+                    );
                 }
-                *target = Some(
-                    self.textures[slot]
-                        .as_ref()
-                        .ok_or(RenderEncodeError::MissingTextureBinding {
-                            binding: slot as u32,
-                        })?
-                        .clone(),
-                );
+                if target.as_ref().is_some_and(|binding| {
+                    binding
+                        .view()
+                        .texture()
+                        .is_same(&self.commands.target().as_texture())
+                }) {
+                    return Err(RenderEncodeError::AttachmentFeedback {
+                        binding: slot as u32,
+                        label: self.commands.target().label().to_owned(),
+                    });
+                }
             }
         }
         Ok(retained)

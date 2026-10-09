@@ -2,7 +2,7 @@
 
 Updated: 2026-10-09. Scope: every currently exported EX type, inherent method,
 public field, enum variant, and explicit standard trait implementation.
-There are **114 public types and 216 inherent methods**. Phase 3 is complete;
+There are **119 public types and 226 inherent methods**. Phase 3 is complete;
 these remain provisional APIs, not a completed or stable v1 specification.
 The immediate milestone is [core completion](docs/CORE-MILESTONE.md); SDK
 development follows that gate. This catalog describes working APIs, not planned SDK commands.
@@ -27,6 +27,7 @@ currently exported.
 | --- | --- |
 | Discovery and ownership | [Instance](#instance), [Adapter](#adapter), [AdapterInfo](#adapterinfo), [BackendKind](#backendkind), [Device](#device), [Queue](#queue) |
 | Buffers | [BufferDescriptor](#bufferdescriptor), [BufferUsage](#bufferusage), [HostAccess](#hostaccess), [Buffer](#buffer) |
+| Texture flow | [TextureBufferLayout](#texturebufferlayout), [BufferTextureCopy](#buffertexturecopy), [TextureCopy](#texturecopy), [TextureTransferEncodeError](#texturetransferencodeerror), [TextureTransferExecutionError](#texturetransferexecutionerror) |
 | Copy recording | [CommandEncoder](#commandencoder), [CommandBuffer](#commandbuffer), [Command](#command), [BufferCopy](#buffercopy), [CopyBufferRole](#copybufferrole) |
 | Shader bindings | [ShaderVisibility](#shadervisibility), [BindingType](#bindingtype), [BindGroupLayoutEntry](#bindgrouplayoutentry), [BindGroupLayoutDescriptor](#bindgrouplayoutdescriptor), [BindGroupLayout](#bindgrouplayout), [BufferBinding](#bufferbinding), [BindingResource](#bindingresource), [BindGroupEntry](#bindgroupentry), [BindGroupDescriptor](#bindgroupdescriptor), [BindGroup](#bindgroup), [BindingValidationError](#bindingvalidationerror), [BindingCreateError](#bindingcreateerror) |
 | Dependencies | [SynchronizationMode](#synchronizationmode), [Resource](#resource), [ResourceKind](#resourcekind), [ResourceAccess](#resourceaccess), [ResourceTransition](#resourcetransition), [ResourceTransitions](#resourcetransitions), [ResourceUse](#resourceuse), [HazardKind](#hazardkind), [DependencyEncodeError](#dependencyencodeerror), [DependencyValidationError](#dependencyvalidationerror) |
@@ -241,6 +242,9 @@ retains that device. All fields are private.
 | `CommandEncoder::belongs_to(&self, device: &Device) -> bool` | Test device membership. |
 | `CommandEncoder::commands(&self) -> &[Command]` | Inspect recorded operations. |
 | `CommandEncoder::copy_buffer(&mut self, source: &Buffer, source_offset: u64, destination: &Buffer, destination_offset: u64, size: u64) -> Result<(), CommandEncodeError>` | Validate and append a retained copy description. |
+| `CommandEncoder::copy_buffer_to_texture(&mut self, source: &Buffer, layout: TextureBufferLayout, destination: &TextureView) -> Result<(), TextureTransferEncodeError>` | Validate/retain positive RGBA8 upload rows; ignore padding. |
+| `CommandEncoder::copy_texture_to_buffer(&mut self, source: &TextureView, destination: &Buffer, layout: TextureBufferLayout) -> Result<(), TextureTransferEncodeError>` | Validate/retain readback rows; preserve padding/other bytes. |
+| `CommandEncoder::copy_texture(&mut self, source: &TextureView, destination: &TextureView) -> Result<(), TextureTransferEncodeError>` | Copy equal rectangles; disjoint same-image copies allowed, overlapping aliases rejected. |
 | `CommandEncoder::dispatch(&mut self, pipeline: &ComputePipeline, workgroups: [u32; 3], bindings: &[StorageBufferBinding<'_>]) -> Result<(), ComputeEncodeError>` | Validate and retain one compute dispatch; no execution during recording. |
 | `CommandEncoder::synchronization_mode(&self) -> SynchronizationMode` | Inspect the fixed synchronization contract. |
 | `CommandEncoder::transition_resources(&mut self, transitions: &[ResourceTransition]) -> Result<(), DependencyEncodeError>` | Record validated retained dependency points; Explicit only, no execution. |
@@ -248,7 +252,9 @@ retains that device. All fields are private.
 | `CommandEncoder::finish(self) -> CommandBuffer` | Consume the encoder and move its work into immutable finished commands. |
 | `CommandEncoder::begin_render_pass(&mut self, target: &Framebuffer, clear: Option<[u8; 4]>) -> Result<RenderPass<'_>, RenderEncodeError>` | Open an exclusive borrowed render recorder; clear/draws change no pixels until submission. |
 
-Checks run in this order: source/destination devices, source/destination transfer
+The following checks describe `copy_buffer`; image transfers use the
+[texture-flow contract](docs/TEXTURE-FLOW.md) and require four-byte-aligned layouts.
+Buffer-copy checks run in this order: source/destination devices, source/destination transfer
 roles, source/destination checked ranges, same-allocation overlap, command
 reservation. Empty copies at valid end offsets are allowed. Nonempty overlapping
 aliases are rejected; adjacent/disjoint same-buffer ranges are allowed.
@@ -281,6 +287,9 @@ immutable; buffer contents remain live. Resources are retained, not snapshotted.
 | --- | --- |
 | `Command::ResourceTransitions(ResourceTransitions)` | Retained explicit access-role changes and full dependency points. |
 | `Command::CopyBuffer(BufferCopy)` | One validated buffer-copy description. |
+| `Command::CopyBufferToTexture(BufferTextureCopy)` | Buffer is source; image view is destination. |
+| `Command::CopyTextureToBuffer(BufferTextureCopy)` | Image view is source; buffer is destination. |
+| `Command::CopyTexture(TextureCopy)` | Equal-extent image rectangles; retained live contents. |
 | `Command::Dispatch(ComputeDispatch)` | One validated compute grid with retained pipeline/storage views. |
 | `Command::RenderPass(RenderCommands)` | One finished render scope, retaining target and per-draw vertex/pipeline bindings. |
 
@@ -306,8 +315,8 @@ inherent methods.
 
 | Variant | Meaning |
 | --- | --- |
-| `CopyBufferRole::Source` | Source buffer. |
-| `CopyBufferRole::Destination` | Destination buffer. |
+| `CopyBufferRole::Source` | Source buffer or image. |
+| `CopyBufferRole::Destination` | Destination buffer or image. |
 
 Its `Display` representation is `source` or `destination`.
 
@@ -348,10 +357,14 @@ It has no inherent methods.
 ### Framebuffer
 
 `ex::Framebuffer` has private fields, owns fixed zeroed pixels, and retains its
-device. Clones share live pixels. Create through `Device::create_framebuffer`.
+device. Clones share live pixels. Create through `Device::create_framebuffer`,
+or retain an existing image through `Texture::as_framebuffer`. CPU reads check
+HostAccess before bounds/count/locking; standalone framebuffers allow reads.
+Conversions retain exactly the same allocation and permissions.
 
 | Method | Behavior |
 | --- | --- |
+| `Framebuffer::as_texture(&self) -> Texture` | Retain a sampling/transfer alias sharing pixels, identity and HostAccess; no copy/allocation. |
 | `Framebuffer::label(&self) -> &str` | Borrow owned label. |
 | `Framebuffer::width(&self) -> u32` | Width in pixels. |
 | `Framebuffer::height(&self) -> u32` | Height in pixels. |
@@ -398,7 +411,8 @@ and range, but skip both source storage locks. See [INDEXED-DRAWING.md](docs/IND
 
 Direct/indexed programmable draws also require every slot referenced by their
 fragment shader's SampleTexture instructions, including unused results and empty
-draws. Each draw retains required pairs; legacy draws ignore texture bindings.
+draws. Draw recording also rejects a shader-used texture aliasing the current
+colour attachment. Each draw retains required pairs; legacy draws ignore texture bindings.
 New passes reset all slots. Submission snapshots used views only for nonempty
 draws; missing bindings are reported after vertex/index range validation.
 
@@ -717,10 +731,13 @@ Source: [submission.rs](crates/expansex-core/src/submission.rs).
 | `QueueSubmitError::DependencyFailed { source: DependencyValidationError }` | Full explicit preflight failed; no command executed, all submission resources unchanged. Retains source. |
 | `QueueSubmitError::StoragePoisoned { command_index: usize, role: CopyBufferRole, label: String }` | Failed nonempty copy at this zero-based index; earlier copies completed, failed destination unchanged, later work skipped. |
 | `QueueSubmitError::RenderFailed { command_index: usize, source: RenderExecutionError }` | Failed render command; its target unchanged, earlier commands completed, later work skipped. |
+| `QueueSubmitError::TextureTransferFailed { command_index: usize, source: TextureTransferExecutionError }` | Failed destination unchanged; prefix completed, later commands skipped; source retained. |
 | `QueueSubmitError::ComputeFailed { command_index: usize, source: ComputeExecutionError }` | Failed dispatch preserves all outputs and earlier commands; later commands skipped; source retained. |
 
-Only RenderFailed supplies an underlying `Error::source`. Aliased copies report poisoned
-storage as `Source`; zero-byte copies never lock storage. No rollback is promised.
+DependencyFailed, RenderFailed, ComputeFailed and TextureTransferFailed retain
+their underlying `Error::source`. Aliased buffer copies report poison as Source;
+zero-byte buffer copies never lock storage. Completed prefix commands are retained;
+failed operations preserve their destination/output/attachment boundary.
 
 ### FramebufferDescriptorError
 
@@ -748,6 +765,7 @@ Source: [framebuffer.rs](crates/expansex-core/src/framebuffer.rs).
 
 | Variant and public payload | Meaning |
 | --- | --- |
+| `FramebufferAccessError::ReadForbidden { label: String }` | Shared allocation lacks Read/ReadWrite HostAccess; alias conversion cannot enable CPU reads. |
 | `FramebufferAccessError::WrongPixelCount { expected: usize, actual: usize }` | Readback slice length must equal width*height. |
 | `FramebufferAccessError::OutOfBounds { x: u32, y: u32, width: u32, height: u32 }` | Requested pixel is outside the image. |
 | `FramebufferAccessError::StoragePoisoned { label: String }` | Interrupted internal operation left pixels untrusted. |
@@ -758,6 +776,7 @@ Source: [render.rs](crates/expansex-core/src/render.rs).
 
 | Variant and public payload | Meaning |
 | --- | --- |
+| `RenderEncodeError::AttachmentFeedback { binding: u32, label: String }` | Shader-used texture slot aliases colour target, including disjoint views and empty draws; pass unchanged. |
 | `RenderEncodeError::Bindings { source: BindingValidationError }` | Invalid/missing resource interface or group; retains validation source. |
 | `RenderEncodeError::ForeignFramebuffer { label: String }` | Target belongs to another device. |
 | `RenderEncodeError::ForeignStencilBuffer { label: String }` | Stencil attachment belongs to another device. |
@@ -923,10 +942,13 @@ Borrowed creation request, copied into owned texture metadata.
 ### Texture
 
 Clones share identity, live pixels, metadata, and device. All current textures
-are sampled images; attachment/storage/transfer usage is not exposed yet.
+support sampling, transfers and full-image colour attachment roles as fixed
+profile capabilities; storage images are unsupported. HostAccess is independent
+of device operations and is preserved through framebuffer aliases.
 
 | Method | Behavior |
 | --- | --- |
+| `Texture::as_framebuffer(&self) -> Framebuffer` | Retain a full-image colour attachment sharing pixels, identity and HostAccess; no copy/allocation. |
 | `Texture::label(&self) -> &str` | Borrow owned label. |
 | `Texture::width(&self) -> u32` | Texel columns. |
 | `Texture::height(&self) -> u32` | Texel rows. |
@@ -1703,15 +1725,15 @@ Public variants retain their corresponding handle: `Buffer(Buffer)`,
 | `Resource::label(&self) -> &str` | Borrow retained label. |
 | `Resource::device(&self) -> Device` | Retain the owning device. |
 | `Resource::belongs_to(&self, device: &Device) -> bool` | Check ownership. |
-| `Resource::is_same(&self, other: &Self) -> bool` | Compare category and allocation identity. |
+| `Resource::is_same(&self, other: &Self) -> bool` | Compare allocation identity, including Texture/Framebuffer aliases. |
 
 ### ResourceAccess
 
 | Variant | Required resource and use |
 | --- | --- |
-| `TransferRead` | Buffer with TransferSource usage. |
-| `TransferWrite` | Buffer with TransferDestination usage. |
-| `TransferReadWrite` | Buffer with both transfer usages; permits either transfer role. |
+| `TransferRead` | Buffer with TransferSource usage, or Texture/Framebuffer image. |
+| `TransferWrite` | Buffer with TransferDestination usage, or Texture/Framebuffer image. |
+| `TransferReadWrite` | Buffer with both transfer usages, or Texture/Framebuffer image; permits either transfer role. |
 | `VertexRead` | Buffer with Vertex usage. |
 | `IndexRead` | Buffer with Index usage. |
 | `UniformRead` | Buffer with Uniform usage; parameters actually loaded by a shader. |
@@ -1719,8 +1741,8 @@ Public variants retain their corresponding handle: `Buffer(Buffer)`,
 | `StorageWrite` | Buffer with Storage usage, write access. |
 | `StorageReadWrite` | Buffer with Storage usage; permits either storage role. |
 | `BufferRead` | Buffer with at least one supported read usage; permits TransferRead/VertexRead/IndexRead/StorageRead/UniformRead and combined render-source reads. |
-| `SampledRead` | Texture, underlying allocation of sampled views. |
-| `ColourReadWrite` | Framebuffer attachment. |
+| `SampledRead` | Texture/Framebuffer image, underlying allocation of sampled views. |
+| `ColourReadWrite` | Texture/Framebuffer image used as a full-image colour attachment. |
 | `DepthReadWrite` | DepthBuffer attachment. |
 | `StencilReadWrite` | StencilBuffer attachment. |
 
@@ -1796,10 +1818,78 @@ use, declaration, hazard, then role. Completed synchronous submissions and CPU
 access use the existing device gate; no persistent cross-submission layout exists.
 Runtime storage/shader failures retain completed-prefix/atomic-operation rules.
 
+## Texture transfers and shared render images
+
+Source: [transfer.rs](crates/expansex-core/src/transfer.rs).
+Contract: [TEXTURE-FLOW.md](docs/TEXTURE-FLOW.md).
+All copies use positive validated views. No mip, format conversion, filtering,
+layer, or zero-area transfer exists. Sources are live at submission. Whole-image
+identity includes texture/framebuffer aliases, and Explicit mode requires image
+role transitions and dependencies. Transfers preserve outside pixels/bytes.
+
+### TextureBufferLayout
+
+No inherent methods. Public fields: `offset: u64`, `bytes_per_row: u64`.
+Both are bytes and multiples of four; stride must be at least width*4. The checked
+exclusive end `offset + (height-1)*bytes_per_row + width*4` must fit the buffer.
+Final-row padding is optional; upload ignores padding and readback preserves it.
+A huge aligned stride is valid for a single row if that row fits.
+
+### BufferTextureCopy
+
+Private fields; created only by valid recording. The containing Command variant
+selects upload or readback direction. HostAccess is independent; the buffer must
+have TransferSource for upload or TransferDestination for readback.
+
+| Method | Behavior |
+| --- | --- |
+| `BufferTextureCopy::buffer(&self) -> &Buffer` | Retained buffer operand. |
+| `BufferTextureCopy::layout(&self) -> TextureBufferLayout` | Copy byte layout. |
+| `BufferTextureCopy::texture(&self) -> &TextureView` | Retained image rectangle. |
+
+### TextureCopy
+
+Private fields; created only by valid recording. Extents must match; overlapping
+rectangles in the same allocation are rejected. Disjoint self-copies snapshot
+source pixels, release their lock, and commit destination rows.
+
+| Method | Behavior |
+| --- | --- |
+| `TextureCopy::source(&self) -> &TextureView` | Retained source rectangle. |
+| `TextureCopy::destination(&self) -> &TextureView` | Retained destination rectangle. |
+
+### TextureTransferEncodeError
+
+No inherent methods. All variants append nothing and touch no resource contents.
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `ForeignResource { role: CopyBufferRole, kind: ResourceKind, label: String }` | Operand belongs to another device. |
+| `MissingBufferUsage { role: CopyBufferRole, label: String, required: BufferUsage }` | Buffer lacks its transfer role. |
+| `InvalidBufferLayout { layout: TextureBufferLayout, width: u32, height: u32, buffer_size: u64 }` | Alignment, stride, checked end or bounds failed. |
+| `ExtentMismatch { source_width: u32, source_height: u32, destination_width: u32, destination_height: u32 }` | Image view dimensions differ. |
+| `OverlappingCopy { label: String, source: TextureViewDescriptor, destination: TextureViewDescriptor }` | Same-allocation rectangles overlap in both axes. |
+| `AllocationFailed { source: TryReserveError }` | Command reservation failed; retains underlying source. |
+
+Buffer/image checks run in order: buffer device, image device, buffer usage,
+layout, command reservation. Image/image checks: source/destination devices,
+extents, overlap, command reservation. Views already establish positive bounds.
+
+### TextureTransferExecutionError
+
+No inherent methods. Neither variant has an underlying error source. Failed
+transfers preserve the destination, retain the completed prefix, skip later work,
+and are wrapped in QueueSubmitError::TextureTransferFailed with command index.
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `StoragePoisoned { role: CopyBufferRole, kind: ResourceKind, label: String }` | Buffer/image storage cannot be locked safely. |
+| `AllocationFailed` | Fallible image-copy snapshot reservation failed. |
+
 ## Explicit standard trait support
 
 This lists implemented/derived traits, not Rust's blanket implementations or
-auto traits. They are separate from the 216 inherent methods above.
+auto traits. They are separate from the 226 inherent methods above.
 
 | Type | Traits |
 | --- | --- |
@@ -1817,6 +1907,11 @@ auto traits. They are separate from the 216 inherent methods above.
 | `CommandBuffer` | `Debug` |
 | `Command` | `Debug` |
 | `BufferCopy` | `Debug` |
+| `TextureBufferLayout` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `BufferTextureCopy` | `Debug` |
+| `TextureCopy` | `Debug` |
+| `TextureTransferEncodeError` | `Debug`, `Display`, `Error` |
+| `TextureTransferExecutionError` | `Debug`, `Clone`, `PartialEq`, `Eq`, `Display`, `Error` |
 | `CopyBufferRole` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`, `Display` |
 | `CommandRecorder` | `Debug`, `Default` |
 | `DebugMarkerBuffer` | `Debug` |
@@ -1924,10 +2019,10 @@ Standard trait operations include:
 | --- | --- |
 | `Clone::clone(&self) -> Self` | Types marked `Clone` above. Device/queue/buffer/framebuffer/depth/stencil/shader/pipeline/texture/view/sampler/binding handles retain shared state; `AdapterInfo` clones its owned metadata. |
 | `Default::default() -> Self` | `Instance`, `CommandRecorder`: same as `new()`. GraphicsPipelineOptions: depth/blend None. RenderAttachments: all None. SynchronizationMode: Ordered. |
-| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 114 types; buffer/framebuffer/depth/stencil formatting exposes metadata rather than stored data. |
+| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 119 types; buffer/framebuffer/depth/stencil formatting exposes metadata rather than stored data. |
 | `PartialEq::eq(&self, other: &Self) -> bool` | Types marked `PartialEq`; handle identity instead uses explicit `is_same`/`belongs_to` methods. |
-| `Display::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | Thirty-two error types and `CopyBufferRole`. |
-| `Error::source(&self) -> Option<&(dyn std::error::Error + 'static)>` | All thirty-two error types. Buffer/framebuffer/depth/stencil/shader/texture creation retain descriptor/reservation sources, sampler creation retains reservation sources, pipeline creation/command/render recording and shader evaluation retain reservation sources, and submission RenderFailed/ComputeFailed retain RenderExecutionError/ComputeExecutionError. Compute creation/recording and DependencyEncodeError::AllocationFailed retain reservation sources; submission DependencyFailed retains DependencyValidationError. BindingCreateError retains validation/reservation sources; pipeline/recording Bindings variants retain BindingValidationError. Other current variants return None. |
+| `Display::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | Thirty-four error types and `CopyBufferRole`. |
+| `Error::source(&self) -> Option<&(dyn std::error::Error + 'static)>` | All thirty-four error types. Buffer/framebuffer/depth/stencil/shader/texture creation retain descriptor/reservation sources, sampler creation retains reservation sources, pipeline creation/command/render recording and shader evaluation retain reservation sources, and submission RenderFailed/ComputeFailed retain RenderExecutionError/ComputeExecutionError. Compute creation/recording and DependencyEncodeError::AllocationFailed retain reservation sources; submission DependencyFailed retains DependencyValidationError; TextureTransferFailed retains TextureTransferExecutionError. TextureTransferEncodeError::AllocationFailed retains its reservation source. BindingCreateError retains validation/reservation sources; pipeline/recording Bindings variants retain BindingValidationError. Other current variants return None. |
 
 `From<BindingValidationError>::from(source: BindingValidationError) -> BindingCreateError` wraps InvalidDescriptor.
 
@@ -1939,7 +2034,7 @@ their standard-library contracts. Error trait objects also support standard
 ## Not implemented
 
 There are currently no public APIs for asynchronous submission/completion, mipmaps,
-texture attachments/storage/transfer commands, multiple groups, binding arrays/dynamic offsets,
+storage images, subrectangle attachments, multiple groups, binding arrays/dynamic offsets,
 external shader language/format importer or frontend/compiler,
 instanced draws, primitive restart, indirect drawing/dispatch,
 presentation, mapped memory, hardware discovery/drivers, managed planning,

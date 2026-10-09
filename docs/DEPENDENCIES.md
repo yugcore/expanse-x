@@ -21,7 +21,8 @@ stage masks, GPU cache operations, or physical image layouts.
   on both encoder and command buffer. Explicit submissions keep the same
   synchronous ordering, storage locks, completion, and execution failure rules.
 - `Resource` retains a Buffer, Texture, Framebuffer, DepthBuffer, or StencilBuffer.
-  Identity is allocation identity, never label equality. All transition resources
+  Identity is allocation identity, never label equality. Texture and Framebuffer
+  aliases share one identity and permit sampling, transfer and colour roles. All transition resources
   must belong to the encoder's device. Samplers/pipelines are immutable metadata
   and need no mutable-memory transition.
 - `ResourceAccess` declares TransferRead/Write/ReadWrite, VertexRead, IndexRead, UniformRead,
@@ -49,8 +50,9 @@ stage masks, GPU cache operations, or physical image layouts.
   actual supported accesses without reading any resource contents. Uses of the
   same allocation within one command are combined. Two read buffer roles combine
   as BufferRead, storage read/write as StorageReadWrite, and a disjoint same-buffer
-  copy as TransferReadWrite. Command indices include transition commands.
-- Nonempty copies use their whole source/destination allocation. Nonzero compute
+  copy, or disjoint same-image copy, as TransferReadWrite. Command indices include transition commands.
+- Nonempty buffer copies and positive rectangular image transfers use their whole
+  source/destination allocation. Nonzero compute
   uses only shader-required load and output slots, classified from all instructions
   and output mappings. Unused bindings do not count. Nonempty draws use vertices,
   indices if present, and shader-used textures (the whole underlying texture).
@@ -116,3 +118,13 @@ combine as BufferRead; a compute storage writer sharing disjoint allocation regi
 with uniform reads conservatively combines as StorageReadWrite. CPU copies into
 parameters require a transition to UniformRead before consumption. Uniform usage
 and pipeline/group checks remain independent of transitions.
+
+## Image resource flow
+
+[TEXTURE-FLOW.md](TEXTURE-FLOW.md) defines padded buffer/image transfers,
+rectangular image copies and shared full-image attachments. Declarations through
+Texture or Framebuffer cover both aliases. Duplicate cross-kind aliases in one
+batch fail. Render-to-sample/readback and upload-to-render still require barriers;
+conversion alone performs no dependency or copy. Shader-used attachment feedback
+is rejected while recording even in Ordered mode. Whole-image tracking remains
+conservative for disjoint copied/sampled rectangles.

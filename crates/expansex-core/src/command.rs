@@ -7,7 +7,7 @@ mod markers;
 
 pub use markers::{CommandRecorder, DebugMarkerBuffer};
 
-/// Identifies the buffer whose copy requirement failed.
+/// Identifies the source or destination whose copy requirement failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CopyBufferRole {
     Source,
@@ -93,6 +93,9 @@ impl Error for CommandEncodeError {
 #[non_exhaustive]
 pub enum Command {
     CopyBuffer(BufferCopy),
+    CopyBufferToTexture(crate::BufferTextureCopy),
+    CopyTextureToBuffer(crate::BufferTextureCopy),
+    CopyTexture(crate::TextureCopy),
     ResourceTransitions(crate::ResourceTransitions),
     Dispatch(crate::ComputeDispatch),
     RenderPass(crate::RenderCommands),

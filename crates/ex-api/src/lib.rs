@@ -278,3 +278,8 @@ pub use expansex_core::{
     BindGroupLayoutEntry, BindingCreateError, BindingResource, BindingType, BindingValidationError,
     BufferBinding, ShaderVisibility,
 };
+
+pub use expansex_core::{
+    BufferTextureCopy, TextureBufferLayout, TextureCopy, TextureTransferEncodeError,
+    TextureTransferExecutionError,
+};

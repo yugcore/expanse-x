@@ -5,6 +5,22 @@ mod programmable;
 
 pub(crate) fn execute(command_index: usize, command: &Command) -> Result<(), QueueSubmitError> {
     match command {
+        Command::CopyBufferToTexture(copy) | Command::CopyTextureToBuffer(copy) => {
+            crate::transfer::execute_buffer_texture(
+                copy,
+                matches!(command, Command::CopyBufferToTexture(_)),
+            )
+            .map_err(|source| QueueSubmitError::TextureTransferFailed {
+                command_index,
+                source,
+            })
+        }
+        Command::CopyTexture(copy) => crate::transfer::execute_texture(copy).map_err(|source| {
+            QueueSubmitError::TextureTransferFailed {
+                command_index,
+                source,
+            }
+        }),
         // Synchronous ordered execution already fulfils this full dependency.
         Command::ResourceTransitions(_) => Ok(()),
         Command::CopyBuffer(copy) => copy

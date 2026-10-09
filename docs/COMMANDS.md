@@ -107,3 +107,12 @@ The `submit_copy` example now executes these operations under the documented
 submission contract. Phase 2 now also records/executes triangles under the separate
 [rendering contract](RENDERING.md); pipeline-controlled triangles are now covered
 by the [pipeline contract](PIPELINES.md).
+
+## Texture flow integration
+
+CommandEncoder now records copy_buffer_to_texture, copy_texture_to_buffer and
+copy_texture under [TEXTURE-FLOW.md](TEXTURE-FLOW.md). The three Command variants
+retain positive validated TextureViews, equal extents for image copies, and a
+four-byte-aligned TextureBufferLayout for buffer/image rows. The command sequence
+and resources remain unchanged on recording errors; finished commands read live
+source storage. These image layout checks do not alter byte-granular copy_buffer.

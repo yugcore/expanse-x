@@ -110,3 +110,12 @@ material colour and resubmits the same finished commands. Independent PNG CRC,
 zlib checksum, float32 geometry and coverage calculations verify all 196,608 pixels
 in each blue/orange image, including 101,568 tile pixels. Both images were inspected.
 Output files are `target/core-bindings-blue.png` and `target/core-bindings-orange.png`.
+
+## Texture flow integration
+
+Paired SampledTexture bindings now accept an image rendered in an earlier pass
+through a shared framebuffer alias. Direct/indexed draw recording rejects a
+shader-used pair that aliases the current colour attachment, even through a
+subrectangle. Unused entries still contribute no source use. Explicit barriers
+track the underlying image across both handle kinds. [TEXTURE-FLOW.md](TEXTURE-FLOW.md)
+defines transfers, host permissions and the multi-pass evidence.

@@ -306,6 +306,9 @@ languages/toolchains are the accepted future ingestion direction; a custom EX
 source language is deferred. Current examples use EX instructions directly.
 Reusable single-group layouts, stage/type/size-checked bindings, and uniform parameters
 in compute/vertex/fragment execution work under [BINDINGS.md](docs/BINDINGS.md).
+Device texture transfers, shared full-image render attachments, later-pass sampling,
+and padded readback work under [TEXTURE-FLOW.md](docs/TEXTURE-FLOW.md). Alias-aware
+validation preserves host permissions and rejects attachment feedback.
 Explicit whole-resource declarations, access transitions, and checked execution/visibility
 dependencies now work under [DEPENDENCIES.md](docs/DEPENDENCIES.md). Managed planning,
 finer dependency precision, EX Witness, EX Proof, and hardware drivers remain planned, as defined by the roadmap, [submission contract](docs/SUBMISSION.md),

@@ -28,8 +28,8 @@ Phase 4 feature roadmap without treating every future feature as a core-launch g
 | 1 — Minimum runtime | Complete | Ordered synchronous copy execution, readback, concurrency/failure contract, public example, and tests |
 | 2 — First software triangle | Complete | Public render scopes produce a verified PNG through EX's own clipped fixed-function rasterizer |
 | 3 — Programmability and pipeline milestone | Complete | Pipeline-controlled triangles, layouts, perspective interpolation, and validated u16/u32 indexed drawing |
-| 4 — Modern GPU concepts | In progress | Sampled RGBA8 textures/views, nearest/bilinear samplers, eight fragment resource slots, depth/stencil attachments/tests, blending, and storage-buffer compute dispatch and checked whole-resource dependencies |
-| Immediate milestone — Core Preview | In progress | Supported-profile gates in CORE-MILESTONE.md; dependencies and reusable shader interfaces work; texture/resource flows are next |
+| 4 — Modern GPU concepts | In progress | Sampled RGBA8 textures/views, nearest/bilinear samplers, eight fragment resource slots, depth/stencil attachments/tests, blending, and storage-buffer compute dispatch, reusable bindings/uniforms, checked whole-resource dependencies, and multi-pass image flows |
+| Immediate milestone — Core Preview | In progress | Supported-profile gates in CORE-MILESTONE.md; dependencies, reusable shader interfaces and texture/resource flows work; execution/backend boundary, profile tests and final proof are next |
 | Following milestone — SDK Preview | Planned after core | Templates, shader/build integration, developer tools, onboarding, and packaging over the completed core |
 | Future — Hardware drivers | Deferred | A selected target, viable driver interfaces, and demonstrated execution |
 
@@ -231,6 +231,7 @@ the checklist below is the wider feature backlog. SDK development follows core c
 - [x] Compute pipelines and dispatch - bounded float4 storage access, invocation IDs, workgroups, and atomic outputs.
 - [x] Reusable single-group shader layouts/bindings and uniform parameter buffers under [BINDINGS.md](BINDINGS.md); broader resource profiles remain future work.
 - [x] Explicit resource transitions, read/write hazards, and execution/memory dependencies for synchronous whole-resource work ([contract](DEPENDENCIES.md)); range/stage/async precision remains future work.
+- [x] Device buffer/image transfers, rectangular image copies, and shared full-image render-to-texture attachments under [TEXTURE-FLOW.md](TEXTURE-FLOW.md).
 - [ ] Asynchronous completion, fences/timelines, multiple queues, and cross-queue dependencies.
 - [ ] Multithreaded recording, indirect operations, and measured allocator/command reuse.
 - [ ] Presentation/surface support when an interactive example requires it.
@@ -306,8 +307,20 @@ It verifies 288 generated vertices and 48 tile centres, then reuses unchanged co
 with new material bytes. Independent coverage/checksum calculations match every
 pixel in both 512x384 images. All 227 tests and project checks pass.
 
-Phase 4 and the Core Preview remain incomplete. Next: texture transfers and
-render-to-texture resource flows. Mipmaps, storage images, multiple groups,
+Texture/resource flow now works under [TEXTURE-FLOW.md](TEXTURE-FLOW.md): padded
+buffer/image transfers, image rectangle copies, full-image shared texture/framebuffer
+aliases, host permission preservation, shader feedback rejection and alias-aware
+explicit dependencies. Fifteen public tests, two internal poison/lifetime tests,
+and executable documentation bring the workspace to 245 passing tests. The
+[public workload](../crates/ex-api/examples/texture_flow.rs) combines upload,
+rectangle copy, compute-generated geometry, two render passes and padded readback.
+Two unchanged-command submissions with different upload data verify every pixel
+and padding byte. Independent PNG checks match every final 640x320 pixel, including
+131,072 panel pixels; the image was visually inspected.
+
+Phase 4 and the Core Preview remain incomplete. Next: define the execution/backend
+boundary and reusable supported-profile tests, then complete the final integrated gate.
+Mipmaps, storage images, multiple groups,
 dynamic bindings and broader shader profiles require separate contracts.
 
 Each feature needs a chosen EX contract, a working reference implementation,

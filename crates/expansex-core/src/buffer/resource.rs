@@ -1144,3 +1144,7 @@ mod tests {
         assert!(weak.upgrade().is_none());
     }
 }
+
+#[cfg(test)]
+#[path = "texture_transfer_tests.rs"]
+mod texture_transfer_tests;

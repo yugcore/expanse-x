@@ -118,3 +118,13 @@ triangle pixels in a 512x384 image and was independently decoded and visually ch
 The [example PNG writer](../crates/ex-api/examples/triangle/png.rs) serializes EX's
 readback using the [PNG format](https://www.w3.org/TR/png-3/); it is not a renderer
 or a public EX codec. Tests do not exhaust RAM to induce allocation failure.
+
+## Texture flow integration
+
+A Texture::as_framebuffer alias can now be passed to existing render entry points,
+with the same dimensions, storage and permission contract. All existing depth,
+stencil, blend and scope-commit behavior applies. Framebuffer::as_texture exposes
+the same pixels for later-pass sampling or device readback; conversion copies
+nothing. Programmable direct/indexed draws reject shader-used texture aliases of
+the current colour attachment, including empty draws and disjoint sampled views.
+See [TEXTURE-FLOW.md](TEXTURE-FLOW.md).

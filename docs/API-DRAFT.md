@@ -1,6 +1,6 @@
 # EX current API contract
 
-Status: Phases 0-3 complete; Phase 4 sampled textures and depth testing work. Names and behavior are provisional.
+Status: Phases 0-3 complete; Phase 4 graphics/compute, reusable bindings, explicit dependencies and image flow work. Names and behavior are provisional.
 Applications depend on package `ex-api` and import its library as `ex`. The
 implementation remains in `expansex-core`; the public crate re-exports its types.
 This contract describes implemented behavior only. See [architecture](ARCHITECTURE.md)
@@ -228,8 +228,9 @@ Submission snapshots used view rectangles once per nonempty draw, under the
 device gate and sequential storage locks. Empty draws skip texture locks; fragment
 sampling allocates/locks nothing per pixel. Texture poison and numeric/reservation
 failure preserve the entire failed scope. The extra memory is proportional to
-used view areas per draw. No texture transfers, attachments, mipmaps, or general
-multi-group/array/dynamic bindings exist yet; single retained groups work under
+used view areas per draw. Device image transfers and shared full-image colour
+attachments work under [TEXTURE-FLOW.md](TEXTURE-FLOW.md). No mipmaps, storage
+images, subrectangle attachments or general multi-group/array/dynamic bindings exist yet; single retained groups work under
 [BINDINGS.md](BINDINGS.md). See [TEXTURES.md](TEXTURES.md).
 
 ```text
@@ -400,7 +401,7 @@ Twelve public compute tests, two internal poison/lifetime tests, and executable
 compute documentation verify grids, views, finite arithmetic, validation, retention,
 ordering, reuse, aliasing, zero/limit cases, output rollback, and generated vertices.
 Independent pixel calculations verify the compute tile example.
-The workspace runs 227 tests, including documentation tests.
+The workspace runs 245 tests, including documentation tests.
 Tests do not induce allocator OOM by exhausting host memory.
 
 ## Next contract
@@ -416,7 +417,8 @@ interpolation, and indexed drawing. Sampled textures, views, samplers, and eight
 fragment resource slots, depth/stencil tests, blending, and compute pipelines/dispatch
 also work. Explicit whole-resource transitions and dependencies now work under
 [DEPENDENCIES.md](DEPENDENCIES.md). Reusable shader/resource interfaces and parameter
-buffers now work under [BINDINGS.md](BINDINGS.md). Texture/resource flows are next;
+buffers now work under [BINDINGS.md](BINDINGS.md). Texture/resource flows now work
+under [TEXTURE-FLOW.md](TEXTURE-FLOW.md); backend/profile tests and final proof are next;
 language/format import remains future work.
 There is no implemented execution-backend ABI yet.
 

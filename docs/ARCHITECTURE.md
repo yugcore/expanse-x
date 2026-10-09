@@ -5,6 +5,8 @@ copies, shaders, graphics pipelines, vertex layouts, interpolation, and indexed
 software triangles work. Phase 4 now adds sampled textures/views, samplers, and
 fragment resource bindings, plus retained depth attachments and pipeline tests.
 Colour blending, front/back stencil rules, and storage-buffer compute dispatch also work.
+Reusable bindings/uniforms, explicit dependencies, texture transfers and shared
+render-to-texture images work under their bounded contracts.
 
 The [development roadmap](ROADMAP.md) tracks verified work, pending steps, and
 phase completion gates. This document describes architectural responsibilities.
@@ -232,3 +234,14 @@ and indexed draws capture the current compatible group. Legacy pipelines keep
 existing bindings. Used uniform snapshots precede evaluation and other source
 locks; failures preserve existing operation boundaries. Actual parameter reads
 join dependency summaries as UniformRead, with aliases combined conservatively.
+
+## Texture flow integration
+
+Shared RGBA image storage now underlies both Texture and Framebuffer handles.
+Their allocation identity, label/device/extent and HostAccess survive conversion
+without copying or allocating. transfer.rs owns validated row/rectangle copy
+interpretation; reference.rs dispatches those commands under queue policy's gate.
+Texture/image views and buffer layouts are immutable retained metadata. Dependency
+analysis recognizes cross-kind aliases; render recording rejects sampled attachment
+feedback. See [TEXTURE-FLOW.md](TEXTURE-FLOW.md). The executor/profile boundary and
+its reusable conformance checks remain the next core gate.

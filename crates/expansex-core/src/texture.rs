@@ -15,7 +15,7 @@ pub enum TextureFormat {
     Rgba8Unorm,
 }
 
-/// One sampled 2D image; creation copies metadata and zero-initializes storage.
+/// One sampled, transferable, renderable 2D image; creation copies metadata and zero-initializes storage.
 #[derive(Debug, Clone, Copy)]
 pub struct TextureDescriptor<'a> {
     pub label: &'a str,
@@ -150,19 +150,19 @@ impl fmt::Display for TextureAccessError {
     }
 }
 impl Error for TextureAccessError {}
-struct TextureState {
-    device: Device,
-    label: String,
-    width: u32,
-    height: u32,
-    format: TextureFormat,
-    host_access: HostAccess,
-    pixels: Mutex<Vec<[u8; 4]>>,
+pub(crate) struct TextureState {
+    pub(crate) device: Device,
+    pub(crate) label: String,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) format: TextureFormat,
+    pub(crate) host_access: HostAccess,
+    pub(crate) pixels: Mutex<Vec<[u8; 4]>>,
 }
-/// Shared sampled image. CPU copies and submissions serialize on its device.
+/// Shared sampled, transferable, renderable image. CPU copies and submissions serialize on its device.
 #[derive(Clone)]
 pub struct Texture {
-    state: Arc<TextureState>,
+    pub(crate) state: Arc<TextureState>,
 }
 impl fmt::Debug for Texture {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -209,6 +209,39 @@ impl Device {
     }
 }
 impl Texture {
+    /// Retain a full-image colour attachment sharing pixels and HostAccess.
+    /// No allocation or copy occurs; use a separate image for simultaneous sampling.
+    ///
+    /// ```
+    /// use expansex_core::*;
+    /// let device = Instance::new().default_adapter().create_device();
+    /// let image = device.create_texture(TextureDescriptor {
+    ///     label: "offscreen", width: 2, height: 2,
+    ///     format: TextureFormat::Rgba8Unorm, host_access: HostAccess::Read,
+    /// })?;
+    /// let target = image.as_framebuffer(); // Same pixels, no copy.
+    /// let mut encoder = device.create_command_encoder();
+    /// encoder.begin_render_pass(&target, Some([255, 0, 0, 255]))?.finish()?;
+    /// device.default_queue().submit(&encoder.finish())?;
+    /// let mut pixels = [[0; 4]; 4];
+    /// image.read_pixels(&mut pixels)?;
+    /// assert_eq!(pixels, [[255, 0, 0, 255]; 4]);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn as_framebuffer(&self) -> crate::Framebuffer {
+        crate::Framebuffer {
+            state: self.state.clone(),
+        }
+    }
+    // Executor only: the caller holds the device gate.
+    pub(crate) fn with_pixels<R>(&self, f: impl FnOnce(&[[u8; 4]]) -> R) -> Result<R, ()> {
+        let pixels = self.state.pixels.lock().map_err(|_| ())?;
+        Ok(f(&pixels))
+    }
+    pub(crate) fn with_pixels_mut<R>(&self, f: impl FnOnce(&mut [[u8; 4]]) -> R) -> Result<R, ()> {
+        let mut pixels = self.state.pixels.lock().map_err(|_| ())?;
+        Ok(f(&mut pixels))
+    }
     pub fn label(&self) -> &str {
         &self.state.label
     }

@@ -11,7 +11,8 @@ EX uses retained paired slots for this first supported resource interface.
 - Textures own zero-initialized, top-left, row-major RGBA8 unorm
   storage with dimensions 1..=16384, same-device ownership, and explicit HostAccess.
   Full-image CPU upload/readback copies exact-length pixel slices under the device
-  gate. No mapped slices, buffer-to-texture command, or attachment usage is added.
+  gate. Device transfers and shared colour attachments now work under
+  [TEXTURE-FLOW.md](TEXTURE-FLOW.md); mapped slices remain unsupported.
 - A view retains a texture and a positive, in-bounds rectangle. Its UV coordinates
   are local to that rectangle; addressing never reaches neighbouring parent texels.
 - Immutable same-device samplers select Nearest or Linear and independent U/V
@@ -45,7 +46,7 @@ EX uses retained paired slots for this first supported resource interface.
 ## Limits and verification
 
 No mipmaps, derivatives/LOD, anisotropy, compressed formats, arrays/cubes/3D,
-storage images, texture render attachments, arbitrary bind groups, asynchronous
+storage images, subrectangle attachments, multi-group/array/dynamic bindings, asynchronous
 execution, external shader importer, or hardware support is included.
 The wider Phase 4 remains incomplete after this capability. Small Arc allocations
 and error labels follow ordinary Rust allocation behavior; large storage/snapshot/

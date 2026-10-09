@@ -25,6 +25,7 @@ mod shader;
 mod stencil;
 mod submission;
 mod texture;
+mod transfer;
 
 pub use buffer::{
     Buffer, BufferAccessError, BufferCreateError, BufferDescriptor, BufferDescriptorError,
@@ -88,4 +89,9 @@ pub use bindings::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingCreateError, BindingResource, BindingType, BindingValidationError,
     BufferBinding, ShaderVisibility,
+};
+
+pub use transfer::{
+    BufferTextureCopy, TextureBufferLayout, TextureCopy, TextureTransferEncodeError,
+    TextureTransferExecutionError,
 };

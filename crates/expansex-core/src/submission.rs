@@ -5,6 +5,11 @@ use std::fmt;
 /// A rejected submission or an interrupted sequence of reference operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum QueueSubmitError {
+    /// Failed texture transfer preserves destination and skips later commands.
+    TextureTransferFailed {
+        command_index: usize,
+        source: crate::TextureTransferExecutionError,
+    },
     /// No commands executed: the queue and finished work have different devices.
     ForeignCommandBuffer,
     /// Dependency preflight failed; no command executed.
@@ -33,6 +38,7 @@ pub enum QueueSubmitError {
 impl fmt::Display for QueueSubmitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::TextureTransferFailed { command_index, source } => write!(f, "submission stopped at texture transfer {command_index}: {source}; destination unchanged, earlier commands completed"),
             Self::DependencyFailed { source } => write!(f, "submission dependency validation failed: {source}; no commands executed"),
             Self::ForeignCommandBuffer => f.write_str(
                 "cannot submit commands from another device; use their owning device's queue",
@@ -50,6 +56,7 @@ impl fmt::Display for QueueSubmitError {
 impl Error for QueueSubmitError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
+            Self::TextureTransferFailed { source, .. } => Some(source),
             Self::DependencyFailed { source } => Some(source),
             Self::RenderFailed { source, .. } => Some(source),
             Self::ComputeFailed { source, .. } => Some(source),

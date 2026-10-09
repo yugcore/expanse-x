@@ -94,6 +94,9 @@ impl Error for FramebufferCreateError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FramebufferAccessError {
+    ReadForbidden {
+        label: String,
+    },
     WrongPixelCount {
         expected: usize,
         actual: usize,
@@ -112,6 +115,9 @@ pub enum FramebufferAccessError {
 impl fmt::Display for FramebufferAccessError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::ReadForbidden { label } => {
+                write!(f, "framebuffer {label:?} does not permit CPU reads")
+            }
             Self::WrongPixelCount { expected, actual } => write!(
                 f,
                 "framebuffer readback needs {expected} pixels, received {actual}"
@@ -134,19 +140,10 @@ impl fmt::Display for FramebufferAccessError {
 }
 impl Error for FramebufferAccessError {}
 
-struct FramebufferState {
-    device: Device,
-    label: String,
-    width: u32,
-    height: u32,
-    format: FramebufferFormat,
-    pixels: Mutex<Vec<[u8; 4]>>,
-}
-
 /// Owned reference pixels, shared by clones; row-major RGBA with top-left origin.
 #[derive(Clone)]
 pub struct Framebuffer {
-    state: Arc<FramebufferState>,
+    pub(crate) state: Arc<crate::texture::TextureState>,
 }
 
 impl fmt::Debug for Framebuffer {
@@ -183,12 +180,15 @@ impl Device {
             .map_err(|source| FramebufferCreateError::AllocationFailed { source })?;
         label.push_str(descriptor.label);
         Ok(Framebuffer {
-            state: Arc::new(FramebufferState {
+            state: Arc::new(crate::texture::TextureState {
                 device: self.clone(),
                 label,
                 width: descriptor.width,
                 height: descriptor.height,
-                format: descriptor.format,
+                format: match descriptor.format {
+                    FramebufferFormat::Rgba8Unorm => crate::TextureFormat::Rgba8Unorm,
+                },
+                host_access: crate::HostAccess::Read,
                 pixels: Mutex::new(pixels),
             }),
         })
@@ -196,6 +196,24 @@ impl Device {
 }
 
 impl Framebuffer {
+    /// Retain a full-image sampling/transfer alias without allocating or copying.
+    /// HostAccess is preserved; standalone framebuffers expose Read access.
+    pub fn as_texture(&self) -> crate::Texture {
+        crate::Texture {
+            state: self.state.clone(),
+        }
+    }
+    fn check_read(&self) -> Result<(), FramebufferAccessError> {
+        if !matches!(
+            self.state.host_access,
+            crate::HostAccess::Read | crate::HostAccess::ReadWrite
+        ) {
+            return Err(FramebufferAccessError::ReadForbidden {
+                label: self.label().to_owned(),
+            });
+        }
+        Ok(())
+    }
     pub fn label(&self) -> &str {
         &self.state.label
     }
@@ -206,7 +224,9 @@ impl Framebuffer {
         self.state.height
     }
     pub fn format(&self) -> FramebufferFormat {
-        self.state.format
+        match self.state.format {
+            crate::TextureFormat::Rgba8Unorm => FramebufferFormat::Rgba8Unorm,
+        }
     }
     pub fn device(&self) -> Device {
         self.state.device.clone()
@@ -221,6 +241,7 @@ impl Framebuffer {
     /// Reads the whole image into exactly width*height RGBA entries, atomically
     /// against submissions. Errors leave the caller's destination unchanged.
     pub fn read_pixels(&self, destination: &mut [[u8; 4]]) -> Result<(), FramebufferAccessError> {
+        self.check_read()?;
         let expected = self.width() as usize * self.height() as usize;
         if destination.len() != expected {
             return Err(FramebufferAccessError::WrongPixelCount {
@@ -240,6 +261,7 @@ impl Framebuffer {
 
     /// Returns one pixel; (0,0) is the top-left pixel, not a vertex coordinate.
     pub fn pixel(&self, x: u32, y: u32) -> Result<[u8; 4], FramebufferAccessError> {
+        self.check_read()?;
         if x >= self.width() || y >= self.height() {
             return Err(FramebufferAccessError::OutOfBounds {
                 x,

@@ -14,6 +14,10 @@ pub use textures::TextureBinding;
 /// Recording misuse leaves previous work and the current binding unchanged.
 #[derive(Debug)]
 pub enum RenderEncodeError {
+    AttachmentFeedback {
+        binding: u32,
+        label: String,
+    },
     Bindings {
         source: crate::BindingValidationError,
     },
@@ -125,6 +129,7 @@ pub enum RenderEncodeError {
 impl fmt::Display for RenderEncodeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::AttachmentFeedback { binding, label } => write!(f, "texture slot {binding} aliases colour attachment {label:?}; sample a separate image in a later pass"),
             Self::Bindings { source } => write!(f, "render group: {source}"),
             Self::ForeignStencilBuffer { label } => write!(f, "stencil buffer {label:?} belongs to another device"),
             Self::StencilExtentMismatch { colour_width, colour_height, stencil_width, stencil_height } => write!(f, "stencil extent {stencil_width}x{stencil_height} must equal colour extent {colour_width}x{colour_height}"),

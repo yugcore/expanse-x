@@ -1,6 +1,6 @@
 # Expanse-X development roadmap
 
-Updated: 2026-10-08 (Asia/Calcutta).
+Updated: 2026-10-09 (Asia/Calcutta).
 
 This roadmap tracks EX implementation and remaining work.
 
@@ -23,7 +23,7 @@ renderer or a reason to postpone the programmable rendering milestone.
 | 1 — Minimum runtime | Complete | Ordered synchronous copy execution, readback, concurrency/failure contract, public example, and tests |
 | 2 — First software triangle | Complete | Public render scopes produce a verified PNG through EX's own clipped fixed-function rasterizer |
 | 3 — Programmability and pipeline milestone | Complete | Pipeline-controlled triangles, layouts, perspective interpolation, and validated u16/u32 indexed drawing |
-| 4 — Modern GPU concepts | In progress | Sampled RGBA8 textures/views, nearest/bilinear samplers, eight fragment resource slots; depth testing next |
+| 4 — Modern GPU concepts | In progress | Sampled RGBA8 textures/views, nearest/bilinear samplers, eight fragment resource slots, depth attachments/tests; stencil/blending pending |
 | Future — Hardware drivers | Deferred | A selected target, viable driver interfaces, and demonstrated execution |
 
 Checked items mean implemented and verified behavior.
@@ -218,7 +218,7 @@ Add one capability at a time after the earlier contracts work. Select the order
 by an actual example's needs rather than implementing every object immediately.
 
 - [x] Sampled 2D RGBA8 textures, rectangular views, nearest/bilinear samplers, and eight fragment texture/sampler slots.
-- [ ] Depth/stencil and blending.
+- [ ] Depth/stencil and blending - depth comparison/write/attachments are implemented; stencil and blending remain.
 - [ ] Compute pipelines and dispatch.
 - [ ] Explicit resource transitions, read/write hazards, and execution/memory dependencies.
 - [ ] Asynchronous completion, fences/timelines, multiple queues, and cross-queue dependencies.
@@ -236,9 +236,17 @@ poison/lifetime/gate tests, and executable public documentation verify the path.
 The [checkerboard example](../crates/ex-api/examples/textured_quad.rs) renders
 nearest (left) and bilinear (right) repeat sampling. Independent PNG checksums
 and coverage/UV/filter calculations verify all 196,608 pixels, including 119,808
-covered samples; the image was also visually inspected. All 137 workspace tests pass.
+covered samples; the image was also visually inspected. The texture checkpoint passed 137 workspace tests.
 
-Phase 4 is still incomplete. Next: depth testing. Texture mipmaps, transfer
+The depth component now works under [DEPTH.md](DEPTH.md): separate f32 attachments,
+eight comparisons, optional depth writes, clears/preservation, screen-linear
+projected depth, reverse-Z, and atomic colour/depth commits. [Eleven public tests](../crates/ex-api/tests/depth.rs)
+and two internal poison/lifetime tests verify the contract. The [overlap example](../crates/ex-api/examples/depth_overlap.rs)
+renders three triangles identically in both orders, with 85,434 covered pixels.
+Independent PNG checksum/coverage/nearest-surface calculations verify all 196,608
+pixels; the image was visually inspected. All 150 workspace tests pass.
+
+Phase 4 is still incomplete. Next: blending; stencil remains pending. Texture mipmaps, transfer
 commands, attachments, storage images, arbitrary bind groups, and general shader
 resources need separate demonstrated contracts.
 
@@ -251,7 +259,7 @@ is checked. Performance or hardware-conformance claims require separate evidence
 The [EX Witness direction](../DOCUMENTATION.md#ex-witness-experimental-differentiation)
 explores explanation → replay → smaller executable tests for selected failures.
 It uses the same contracts for managed and explicit work. This track adds no new
-Phase 1 completion requirement; the main roadmap continues with depth testing.
+Phase 1 completion requirement; the main roadmap continues with blending.
 
 After the copy/submission foundation works:
 

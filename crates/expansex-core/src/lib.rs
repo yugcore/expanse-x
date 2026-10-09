@@ -9,6 +9,7 @@
 
 mod buffer;
 mod command;
+mod depth;
 mod framebuffer;
 mod object;
 mod pipeline;
@@ -50,3 +51,9 @@ pub use texture::{
     TextureAccessError, TextureCreateError, TextureDescriptor, TextureDescriptorError,
     TextureFormat, TextureSampleError, TextureView, TextureViewDescriptor,
 };
+
+pub use depth::{
+    DepthBuffer, DepthBufferAccessError, DepthBufferCreateError, DepthBufferDescriptor,
+    DepthBufferDescriptorError,
+};
+pub use pipeline::{CompareFunction, DepthState};

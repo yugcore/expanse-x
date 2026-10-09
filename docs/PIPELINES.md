@@ -43,17 +43,20 @@ EX uses its own small contract and CPU executor, with safe Rust retained handles
 - Triangles clip against -w <= x,y,z <= w. Clipping also interpolates varyings in
   homogeneous edge parameter. After division by w, viewport/coverage use the
   existing 1/256-pixel grid and top-left rule. Both windings work; degenerates skip.
-  z participates in clipping, but no depth buffer/test is implemented.
+  z participates in clipping. Optional [depth state](DEPTH.md) maps z/w into [0,1]
+  and interpolates projected depth linearly in screen space before fragment shading.
 - Screen barycentric weights use quantized vertex/sample positions. For each
   varying, interpolate `(value / w)` and `(1 / w)` and divide their sums. Result
-  vectors feed one fragment invocation per covered sample. RGBA output clamps
+  vectors feed one fragment invocation per covered sample passing depth testing
+  (or with depth disabled). RGBA output clamps
   each finite lane to [0,1], multiplies by 255, and rounds to nearest byte.
   Later draws overwrite; no blending, gamma conversion, multisampling, or culling.
 - Fragment arithmetic can fail late. Render into a fallibly allocated temporary
   image and commit only after every draw succeeds. Any expected failure leaves
   this scope's target unchanged (including its clear); earlier submission commands
   remain completed, later commands skip. This costs one extra full image plus
-  prepared vertex data, plus snapshots of shader-used views. Device gate and
+  prepared vertex data, snapshots of shader-used views, and staged depth when
+  attached. Colour/depth commit together on success. Device gate and
   sequential storage lock ordering remain unchanged.
 - No per-fragment heap allocation: internal shader evaluation fills fixed local
   output arrays. Public `Shader::evaluate` continues returning an owned Vec.

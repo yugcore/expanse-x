@@ -127,7 +127,7 @@ impl RenderPass<'_> {
                 buffer_size: buffer.size(),
             });
         }
-        let textures = self.draw_textures(Some(pipeline))?;
+        let textures = self.draw_resources(Some(pipeline))?;
         self.commands
             .draws
             .try_reserve(1)

@@ -1,8 +1,8 @@
 # EX public API catalog
 
-Updated: 2026-10-08. Scope: every currently exported EX type, inherent method,
+Updated: 2026-10-09. Scope: every currently exported EX type, inherent method,
 public field, enum variant, and explicit standard trait implementation.
-There are **63 public types and 125 inherent methods**. Phase 3 is complete;
+There are **70 public types and 140 inherent methods**. Phase 3 is complete;
 these remain provisional APIs, not a completed or stable v1 specification.
 
 Applications depend on package `ex-api` and import its library as `ex`:
@@ -30,6 +30,7 @@ currently exported.
 | Rendering | [RenderPass](#renderpass), [RenderCommands](#rendercommands), [DrawTriangles](#drawtriangles), [IndexFormat](#indexformat), [IndexedTriangles](#indexedtriangles) |
 | Textures and sampling | [Texture](#texture), [TextureDescriptor](#texturedescriptor), [TextureFormat](#textureformat), [TextureView](#textureview), [TextureViewDescriptor](#textureviewdescriptor), [Sampler](#sampler), [SamplerDescriptor](#samplerdescriptor), [FilterMode](#filtermode), [AddressMode](#addressmode), [TextureBinding](#texturebinding) |
 | Texture errors | [TextureDescriptorError](#texturedescriptorerror), [TextureCreateError](#texturecreateerror), [TextureAccessError](#textureaccesserror), [SamplerCreateError](#samplercreateerror), [TextureSampleError](#texturesampleerror) |
+| Depth | [DepthBuffer](#depthbuffer), [DepthBufferDescriptor](#depthbufferdescriptor), [DepthBufferDescriptorError](#depthbufferdescriptorerror), [DepthBufferCreateError](#depthbuffercreateerror), [DepthBufferAccessError](#depthbufferaccesserror), [DepthState](#depthstate), [CompareFunction](#comparefunction) |
 | Shaders | [Shader](#shader), [ShaderDescriptor](#shaderdescriptor), [ShaderStage](#shaderstage), [ShaderInstruction](#shaderinstruction) |
 | Pipelines and layouts | [GraphicsPipeline](#graphicspipeline), [GraphicsPipelineDescriptor](#graphicspipelinedescriptor), [VertexBufferLayout](#vertexbufferlayout), [VertexAttribute](#vertexattribute), [VertexFormat](#vertexformat), [GraphicsPipelineCreateError](#graphicspipelinecreateerror) |
 | Prototype labels | [CommandRecorder](#commandrecorder), [DebugMarkerBuffer](#debugmarkerbuffer) |
@@ -387,6 +388,8 @@ draws; missing bindings are reported after vertex/index range validation.
 | `RenderCommands::target(&self) -> &Framebuffer` | Borrow retained target. |
 | `RenderCommands::clear_colour(&self) -> Option<[u8; 4]>` | Some clears before draws; None preserves pixels. |
 | `RenderCommands::draws(&self) -> &[DrawTriangles]` | Borrow recorded draws in order. |
+| `RenderCommands::depth_buffer(&self) -> Option<&DepthBuffer>` | Borrow retained optional depth attachment. |
+| `RenderCommands::clear_depth(&self) -> Option<f32>` | Some clears depth before draws; None preserves it. |
 
 ### DrawTriangles
 
@@ -518,7 +521,7 @@ positive w, clips against -w <= x,y,z <= w, and divides by w before viewport
 mapping. Varyings interpolate with perspective correction at pixel centres on
 the 1/256-pixel grid. Fragment output clamps to [0,1], scales by 255, and rounds
 to bytes. Indexed fetch and sampled fragment textures are implemented.
-No depth test, blending, or instancing exists.
+Depth testing uses optional immutable pipeline state. Stencil, blending, and instancing remain unsupported.
 Every scope shades into a temporary image and commits only after all draws succeed.
 
 ### VertexFormat
@@ -724,6 +727,10 @@ Source: [render.rs](crates/expansex-core/src/render.rs).
 | Variant and public payload | Meaning |
 | --- | --- |
 | `RenderEncodeError::ForeignFramebuffer { label: String }` | Target belongs to another device. |
+| `RenderEncodeError::ForeignDepthBuffer { label: String }` | Depth attachment belongs to another device. |
+| `RenderEncodeError::DepthExtentMismatch { colour_width: u32, colour_height: u32, depth_width: u32, depth_height: u32 }` | Colour and depth dimensions differ. |
+| `RenderEncodeError::InvalidDepthClear` | Depth clear is nonfinite or outside [0,1]. |
+| `RenderEncodeError::MissingDepthBuffer` | Depth-enabled programmable draw requires an attachment, including empty draws. |
 | `RenderEncodeError::InvalidTextureSlot { binding: u32 }` | Texture binding slot is outside 0..8. |
 | `RenderEncodeError::ForeignTexture { label: String }` | Bound view's texture belongs to another device. |
 | `RenderEncodeError::ForeignSampler { label: String }` | Bound sampler belongs to another device. |
@@ -758,6 +765,8 @@ Source: [render.rs](crates/expansex-core/src/render.rs).
 | Variant and public payload | Meaning |
 | --- | --- |
 | `RenderExecutionError::VertexStoragePoisoned { label: String }` | Nonempty draw's vertex source is untrusted. |
+| `RenderExecutionError::DepthStoragePoisoned { label: String }` | Scope depth storage is untrusted, including empty/clear-only scopes. |
+| `RenderExecutionError::MissingDepthBuffer` | Internal depth context is absent; validated public recording prevents ordinary misuse from reaching this. |
 | `RenderExecutionError::TextureStoragePoisoned { label: String }` | Nonempty draw's sampled texture source is untrusted. |
 | `RenderExecutionError::MissingTextureBinding { binding: u32 }` | Internal sampling context is incomplete; validated public draw recording prevents ordinary misuse from reaching this. |
 | `RenderExecutionError::IndexStoragePoisoned { label: String }` | Nonempty indexed draw's index source is untrusted. |
@@ -768,7 +777,7 @@ Source: [render.rs](crates/expansex-core/src/render.rs).
 | `RenderExecutionError::ShaderInputCount { stage: ShaderStage, label: String, invocation: u64, expected: u32, actual: usize }` | Interpreter input count mismatch; validated pipeline construction/binding prevents ordinary application misuse from reaching this. |
 | `RenderExecutionError::NonFiniteShaderInput { stage: ShaderStage, label: String, invocation: u64, location: usize }` | Shader invocation input contains NaN/infinity. |
 | `RenderExecutionError::NonFiniteShaderResult { stage: ShaderStage, label: String, invocation: u64, instruction: usize }` | Shader arithmetic produced a non-finite result. |
-| `RenderExecutionError::AllocationFailed` | Temporary vertex/texture-snapshot/image reservation failed; no lower-level source retained. |
+| `RenderExecutionError::AllocationFailed` | Temporary vertex/texture-snapshot/attachment reservation failed; no lower-level source retained. |
 
 Invocation is absolute vertex index for Vertex, row-major pixel index for Fragment.
 Late fragment errors discard the temporary image, including clear/prior draws in
@@ -1014,10 +1023,118 @@ No inherent methods or lower-level source.
 | `TextureSampleError::NonFiniteCoordinates` | U or V is NaN/infinity. |
 | `TextureSampleError::StoragePoisoned { label: String }` | Texture pixel storage is untrusted. |
 
+## Depth attachments and testing
+
+Source: [depth.rs](crates/expansex-core/src/depth.rs),
+[pipeline.rs](crates/expansex-core/src/pipeline.rs), and the reference executor.
+Contract: [DEPTH.md](docs/DEPTH.md). Depth is fixed D32 float storage, not a texture.
+
+| Method | Behavior |
+| --- | --- |
+| `Device::create_depth_buffer(&self, descriptor: DepthBufferDescriptor<'_>) -> Result<DepthBuffer, DepthBufferCreateError>` | Validate extent, own metadata, allocate depth values initially 1. |
+| `Device::create_graphics_pipeline_with_depth(&self, descriptor: GraphicsPipelineDescriptor<'_>, depth: DepthState) -> Result<GraphicsPipeline, GraphicsPipelineCreateError>` | Same shader/layout checks as ordinary creation, with retained immutable depth state. |
+| `GraphicsPipeline::depth_state(&self) -> Option<DepthState>` | Copy optional comparison/write state; ordinary creation returns None. |
+| `CommandEncoder::begin_render_pass_with_depth(&mut self, target: &Framebuffer, clear: Option<[u8; 4]>, depth: &DepthBuffer, clear_depth: Option<f32>) -> Result<RenderPass<'_>, RenderEncodeError>` | Check colour device, depth device, equal dimensions, then finite clear in [0,1]; retain attachment. |
+
+Depth-enabled direct/indexed programmable draws require an attachment after range
+checks and before texture-slot checks. Legacy and depth-disabled draws ignore
+depth, while explicitly recorded clears still apply. None depth clear preserves
+stored values. Both colour/depth stage and commit together under their storage
+locks and the device gate; any expected error preserves both failed-scope targets.
+
+### DepthBufferDescriptor
+
+Borrowed metadata; creation owns its label and storage.
+
+| Public field | Type | Meaning |
+| --- | --- | --- |
+| `label` | `&'a str` | Debug label; empty allowed. |
+| `width` | `u32` | Columns, 1..=16384. |
+| `height` | `u32` | Rows, 1..=16384. |
+
+| Method | Behavior |
+| --- | --- |
+| `DepthBufferDescriptor::validate(&self) -> Result<(), DepthBufferDescriptorError>` | Check positive extent then maximum, without allocation. |
+
+### DepthBuffer
+
+Private fields; clones retain one allocation/device. Top-left row-major f32
+values start at 1 and remain in [0,1]. No CPU upload, stencil, or sampled view exists.
+
+| Method | Behavior |
+| --- | --- |
+| `DepthBuffer::label(&self) -> &str` | Borrow owned label. |
+| `DepthBuffer::width(&self) -> u32` | Columns. |
+| `DepthBuffer::height(&self) -> u32` | Rows. |
+| `DepthBuffer::device(&self) -> Device` | Retain creating device. |
+| `DepthBuffer::belongs_to(&self, device: &Device) -> bool` | Compare device identity. |
+| `DepthBuffer::is_same(&self, other: &Self) -> bool` | Compare allocation identity. |
+| `DepthBuffer::read_depths(&self, destination: &mut [f32]) -> Result<(), DepthBufferAccessError>` | Exact width*height readback under gate/storage; error preserves destination. |
+| `DepthBuffer::depth(&self, x: u32, y: u32) -> Result<f32, DepthBufferAccessError>` | Check coordinates then read one synchronized value. |
+
+### CompareFunction
+
+Exhaustive enum; no public inherent methods. Compare incoming projected f32
+depth against stored f32. Equality is exact, without epsilon.
+
+| Variant | Pass condition |
+| --- | --- |
+| `CompareFunction::Never` | false |
+| `CompareFunction::Less` | incoming < stored |
+| `CompareFunction::Equal` | incoming == stored |
+| `CompareFunction::LessEqual` | incoming <= stored |
+| `CompareFunction::Greater` | incoming > stored |
+| `CompareFunction::NotEqual` | incoming != stored |
+| `CompareFunction::GreaterEqual` | incoming >= stored |
+| `CompareFunction::Always` | true |
+
+### DepthState
+
+No inherent methods. Pipeline creation retains this value.
+
+| Public field | Type | Meaning |
+| --- | --- | --- |
+| `compare` | `CompareFunction` | Early depth comparison. |
+| `write_enabled` | `bool` | Passing successfully shaded samples update stored depth when true. |
+
+Clip position uses -w <= z <= w. Convert to z/w*0.5+0.5 and interpolate linearly
+with screen barycentric weights on the quantized coverage grid, clamp rounding
+drift to [0,1], then convert to f32. Failed tests skip fragment shading and all
+writes. Vertex/resource preflight still executes. Greater with clear 0 supports
+reverse-Z. Shader-written depth, stencil, bias, multisampling, and blending are absent.
+
+### DepthBufferDescriptorError
+
+No inherent methods or lower-level source.
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `DepthBufferDescriptorError::ZeroExtent { width: u32, height: u32 }` | Either axis is zero. |
+| `DepthBufferDescriptorError::ExtentTooLarge { width: u32, height: u32, maximum: u32 }` | Either axis exceeds 16384. |
+
+### DepthBufferCreateError
+
+No inherent methods; both variants retain their source.
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `DepthBufferCreateError::InvalidDescriptor(DepthBufferDescriptorError)` | Extent validation failed. |
+| `DepthBufferCreateError::AllocationFailed { source: TryReserveError }` | Depth storage/label reservation failed. |
+
+### DepthBufferAccessError
+
+No inherent methods or lower-level source.
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `DepthBufferAccessError::WrongPixelCount { expected: usize, actual: usize }` | Readback slice length differs from width*height. |
+| `DepthBufferAccessError::OutOfBounds { x: u32, y: u32, width: u32, height: u32 }` | Coordinate is outside the attachment. |
+| `DepthBufferAccessError::StoragePoisoned { label: String }` | Depth values are untrusted. |
+
 ## Explicit standard trait support
 
 This lists implemented/derived traits, not Rust's blanket implementations or
-auto traits. They are separate from the 125 inherent methods above.
+auto traits. They are separate from the 140 inherent methods above.
 
 | Type | Traits |
 | --- | --- |
@@ -1084,17 +1201,24 @@ auto traits. They are separate from the 125 inherent methods above.
 | `Sampler` | `Debug`, `Clone` |
 | `TextureSampleError` | `Debug`, `Clone`, `PartialEq`, `Eq`, `Display`, `Error` |
 | `TextureBinding` | `Debug`, `Clone` |
+| `DepthBuffer` | `Debug`, `Clone` |
+| `DepthBufferDescriptor<'a>` | `Debug`, `Clone`, `Copy` |
+| `DepthBufferDescriptorError` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`, `Display`, `Error` |
+| `DepthBufferCreateError` | `Debug`, `Display`, `Error` |
+| `DepthBufferAccessError` | `Debug`, `Clone`, `PartialEq`, `Eq`, `Display`, `Error` |
+| `DepthState` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `CompareFunction` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
 
 Standard trait operations include:
 
 | Operation | Implementing types / behavior |
 | --- | --- |
-| `Clone::clone(&self) -> Self` | Types marked `Clone` above. Device/queue/buffer/framebuffer/shader/pipeline/texture/view/sampler/binding handles retain shared state; `AdapterInfo` clones its owned metadata. |
+| `Clone::clone(&self) -> Self` | Types marked `Clone` above. Device/queue/buffer/framebuffer/depth/shader/pipeline/texture/view/sampler/binding handles retain shared state; `AdapterInfo` clones its owned metadata. |
 | `Default::default() -> Self` | `Instance`, `CommandRecorder`; same behavior as their `new()`. |
-| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 63 types; buffer/framebuffer formatting exposes metadata rather than stored bytes/pixels. |
+| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 70 types; buffer/framebuffer formatting exposes metadata rather than stored bytes/pixels. |
 | `PartialEq::eq(&self, other: &Self) -> bool` | Types marked `PartialEq`; handle identity instead uses explicit `is_same`/`belongs_to` methods. |
-| `Display::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | Nineteen error types and `CopyBufferRole`. |
-| `Error::source(&self) -> Option<&(dyn std::error::Error + 'static)>` | All nineteen error types. Buffer/framebuffer/shader/texture creation retain descriptor/reservation sources, sampler creation retains reservation sources, pipeline creation/command/render recording and shader evaluation retain reservation sources, and submission RenderFailed retains RenderExecutionError. Other current variants return None. |
+| `Display::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | Twenty-two error types and `CopyBufferRole`. |
+| `Error::source(&self) -> Option<&(dyn std::error::Error + 'static)>` | All twenty-two error types. Buffer/framebuffer/depth/shader/texture creation retain descriptor/reservation sources, sampler creation retains reservation sources, pipeline creation/command/render recording and shader evaluation retain reservation sources, and submission RenderFailed retains RenderExecutionError. Other current variants return None. |
 
 Other inherited standard trait methods, such as `clone_from` and `ne`, follow
 their standard-library contracts. Error trait objects also support standard

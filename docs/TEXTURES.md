@@ -57,7 +57,8 @@ retention/rebinding, direct and indexed rendering, perspective-correct UVs,
 live uploads/reuse, poison/empty behavior, and scope atomicity. A public checkerboard
 example demonstrates the complete path. [Twelve public tests](../crates/ex-api/tests/textures.rs),
 three [internal poison/lifetime/gate tests](../crates/expansex-core/src/texture.rs),
-and executable public documentation pass with all 137 workspace tests. The
+and executable public documentation passed with all 137 workspace tests at the
+texture milestone; the later depth milestone passes 150. The
 [example](../crates/ex-api/examples/textured_quad.rs) writes a 512x384 PNG with
 119,808 covered pixels, nearest on the left and bilinear on the right, both repeat.
 Independent decoding verifies PNG CRCs and every pixel against separately

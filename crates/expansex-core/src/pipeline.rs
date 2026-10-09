@@ -127,6 +127,7 @@ struct PipelineState {
     stride: u64,
     attributes: Vec<VertexAttribute>,
     colour_format: FramebufferFormat,
+    depth: Option<DepthState>,
 }
 
 /// An immutable validated graphics pipeline, shared by clones and recorded draws.
@@ -140,6 +141,21 @@ impl Device {
     pub fn create_graphics_pipeline(
         &self,
         descriptor: GraphicsPipelineDescriptor<'_>,
+    ) -> Result<GraphicsPipeline, GraphicsPipelineCreateError> {
+        self.create_pipeline(descriptor, None)
+    }
+    /// Add immutable depth comparison/write state without changing existing descriptors.
+    pub fn create_graphics_pipeline_with_depth(
+        &self,
+        descriptor: GraphicsPipelineDescriptor<'_>,
+        depth: DepthState,
+    ) -> Result<GraphicsPipeline, GraphicsPipelineCreateError> {
+        self.create_pipeline(descriptor, Some(depth))
+    }
+    fn create_pipeline(
+        &self,
+        descriptor: GraphicsPipelineDescriptor<'_>,
+        depth: Option<DepthState>,
     ) -> Result<GraphicsPipeline, GraphicsPipelineCreateError> {
         for (shader, expected) in [
             (descriptor.vertex_shader, ShaderStage::Vertex),
@@ -231,11 +247,15 @@ impl Device {
                 stride: layout.stride,
                 attributes,
                 colour_format: descriptor.colour_format,
+                depth,
             }),
         })
     }
 }
 impl GraphicsPipeline {
+    pub fn depth_state(&self) -> Option<DepthState> {
+        self.state.depth
+    }
     pub fn label(&self) -> &str {
         &self.state.label
     }
@@ -316,4 +336,37 @@ mod tests {
         drop(clone);
         assert!(state.upgrade().is_none());
     }
+}
+
+/// Exact comparison of incoming and stored f32 depth after viewport mapping.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompareFunction {
+    Never,
+    Less,
+    Equal,
+    LessEqual,
+    Greater,
+    NotEqual,
+    GreaterEqual,
+    Always,
+}
+impl CompareFunction {
+    pub(crate) fn test(self, incoming: f32, stored: f32) -> bool {
+        match self {
+            Self::Never => false,
+            Self::Less => incoming < stored,
+            Self::Equal => incoming == stored,
+            Self::LessEqual => incoming <= stored,
+            Self::Greater => incoming > stored,
+            Self::NotEqual => incoming != stored,
+            Self::GreaterEqual => incoming >= stored,
+            Self::Always => true,
+        }
+    }
+}
+/// Immutable pipeline depth comparison and write control; attaching storage is separate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DepthState {
+    pub compare: CompareFunction,
+    pub write_enabled: bool,
 }

@@ -239,7 +239,11 @@ pub(super) fn render(
     width: u32,
     height: u32,
     draw: &PreparedDraw,
+    mut depths: Option<&mut [f32]>,
 ) -> Result<(), RenderExecutionError> {
+    if draw.pipeline.depth_state().is_some() && depths.is_none() {
+        return Err(RenderExecutionError::MissingDepthBuffer);
+    }
     for &triangle in draw.vertices.as_chunks::<3>().0 {
         clipped_triangle(
             pixels,
@@ -248,6 +252,7 @@ pub(super) fn render(
             triangle,
             &draw.pipeline,
             &draw.textures,
+            depths.as_deref_mut(),
         )?;
     }
     Ok(())
@@ -260,6 +265,7 @@ fn clipped_triangle(
     triangle: [Vertex; 3],
     pipeline: &GraphicsPipeline,
     textures: &[Option<SampledTexture>],
+    mut depths: Option<&mut [f32]>,
 ) -> Result<(), RenderExecutionError> {
     // Six planes can add at most six vertices to a clipped convex triangle.
     let mut polygon = [Vertex::default(); 12];
@@ -324,6 +330,7 @@ fn clipped_triangle(
             [polygon[0], polygon[index], polygon[index + 1]],
             pipeline,
             textures,
+            depths.as_deref_mut(),
         )?;
     }
     Ok(())
@@ -336,6 +343,7 @@ fn rasterize(
     mut triangle: [Vertex; 3],
     pipeline: &GraphicsPipeline,
     textures: &[Option<SampledTexture>],
+    mut depths: Option<&mut [f32]>,
 ) -> Result<(), RenderExecutionError> {
     let screen = |vertex: Vertex| {
         let x = (vertex.clip[0] / vertex.clip[3]).clamp(-1.0, 1.0);
@@ -379,6 +387,25 @@ fn rasterize(
             {
                 continue;
             }
+            let pixel_index = y as usize * width as usize + x as usize;
+            let incoming = pipeline.depth_state().map(|state| {
+                let z: f64 = values
+                    .iter()
+                    .zip(triangle)
+                    .map(|(&weight, vertex)| {
+                        weight as f64 / area as f64 * (vertex.clip[2] / vertex.clip[3] * 0.5 + 0.5)
+                    })
+                    .sum();
+                (state, z.clamp(0.0, 1.0) as f32)
+            });
+            if let Some((state, z)) = incoming {
+                let stored = depths
+                    .as_ref()
+                    .ok_or(RenderExecutionError::MissingDepthBuffer)?[pixel_index];
+                if !state.compare.test(z, stored) {
+                    continue;
+                }
+            }
             let weights: [f64; 3] = std::array::from_fn(|index| {
                 values[index] as f64 / area as f64 / triangle[index].clip[3]
             });
@@ -408,6 +435,11 @@ fn rasterize(
                 &mut output,
                 Some(textures),
             )?;
+            if let Some((_, z)) = incoming.filter(|(state, _)| state.write_enabled) {
+                depths
+                    .as_deref_mut()
+                    .ok_or(RenderExecutionError::MissingDepthBuffer)?[pixel_index] = z;
+            }
             pixels[invocation as usize] =
                 output[0].map(|lane| (lane.clamp(0.0, 1.0) * 255.0).round() as u8);
         }

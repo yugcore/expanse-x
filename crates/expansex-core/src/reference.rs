@@ -91,40 +91,78 @@ fn render(pass: &RenderCommands) -> Result<(), RenderExecutionError> {
     let target = pass.target();
     target
         .with_pixels_mut(|pixels| {
-            // Late fragment failures must preserve the entire target, including
-            // clear and earlier draws in this scope. Commit only on full success.
-            let mut staged = Vec::new();
-            staged
-                .try_reserve_exact(pixels.len())
-                .map_err(|_| RenderExecutionError::AllocationFailed)?;
-            staged.extend_from_slice(pixels);
-            if let Some(colour) = pass.clear_colour() {
-                staged.fill(colour);
+            if let Some(depth) = pass.depth_buffer() {
+                depth
+                    .with_depths_mut(|depths| render_staged(pass, prepared, pixels, Some(depths)))
+                    .map_err(|_| RenderExecutionError::DepthStoragePoisoned {
+                        label: depth.label().to_owned(),
+                    })?
+            } else {
+                render_staged(pass, prepared, pixels, None)
             }
-            for draw in prepared {
-                match draw {
-                    PreparedDraw::Programmable(draw) => {
-                        programmable::render(&mut staged, target.width(), target.height(), &draw)?
-                    }
-                    PreparedDraw::Fixed(draw) => {
-                        for triangle in draw.positions.as_chunks::<3>().0 {
-                            clipped_triangle(
-                                &mut staged,
-                                target.width(),
-                                target.height(),
-                                [triangle[0], triangle[1], triangle[2]],
-                                draw.colour,
-                            );
-                        }
-                    }
-                }
-            }
-            pixels.copy_from_slice(&staged);
-            Ok(())
         })
         .map_err(|_| RenderExecutionError::FramebufferStoragePoisoned {
             label: target.label().to_owned(),
         })?
+}
+
+fn render_staged(
+    pass: &RenderCommands,
+    prepared: Vec<PreparedDraw>,
+    pixels: &mut [[u8; 4]],
+    mut depths: Option<&mut [f32]>,
+) -> Result<(), RenderExecutionError> {
+    let mut staged = Vec::new();
+    staged
+        .try_reserve_exact(pixels.len())
+        .map_err(|_| RenderExecutionError::AllocationFailed)?;
+    staged.extend_from_slice(pixels);
+    if let Some(colour) = pass.clear_colour() {
+        staged.fill(colour);
+    }
+    let mut staged_depth = Vec::new();
+    if let Some(source) = depths.as_ref() {
+        staged_depth
+            .try_reserve_exact(source.len())
+            .map_err(|_| RenderExecutionError::AllocationFailed)?;
+        staged_depth.extend_from_slice(source);
+        if let Some(clear) = pass.clear_depth() {
+            staged_depth.fill(clear);
+        }
+    }
+    let target = pass.target();
+    for draw in prepared {
+        match draw {
+            PreparedDraw::Programmable(draw) => programmable::render(
+                &mut staged,
+                target.width(),
+                target.height(),
+                &draw,
+                if depths.is_some() {
+                    Some(&mut staged_depth)
+                } else {
+                    None
+                },
+            )?,
+            PreparedDraw::Fixed(draw) => {
+                for triangle in draw.positions.as_chunks::<3>().0 {
+                    clipped_triangle(
+                        &mut staged,
+                        target.width(),
+                        target.height(),
+                        [triangle[0], triangle[1], triangle[2]],
+                        draw.colour,
+                    );
+                }
+            }
+        }
+    }
+    // Both guards and the device gate remain held through these infallible commits.
+    pixels.copy_from_slice(&staged);
+    if let Some(target) = depths.as_mut() {
+        target.copy_from_slice(&staged_depth);
+    }
+    Ok(())
 }
 
 fn clipped_triangle(

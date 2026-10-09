@@ -151,8 +151,9 @@ The intended workflow is:
 For example, a future pixel explanation could show that a character fragment
 reached a pixel but failed its depth test against a value written by a background
 draw. A reproduction could retain those draws and their relevant resources.
-This example requires depth and pixel-explanation support that EX does not yet have;
-it does not establish that the background draw was logically wrong.
+Depth testing is implemented; pixel-explanation support is still planned, so
+this example remains illustrative. It does not establish that the background
+draw was logically wrong.
 
 Witness must use the same EX command and execution contracts for managed and
 explicit work. It is optional debugging machinery, not a third control level or
@@ -291,7 +292,8 @@ programmable rendering also work; see [shaders](docs/SHADERS.md) and
 [pipelines](docs/PIPELINES.md). [Indexed drawing](docs/INDEXED-DRAWING.md) now works
 with u16/u32 formats, shared vertices, and live-reference validation. Phase 3 is
 complete. [Textures, views, samplers, and fragment bindings](docs/TEXTURES.md)
-now work as the first Phase 4 capability; depth testing is next. Established shader
+now work as the first Phase 4 capability. [Depth testing](docs/DEPTH.md) also works,
+with colour/depth scope atomicity; blending and stencil remain pending. Established shader
 languages/toolchains are the accepted future ingestion direction; a custom EX
 source language is deferred. Current examples use EX instructions directly.
 Managed planning, general

@@ -42,10 +42,15 @@ impl RenderPass<'_> {
         });
         Ok(())
     }
-    pub(super) fn draw_textures(
+    pub(super) fn draw_resources(
         &self,
         pipeline: Option<&GraphicsPipeline>,
     ) -> Result<[Option<TextureBinding>; 8], RenderEncodeError> {
+        if pipeline.is_some_and(|p| p.depth_state().is_some())
+            && self.commands.depth_buffer().is_none()
+        {
+            return Err(RenderEncodeError::MissingDepthBuffer);
+        }
         let mask = pipeline.map_or(0, |p| p.fragment_shader().required_textures());
         let mut retained = std::array::from_fn(|_| None);
         for (slot, target) in retained.iter_mut().enumerate() {

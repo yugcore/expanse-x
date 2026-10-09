@@ -1,6 +1,6 @@
 # EX current API contract
 
-Status: Phases 0–3 complete; Phase 4 sampled textures work. Names and behavior are provisional.
+Status: Phases 0-3 complete; Phase 4 sampled textures and depth testing work. Names and behavior are provisional.
 Applications depend on package `ex-api` and import its library as `ex`. The
 implementation remains in `expansex-core`; the public crate re-exports its types.
 This contract describes implemented behavior only. See [architecture](ARCHITECTURE.md)
@@ -233,6 +233,31 @@ resource bind groups exist yet. See [TEXTURES.md](TEXTURES.md).
 cargo run -p ex-api --example textured_quad --locked --offline
 ```
 
+## Depth attachments and tests
+
+Device::create_depth_buffer owns fixed D32 float values initially 1, with extent
+1..=16384, identity, and synchronized full/per-pixel readback. No CPU write or
+sampled view exists. create_graphics_pipeline_with_depth adds immutable DepthState
+(compare function and write_enabled) while ordinary descriptor literals stay
+compatible; GraphicsPipeline::depth_state returns None for ordinary creation.
+
+CommandEncoder::begin_render_pass_with_depth retains same-device, same-extent
+colour/depth attachments and validates optional finite clear in [0,1]. None
+preserves depth. Depth-enabled direct/indexed draws require the attachment even
+when empty; depth-disabled and legacy draws ignore it. RenderCommands exposes
+depth_buffer/clear_depth. Projected z/w maps to [0,1] and interpolates linearly
+in screen space. Failed early tests skip fragment shading and writes; passing
+successful shading updates depth only when enabled. Preflight still runs.
+
+Both colour/depth stage and commit together under the device gate and distinct
+storage locks. Expected errors preserve both failed-scope attachments. Eight
+comparisons include exact equality and Greater for reverse-Z; stencil, blending,
+shader-written depth, bias, and multisampling remain future work. See [DEPTH.md](DEPTH.md).
+
+```text
+cargo run -p ex-api --example depth_overlap --locked --offline
+```
+
 ## Standalone prototype labels
 
 `CommandRecorder` owns a `Vec<String>`. `new()` and `default()` start an empty
@@ -286,7 +311,10 @@ example uses four shared vertices; independent decoding and pixel calculations
 verify its output. Twelve texture tests, three internal poison/lifetime/gate
 tests, and textured public documentation verify resource/sampling/rendering
 contracts. Independent checkerboard pixel calculations verify the example image.
-The workspace runs 137 tests, including documentation tests.
+Eleven public depth tests and two internal poison/lifetime tests verify depth
+resources, comparisons, interpolation, clipping, integration, and atomic failure.
+Independent overlap-image calculations verify visibility and order independence.
+The workspace runs 150 tests, including documentation tests.
 Tests do not induce allocator OOM by exhausting host memory.
 
 ## Next contract
@@ -295,6 +323,6 @@ Phases 1–3 are complete: copies and fixed-function triangles execute through
 EX and produce observable bytes/pixels. Shader representation, stage interfaces,
 and programmable execution now work through pipeline validation, vertex layouts,
 interpolation, and indexed drawing. Sampled textures, views, samplers, and eight
-fragment resource slots also work. Depth testing is next; language/format import
-remains future work.
+fragment resource slots and depth testing also work. Blending is next; stencil and
+language/format import remain future work.
 There is no implemented execution-backend ABI yet.

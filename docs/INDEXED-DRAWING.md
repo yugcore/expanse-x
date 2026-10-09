@@ -60,7 +60,7 @@ buffers, retained resources, invalid state/ranges/references, mixed draw order,
 and scope failure effects. Two [internal tests](../crates/expansex-core/src/buffer/resource.rs)
 cover poison/empty behavior and final allocation release. The public crate
 documentation exercises indexed drawing too. The indexed milestone passed 122
-workspace tests; the later texture milestone passes 137.
+workspace tests; the later texture milestone passed 137 and depth milestone 150.
 
 The [quad example](../crates/ex-api/examples/indexed_quad.rs) stores 80 vertex bytes
 and 12 index bytes, instead of 120 bytes for six expanded records in this layout.

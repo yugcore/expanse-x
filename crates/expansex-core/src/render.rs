@@ -14,6 +14,17 @@ pub use textures::TextureBinding;
 /// Recording misuse leaves previous work and the current binding unchanged.
 #[derive(Debug)]
 pub enum RenderEncodeError {
+    ForeignDepthBuffer {
+        label: String,
+    },
+    DepthExtentMismatch {
+        colour_width: u32,
+        colour_height: u32,
+        depth_width: u32,
+        depth_height: u32,
+    },
+    InvalidDepthClear,
+    MissingDepthBuffer,
     InvalidTextureSlot {
         binding: u32,
     },
@@ -101,6 +112,10 @@ pub enum RenderEncodeError {
 impl fmt::Display for RenderEncodeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::ForeignDepthBuffer { label } => write!(f, "depth buffer {label:?} belongs to another device"),
+            Self::DepthExtentMismatch { colour_width, colour_height, depth_width, depth_height } => write!(f, "depth extent {depth_width}x{depth_height} must equal colour extent {colour_width}x{colour_height}"),
+            Self::InvalidDepthClear => f.write_str("depth clear must be finite and in [0,1]"),
+            Self::MissingDepthBuffer => f.write_str("depth-enabled drawing requires a depth attachment"),
             Self::InvalidTextureSlot { binding } => write!(f, "texture slot {binding} is outside 0..8"),
             Self::ForeignTexture { label } => write!(f, "texture {label:?} belongs to another device"),
             Self::ForeignSampler { label } => write!(f, "sampler {label:?} belongs to another device"),
@@ -182,9 +197,17 @@ pub struct RenderCommands {
     target: Framebuffer,
     clear: Option<[u8; 4]>,
     draws: Vec<DrawTriangles>,
+    depth: Option<crate::DepthBuffer>,
+    clear_depth: Option<f32>,
 }
 
 impl RenderCommands {
+    pub fn depth_buffer(&self) -> Option<&crate::DepthBuffer> {
+        self.depth.as_ref()
+    }
+    pub fn clear_depth(&self) -> Option<f32> {
+        self.clear_depth
+    }
     pub fn target(&self) -> &Framebuffer {
         &self.target
     }
@@ -209,6 +232,40 @@ pub struct RenderPass<'a> {
 }
 
 impl CommandEncoder {
+    /// Open a scope retaining same-device, same-extent depth storage. None clears preserve data.
+    pub fn begin_render_pass_with_depth(
+        &mut self,
+        target: &Framebuffer,
+        clear: Option<[u8; 4]>,
+        depth: &crate::DepthBuffer,
+        clear_depth: Option<f32>,
+    ) -> Result<RenderPass<'_>, RenderEncodeError> {
+        if !target.belongs_to(&self.device) {
+            return Err(RenderEncodeError::ForeignFramebuffer {
+                label: target.label().to_owned(),
+            });
+        }
+        if !depth.belongs_to(&self.device) {
+            return Err(RenderEncodeError::ForeignDepthBuffer {
+                label: depth.label().to_owned(),
+            });
+        }
+        if target.width() != depth.width() || target.height() != depth.height() {
+            return Err(RenderEncodeError::DepthExtentMismatch {
+                colour_width: target.width(),
+                colour_height: target.height(),
+                depth_width: depth.width(),
+                depth_height: depth.height(),
+            });
+        }
+        if clear_depth.is_some_and(|v| !v.is_finite() || !(0.0..=1.0).contains(&v)) {
+            return Err(RenderEncodeError::InvalidDepthClear);
+        }
+        let mut pass = self.begin_render_pass(target, clear)?;
+        pass.commands.depth = Some(depth.clone());
+        pass.commands.clear_depth = clear_depth;
+        Ok(pass)
+    }
     /// Opens an offscreen render recorder. Pixels change only on submission.
     ///
     /// ```compile_fail,E0499
@@ -238,6 +295,8 @@ impl CommandEncoder {
                 target: target.clone(),
                 clear,
                 draws: Vec::new(),
+                depth: None,
+                clear_depth: None,
             },
             binding: None,
             pipeline: None,
@@ -348,7 +407,7 @@ impl RenderPass<'_> {
                 buffer_size: buffer.size(),
             });
         }
-        let textures = self.draw_textures(pipeline.as_ref())?;
+        let textures = self.draw_resources(pipeline.as_ref())?;
         self.commands
             .draws
             .try_reserve(1)
@@ -394,6 +453,10 @@ impl RenderPass<'_> {
 /// Expected reference render failures occur before any target pixels change.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RenderExecutionError {
+    MissingDepthBuffer,
+    DepthStoragePoisoned {
+        label: String,
+    },
     TextureStoragePoisoned {
         label: String,
     },
@@ -442,13 +505,15 @@ pub enum RenderExecutionError {
         invocation: u64,
         instruction: usize,
     },
-    /// Fallible vertex/texture-snapshot/image reservation failed; no target writes occurred.
+    /// Fallible vertex/texture-snapshot/attachment reservation failed; no target writes occurred.
     AllocationFailed,
 }
 
 impl fmt::Display for RenderExecutionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::MissingDepthBuffer => f.write_str("depth-enabled drawing requires a depth attachment"),
+            Self::DepthStoragePoisoned { label } => write!(f, "depth buffer {label:?} storage is poisoned"),
             Self::TextureStoragePoisoned { label } => write!(f, "texture {label:?} storage is poisoned"),
             Self::MissingTextureBinding { binding } => write!(f, "shader sample requires texture slot {binding}"),
             Self::IndexStoragePoisoned { label } => write!(f, "index buffer {label:?} storage is poisoned"),
@@ -460,7 +525,7 @@ impl fmt::Display for RenderExecutionError {
             Self::ShaderInputCount { stage, label, invocation, expected, actual } => write!(f, "{stage:?} shader {label:?} invocation {invocation} expected {expected} inputs, received {actual}"),
             Self::NonFiniteShaderInput { stage, label, invocation, location } => write!(f, "{stage:?} shader {label:?} invocation {invocation} input {location} is non-finite"),
             Self::NonFiniteShaderResult { stage, label, invocation, instruction } => write!(f, "{stage:?} shader {label:?} invocation {invocation} instruction {instruction} produced a non-finite result"),
-            Self::AllocationFailed => f.write_str("cannot reserve temporary render vertices, texture snapshots, or image"),
+            Self::AllocationFailed => f.write_str("cannot reserve temporary render vertices, texture snapshots, or attachments"),
         }
     }
 }

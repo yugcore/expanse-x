@@ -200,3 +200,8 @@ pub use expansex_core::{
     TextureAccessError, TextureBinding, TextureCreateError, TextureDescriptor,
     TextureDescriptorError, TextureFormat, TextureSampleError, TextureView, TextureViewDescriptor,
 };
+
+pub use expansex_core::{
+    CompareFunction, DepthBuffer, DepthBufferAccessError, DepthBufferCreateError,
+    DepthBufferDescriptor, DepthBufferDescriptorError, DepthState,
+};

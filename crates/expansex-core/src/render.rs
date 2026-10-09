@@ -14,6 +14,9 @@ pub use textures::TextureBinding;
 /// Recording misuse leaves previous work and the current binding unchanged.
 #[derive(Debug)]
 pub enum RenderEncodeError {
+    Bindings {
+        source: crate::BindingValidationError,
+    },
     ForeignStencilBuffer {
         label: String,
     },
@@ -122,6 +125,7 @@ pub enum RenderEncodeError {
 impl fmt::Display for RenderEncodeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Bindings { source } => write!(f, "render group: {source}"),
             Self::ForeignStencilBuffer { label } => write!(f, "stencil buffer {label:?} belongs to another device"),
             Self::StencilExtentMismatch { colour_width, colour_height, stencil_width, stencil_height } => write!(f, "stencil extent {stencil_width}x{stencil_height} must equal colour extent {colour_width}x{colour_height}"),
             Self::MissingStencilBuffer => f.write_str("stencil drawing or clearing requires a stencil attachment"),
@@ -159,6 +163,7 @@ impl fmt::Display for RenderEncodeError {
 impl Error for RenderEncodeError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
+            Self::Bindings { source } => Some(source),
             Self::AllocationFailed { source } => Some(source),
             _ => None,
         }
@@ -175,9 +180,13 @@ pub struct DrawTriangles {
     pipeline: Option<GraphicsPipeline>,
     indexed: Option<IndexedTriangles>,
     textures: [Option<TextureBinding>; 8],
+    bind_group: Option<crate::BindGroup>,
 }
 
 impl DrawTriangles {
+    pub fn bind_group(&self) -> Option<&crate::BindGroup> {
+        self.bind_group.as_ref()
+    }
     pub fn vertex_buffer(&self) -> &Buffer {
         &self.vertex_buffer
     }
@@ -259,6 +268,7 @@ pub struct RenderPass<'a> {
     pipeline: Option<GraphicsPipeline>,
     index_binding: Option<(Buffer, u64, IndexFormat)>,
     textures: [Option<TextureBinding>; 8],
+    bind_group: Option<crate::BindGroup>,
 }
 
 impl CommandEncoder {
@@ -347,6 +357,7 @@ impl CommandEncoder {
             pipeline: None,
             index_binding: None,
             textures: std::array::from_fn(|_| None),
+            bind_group: None,
         })
     }
     /// Opens an offscreen render recorder. Pixels change only on submission.
@@ -372,6 +383,29 @@ impl CommandEncoder {
 }
 
 impl RenderPass<'_> {
+    pub fn set_bind_group(&mut self, group: &crate::BindGroup) -> Result<(), RenderEncodeError> {
+        if !group.belongs_to(&self.encoder.device) {
+            return Err(RenderEncodeError::Bindings {
+                source: crate::BindingValidationError::ForeignLayout,
+            });
+        }
+        self.bind_group = Some(group.clone());
+        Ok(())
+    }
+    pub(super) fn draw_bind_group(
+        &self,
+        pipeline: Option<&GraphicsPipeline>,
+    ) -> Result<Option<crate::BindGroup>, RenderEncodeError> {
+        let layout = pipeline.and_then(GraphicsPipeline::binding_layout);
+        crate::bindings::check_group(layout, self.bind_group.as_ref())
+            .map_err(|source| RenderEncodeError::Bindings { source })?;
+        Ok(if layout.is_some() {
+            self.bind_group.clone()
+        } else {
+            None
+        })
+    }
+
     /// Binds a vertex source. Legacy draws use x/y pairs; programmable draws use
     /// the current pipeline's layout. Offset is always aligned to four bytes.
     pub fn set_vertex_buffer(
@@ -472,6 +506,7 @@ impl RenderPass<'_> {
                 buffer_size: buffer.size(),
             });
         }
+        let bind_group = self.draw_bind_group(pipeline.as_ref())?;
         let textures = self.draw_resources(pipeline.as_ref())?;
         self.commands
             .draws
@@ -485,6 +520,7 @@ impl RenderPass<'_> {
             pipeline,
             indexed: None,
             textures,
+            bind_group,
         });
         Ok(())
     }
@@ -518,6 +554,14 @@ impl RenderPass<'_> {
 /// Expected reference render failures occur before any target pixels change.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RenderExecutionError {
+    UniformStoragePoisoned {
+        binding: u32,
+        label: String,
+    },
+    MissingUniformBinding {
+        binding: u32,
+        element: u32,
+    },
     /// Internal invariant: graphics shaders cannot contain storage loads.
     UnexpectedStorageBinding {
         binding: u32,
@@ -585,6 +629,8 @@ pub enum RenderExecutionError {
 impl fmt::Display for RenderExecutionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::UniformStoragePoisoned { binding, label } => write!(f, "uniform binding {binding} buffer {label:?} storage is poisoned"),
+            Self::MissingUniformBinding { binding, element } => write!(f, "uniform binding {binding} element {element} is unavailable"),
             Self::UnexpectedStorageBinding { binding } => write!(f, "graphics shader unexpectedly requested compute storage slot {binding}"),
             Self::MissingStencilBuffer => f.write_str("stencil-enabled drawing requires a stencil attachment"),
             Self::StencilStoragePoisoned { label } => write!(f, "stencil buffer {label:?} storage is poisoned"),

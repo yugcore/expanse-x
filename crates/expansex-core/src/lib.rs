@@ -10,6 +10,7 @@
 //! whole-resource roles and dependencies validated before submission.
 //! Prototype labels remain.
 
+mod bindings;
 mod buffer;
 mod command;
 mod compute;
@@ -81,4 +82,10 @@ pub use compute::{
 pub use dependency::{
     DependencyEncodeError, DependencyValidationError, HazardKind, Resource, ResourceAccess,
     ResourceKind, ResourceTransition, ResourceTransitions, ResourceUse, SynchronizationMode,
+};
+
+pub use bindings::{
+    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
+    BindGroupLayoutEntry, BindingCreateError, BindingResource, BindingType, BindingValidationError,
+    BufferBinding, ShaderVisibility,
 };

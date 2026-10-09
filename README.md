@@ -167,9 +167,9 @@ owned resources, copies, fixed-function drawing, and synchronous readback now wo
 Phase 3 completes programmable pipelines, layouts, interpolation, and indexed
 drawing. Phase 4 now has sampled textures, views, samplers, and eight fragment
 resource slots, depth/stencil attachments/tests, blending, and compute pipelines/dispatch.
-The workspace passes 209 tests, including documentation tests.
+The workspace passes 227 tests, including documentation tests.
 The immediate target is [core completion](docs/CORE-MILESTONE.md), followed by the
-SDK; a complete/stable v1 API remains a later goal. Next: reusable shader/resource interfaces and parameter buffers. The core milestone defines a
+SDK; a complete/stable v1 API remains a later goal. Next: texture transfers and render-to-texture resource flows. The core milestone defines a
 bounded supported reference profile and its completion gates. Other modern GPU
 features and hardware drivers follow demonstrated workloads, one capability at a time.
 
@@ -196,3 +196,18 @@ validates the plan before execution, and verifies generated geometry and pixels.
 Output: `target/phase4-explicit-dependencies.png`. Existing encoders default to Ordered;
 use `create_command_encoder_with_synchronization(SynchronizationMode::Explicit)`
 for checked declarations/barriers. See [the dependency contract](docs/DEPENDENCIES.md).
+
+
+## Shared shader parameter example
+
+```powershell
+cargo run -p ex-api --example shared_parameters --locked --offline
+```
+
+One reusable layout/group supplies uniform parameters to compute, vertex and
+fragment shaders, storage to compute, and a material texture/sampler to fragments.
+The example uploads parameters through device-only memory, verifies geometry,
+then updates colour and reuses the same pipelines/group/commands. Outputs are
+`target/core-bindings-blue.png` and `target/core-bindings-orange.png`.
+The [binding contract](docs/BINDINGS.md) defines the supported shader profile,
+compatibility, lifetime, live updates and limits.

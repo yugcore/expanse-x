@@ -56,10 +56,25 @@ impl RenderPass<'_> {
         {
             return Err(RenderEncodeError::MissingStencilBuffer);
         }
+        let group = self.draw_bind_group(pipeline)?;
         let mask = pipeline.map_or(0, |p| p.fragment_shader().required_textures());
         let mut retained = std::array::from_fn(|_| None);
         for (slot, target) in retained.iter_mut().enumerate() {
             if mask & (1 << slot) != 0 {
+                if let Some(group) = &group {
+                    let Some(crate::BindingResource::SampledTexture { view, sampler }) =
+                        group.entry(slot as u32)
+                    else {
+                        return Err(RenderEncodeError::MissingTextureBinding {
+                            binding: slot as u32,
+                        });
+                    };
+                    *target = Some(TextureBinding {
+                        view: view.clone(),
+                        sampler: sampler.clone(),
+                    });
+                    continue;
+                }
                 *target = Some(
                     self.textures[slot]
                         .as_ref()

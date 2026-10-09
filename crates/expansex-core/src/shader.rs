@@ -27,6 +27,8 @@ pub enum ShaderStage {
 pub enum ShaderInstruction {
     /// Read one supplied input vector by location.
     Input { location: u32 },
+    /// Read a static float4 element from a uniform buffer in any stage.
+    LoadUniform { binding: u32, element: u32 },
     /// Read this compute invocation's float4 element from a storage slot.
     LoadStorage { binding: u32 },
     /// Sample a fragment texture/sampler slot using XY of an earlier register.
@@ -61,6 +63,11 @@ pub struct ShaderDescriptor<'a> {
 /// Structural or constant-value error, reported before a shader can be created.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ShaderValidationError {
+    InvalidUniformLoad {
+        instruction: usize,
+        binding: u32,
+        element: u32,
+    },
     StorageLoadingStage {
         instruction: usize,
         stage: ShaderStage,
@@ -119,6 +126,7 @@ pub enum ShaderValidationError {
 impl fmt::Display for ShaderValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::InvalidUniformLoad { instruction, binding, element } => write!(f, "instruction {instruction} uniform slot {binding}/element {element} requires slot 0..8 and element 0..256"),
             Self::StorageLoadingStage { instruction, stage } => write!(f, "instruction {instruction} loads storage in {stage:?}; only Compute supports storage"),
             Self::InvalidStorageBinding { instruction, binding } => write!(f, "instruction {instruction} uses storage slot {binding}; valid slots are 0..8"),
             Self::ComputeInputCount { count } => write!(f, "compute shader needs four built-in input vectors, received {count}"),
@@ -181,6 +189,15 @@ impl ShaderDescriptor<'_> {
                 }
             };
             match *op {
+                ShaderInstruction::LoadUniform { binding, element } => {
+                    if binding >= 8 || element >= 256 {
+                        return Err(ShaderValidationError::InvalidUniformLoad {
+                            instruction,
+                            binding,
+                            element,
+                        });
+                    }
+                }
                 ShaderInstruction::LoadStorage { binding } => {
                     if self.stage != ShaderStage::Compute {
                         return Err(ShaderValidationError::StorageLoadingStage {
@@ -285,6 +302,7 @@ impl Error for ShaderCreateError {
 /// Evaluation failed; no partial output is returned and no resource is modified.
 #[derive(Debug)]
 pub enum ShaderExecutionError {
+    MissingUniformBinding { binding: u32, element: u32 },
     MissingStorageBinding { binding: u32 },
     MissingTextureBinding { binding: u32 },
     WrongInputCount { expected: u32, actual: usize },
@@ -295,6 +313,7 @@ pub enum ShaderExecutionError {
 impl fmt::Display for ShaderExecutionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::MissingUniformBinding { binding, element } => write!(f, "uniform slot {binding} element {element} is unavailable; use layout-aware bound execution"),
             Self::MissingStorageBinding { binding } => write!(
                 f,
                 "shader storage load needs slot {binding}; use compute dispatch"
@@ -444,6 +463,13 @@ impl Shader {
         })
     }
 
+    pub(crate) fn required_uniforms(&self) -> u8 {
+        self.instructions().iter().fold(0, |mask, op| match *op {
+            ShaderInstruction::LoadUniform { binding, .. } => mask | (1 << binding),
+            _ => mask,
+        })
+    }
+
     pub(crate) fn required_textures(&self) -> u8 {
         self.instructions().iter().fold(0, |mask, op| match *op {
             ShaderInstruction::SampleTexture { binding, .. } => mask | (1 << binding),
@@ -469,6 +495,18 @@ impl Shader {
         sample: impl Fn(u32, [f32; 2]) -> Result<[f32; 4], ShaderExecutionError>,
         load: impl Fn(u32) -> Result<[f32; 4], ShaderExecutionError>,
     ) -> Result<(), ShaderExecutionError> {
+        self.evaluate_bound(inputs, outputs, sample, load, |binding, element| {
+            Err(ShaderExecutionError::MissingUniformBinding { binding, element })
+        })
+    }
+    pub(crate) fn evaluate_bound(
+        &self,
+        inputs: &[[f32; 4]],
+        outputs: &mut [[f32; 4]],
+        sample: impl Fn(u32, [f32; 2]) -> Result<[f32; 4], ShaderExecutionError>,
+        load: impl Fn(u32) -> Result<[f32; 4], ShaderExecutionError>,
+        uniform: impl Fn(u32, u32) -> Result<[f32; 4], ShaderExecutionError>,
+    ) -> Result<(), ShaderExecutionError> {
         if inputs.len() != self.input_count() as usize {
             return Err(ShaderExecutionError::WrongInputCount {
                 expected: self.input_count(),
@@ -485,6 +523,7 @@ impl Shader {
         let mut registers = [[0.0_f32; 4]; MAX_INSTRUCTIONS];
         for (instruction, op) in self.instructions().iter().enumerate() {
             let value = match *op {
+                ShaderInstruction::LoadUniform { binding, element } => uniform(binding, element)?,
                 ShaderInstruction::Input { location } => inputs[location as usize],
                 ShaderInstruction::LoadStorage { binding } => load(binding)?,
                 ShaderInstruction::SampleTexture {

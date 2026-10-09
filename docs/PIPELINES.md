@@ -100,3 +100,14 @@ separately calculated coverage/interpolation. It was also visually inspected.
 [Indexed drawing](INDEXED-DRAWING.md) now reuses these pipelines, layouts, and
 interpolation rules. It supports u16/u32 elements and a signed base vertex, with
 live-reference validation at submission. Wider GPU features remain future work.
+
+
+## Reusable resource interfaces
+
+[BINDINGS.md](BINDINGS.md) adds retained single-group layouts, uniform parameters
+in all shader stages, compute storage views and paired fragment texture/samplers.
+Layout-aware pipelines validate slot/type/visibility/minimum size; programmable
+and indexed draws capture the current compatible group. Legacy pipelines keep
+existing bindings. Used uniform snapshots precede evaluation and other source
+locks; failures preserve existing operation boundaries. Actual parameter reads
+join dependency summaries as UniformRead, with aliases combined conservatively.

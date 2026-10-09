@@ -65,6 +65,9 @@ pub struct GraphicsPipelineDescriptor<'a> {
 
 #[derive(Debug)]
 pub enum GraphicsPipelineCreateError {
+    Bindings {
+        source: crate::BindingValidationError,
+    },
     ForeignShader {
         stage: ShaderStage,
         label: String,
@@ -108,6 +111,7 @@ pub enum GraphicsPipelineCreateError {
 impl fmt::Display for GraphicsPipelineCreateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Bindings { source } => write!(f, "graphics resource interface: {source}"),
             Self::ForeignShader { stage, label } => write!(f, "{stage:?} shader {label:?} belongs to another device"),
             Self::WrongShaderStage { expected, actual } => write!(f, "pipeline requires a {expected:?} shader, received {actual:?}"),
             Self::InvalidStride { stride } => write!(f, "vertex stride {stride} must be positive and aligned to four bytes"),
@@ -124,6 +128,7 @@ impl fmt::Display for GraphicsPipelineCreateError {
 impl Error for GraphicsPipelineCreateError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
+            Self::Bindings { source } => Some(source),
             Self::AllocationFailed { source } => Some(source),
             _ => None,
         }
@@ -142,6 +147,7 @@ struct PipelineState {
     depth: Option<DepthState>,
     blend: Option<BlendState>,
     stencil: Option<StencilState>,
+    binding_layout: Option<crate::BindGroupLayout>,
 }
 
 /// An immutable validated graphics pipeline, shared by clones and recorded draws.
@@ -178,7 +184,7 @@ impl Device {
         descriptor: GraphicsPipelineDescriptor<'_>,
         options: GraphicsPipelineOptions,
     ) -> Result<GraphicsPipeline, GraphicsPipelineCreateError> {
-        self.create_pipeline(descriptor, options, None)
+        self.create_pipeline(descriptor, options, None, None)
     }
     /// Add immutable stencil rules while preserving existing option literals.
     pub fn create_graphics_pipeline_with_stencil(
@@ -187,13 +193,24 @@ impl Device {
         options: GraphicsPipelineOptions,
         stencil: StencilState,
     ) -> Result<GraphicsPipeline, GraphicsPipelineCreateError> {
-        self.create_pipeline(descriptor, options, Some(stencil))
+        self.create_pipeline(descriptor, options, Some(stencil), None)
+    }
+    /// Retain and validate a reusable resource interface for both shader stages.
+    pub fn create_graphics_pipeline_with_bindings(
+        &self,
+        descriptor: GraphicsPipelineDescriptor<'_>,
+        options: GraphicsPipelineOptions,
+        stencil: Option<StencilState>,
+        layout: &crate::BindGroupLayout,
+    ) -> Result<GraphicsPipeline, GraphicsPipelineCreateError> {
+        self.create_pipeline(descriptor, options, stencil, Some(layout))
     }
     fn create_pipeline(
         &self,
         descriptor: GraphicsPipelineDescriptor<'_>,
         options: GraphicsPipelineOptions,
         stencil: Option<StencilState>,
+        binding_layout: Option<&crate::BindGroupLayout>,
     ) -> Result<GraphicsPipeline, GraphicsPipelineCreateError> {
         for (shader, expected) in [
             (descriptor.vertex_shader, ShaderStage::Vertex),
@@ -211,6 +228,10 @@ impl Device {
                     actual: shader.stage(),
                 });
             }
+        }
+        for shader in [descriptor.vertex_shader, descriptor.fragment_shader] {
+            crate::bindings::validate_shader(self, binding_layout, shader, &[])
+                .map_err(|source| GraphicsPipelineCreateError::Bindings { source })?;
         }
         let layout = descriptor.vertex_layout;
         if layout.stride == 0 || !layout.stride.is_multiple_of(4) {
@@ -288,11 +309,15 @@ impl Device {
                 depth: options.depth,
                 blend: options.blend,
                 stencil,
+                binding_layout: binding_layout.cloned(),
             }),
         })
     }
 }
 impl GraphicsPipeline {
+    pub fn binding_layout(&self) -> Option<&crate::BindGroupLayout> {
+        self.state.binding_layout.as_ref()
+    }
     pub fn stencil_state(&self) -> Option<StencilState> {
         self.state.stencil
     }

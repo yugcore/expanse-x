@@ -272,3 +272,9 @@ pub use expansex_core::{
     DependencyEncodeError, DependencyValidationError, HazardKind, Resource, ResourceAccess,
     ResourceKind, ResourceTransition, ResourceTransitions, ResourceUse, SynchronizationMode,
 };
+
+pub use expansex_core::{
+    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
+    BindGroupLayoutEntry, BindingCreateError, BindingResource, BindingType, BindingValidationError,
+    BufferBinding, ShaderVisibility,
+};

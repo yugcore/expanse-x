@@ -2,7 +2,7 @@
 
 Updated: 2026-10-09. Scope: every currently exported EX type, inherent method,
 public field, enum variant, and explicit standard trait implementation.
-There are **102 public types and 193 inherent methods**. Phase 3 is complete;
+There are **114 public types and 216 inherent methods**. Phase 3 is complete;
 these remain provisional APIs, not a completed or stable v1 specification.
 The immediate milestone is [core completion](docs/CORE-MILESTONE.md); SDK
 development follows that gate. This catalog describes working APIs, not planned SDK commands.
@@ -28,6 +28,7 @@ currently exported.
 | Discovery and ownership | [Instance](#instance), [Adapter](#adapter), [AdapterInfo](#adapterinfo), [BackendKind](#backendkind), [Device](#device), [Queue](#queue) |
 | Buffers | [BufferDescriptor](#bufferdescriptor), [BufferUsage](#bufferusage), [HostAccess](#hostaccess), [Buffer](#buffer) |
 | Copy recording | [CommandEncoder](#commandencoder), [CommandBuffer](#commandbuffer), [Command](#command), [BufferCopy](#buffercopy), [CopyBufferRole](#copybufferrole) |
+| Shader bindings | [ShaderVisibility](#shadervisibility), [BindingType](#bindingtype), [BindGroupLayoutEntry](#bindgrouplayoutentry), [BindGroupLayoutDescriptor](#bindgrouplayoutdescriptor), [BindGroupLayout](#bindgrouplayout), [BufferBinding](#bufferbinding), [BindingResource](#bindingresource), [BindGroupEntry](#bindgroupentry), [BindGroupDescriptor](#bindgroupdescriptor), [BindGroup](#bindgroup), [BindingValidationError](#bindingvalidationerror), [BindingCreateError](#bindingcreateerror) |
 | Dependencies | [SynchronizationMode](#synchronizationmode), [Resource](#resource), [ResourceKind](#resourcekind), [ResourceAccess](#resourceaccess), [ResourceTransition](#resourcetransition), [ResourceTransitions](#resourcetransitions), [ResourceUse](#resourceuse), [HazardKind](#hazardkind), [DependencyEncodeError](#dependencyencodeerror), [DependencyValidationError](#dependencyvalidationerror) |
 | Framebuffers | [Framebuffer](#framebuffer), [FramebufferDescriptor](#framebufferdescriptor), [FramebufferFormat](#framebufferformat) |
 | Rendering | [RenderPass](#renderpass), [RenderCommands](#rendercommands), [DrawTriangles](#drawtriangles), [IndexFormat](#indexformat), [IndexedTriangles](#indexedtriangles) |
@@ -117,10 +118,14 @@ implemented across [object.rs](crates/expansex-core/src/object.rs),
 | `Device::create_buffer(&self, descriptor: BufferDescriptor<'_>) -> Result<Buffer, BufferCreateError>` | Validate and allocate owned zero-initialized reference storage. |
 | `Device::create_command_encoder(&self) -> CommandEncoder` | Create an empty Ordered encoder bound to this device. |
 | `Device::create_command_encoder_with_synchronization(&self, synchronization: SynchronizationMode) -> CommandEncoder` | Select immutable Ordered or Explicit synchronization. |
+| `Device::create_bind_group_layout(&self, descriptor: BindGroupLayoutDescriptor<'_>) -> Result<BindGroupLayout, BindingCreateError>` | Validate and own a sorted reusable resource interface. |
+| `Device::create_bind_group(&self, descriptor: BindGroupDescriptor<'_>) -> Result<BindGroup, BindingCreateError>` | Validate exact entries, own metadata and retain live resource handles. |
 | `Device::create_framebuffer(&self, descriptor: FramebufferDescriptor<'_>) -> Result<Framebuffer, FramebufferCreateError>` | Validate extents/format and allocate zeroed RGBA reference pixels. |
 | `Device::create_shader(&self, descriptor: ShaderDescriptor<'_>) -> Result<Shader, ShaderCreateError>` | Validate and own immutable EX instruction source; no pipeline binding or rendering. |
 | `Device::create_compute_pipeline(&self, descriptor: ComputePipelineDescriptor<'_>) -> Result<ComputePipeline, ComputePipelineCreateError>` | Validate compute stage, local size and output slots; retain shader and own metadata. |
+| `Device::create_compute_pipeline_with_bindings(&self, descriptor: ComputePipelineDescriptor<'_>, layout: &BindGroupLayout) -> Result<ComputePipeline, ComputePipelineCreateError>` | Validate all compute resource reads/outputs against a retained layout. |
 | `Device::create_graphics_pipeline(&self, descriptor: GraphicsPipelineDescriptor<'_>) -> Result<GraphicsPipeline, GraphicsPipelineCreateError>` | Validate shader devices/stages, vertex layout, and varying interface; own metadata and retain shaders. |
+| `Device::create_graphics_pipeline_with_bindings(&self, descriptor: GraphicsPipelineDescriptor<'_>, options: GraphicsPipelineOptions, stencil: Option<StencilState>, layout: &BindGroupLayout) -> Result<GraphicsPipeline, GraphicsPipelineCreateError>` | Validate both shader interfaces and retain the layout alongside immutable optional rendering state. |
 
 Cloning retains the same domain; `Adapter::create_device()` creates a new one.
 Discovery/device/encoder constructors do not expose a recoverable allocation
@@ -177,7 +182,7 @@ descriptor; transfer, Vertex, Index, and Storage roles participate in recording/
 | --- | --- |
 | `BufferUsage::Vertex` | Vertex input for fixed-layout or pipeline-controlled triangles. |
 | `BufferUsage::Index` | Indexed triangle input; binding validates this role. |
-| `BufferUsage::Uniform` | Future shader parameters. |
+| `BufferUsage::Uniform` | Read-only parameter views for LoadUniform in all shader stages. |
 | `BufferUsage::Storage` | Float4 loads/outputs through compute dispatch; CPU access still follows HostAccess. |
 | `BufferUsage::TransferSource` | Required source role for recorded copies. |
 | `BufferUsage::TransferDestination` | Required destination role for recorded copies. |
@@ -239,6 +244,7 @@ retains that device. All fields are private.
 | `CommandEncoder::dispatch(&mut self, pipeline: &ComputePipeline, workgroups: [u32; 3], bindings: &[StorageBufferBinding<'_>]) -> Result<(), ComputeEncodeError>` | Validate and retain one compute dispatch; no execution during recording. |
 | `CommandEncoder::synchronization_mode(&self) -> SynchronizationMode` | Inspect the fixed synchronization contract. |
 | `CommandEncoder::transition_resources(&mut self, transitions: &[ResourceTransition]) -> Result<(), DependencyEncodeError>` | Record validated retained dependency points; Explicit only, no execution. |
+| `CommandEncoder::dispatch_with_bind_group(&mut self, pipeline: &ComputePipeline, workgroups: [u32; 3], group: &BindGroup) -> Result<(), ComputeEncodeError>` | Check layout compatibility, storage capacities/aliases and uniform/writer overlap; retain group. |
 | `CommandEncoder::finish(self) -> CommandBuffer` | Consume the encoder and move its work into immutable finished commands. |
 | `CommandEncoder::begin_render_pass(&mut self, target: &Framebuffer, clear: Option<[u8; 4]>) -> Result<RenderPass<'_>, RenderEncodeError>` | Open an exclusive borrowed render recorder; clear/draws change no pixels until submission. |
 
@@ -371,6 +377,7 @@ with a live borrowed pass is rejected by Rust. Dropping unfinished work discards
 | `RenderPass::set_vertex_buffer(&mut self, buffer: &Buffer, offset: u64) -> Result<(), RenderEncodeError>` | Validate exact device, Vertex usage, offset <= size, then 4-byte alignment; retain binding. |
 | `RenderPass::draw(&mut self, vertices: Range<u32>, colour: [u8; 4]) -> Result<(), RenderEncodeError>` | Validate binding, ascending range, triangle-list count, checked byte extent; append a retained draw. |
 | `RenderPass::set_pipeline(&mut self, pipeline: &GraphicsPipeline) -> Result<(), RenderEncodeError>` | Check device then target colour format and retain pipeline binding. |
+| `RenderPass::set_bind_group(&mut self, group: &BindGroup) -> Result<(), RenderEncodeError>` | Check device and retain current group; layout compatibility is checked per programmable/indexed draw. |
 | `RenderPass::draw_programmable(&mut self, vertices: Range<u32>) -> Result<(), RenderEncodeError>` | Require pipeline then vertex buffer; check complete triangle list and checked full range with pipeline stride. Retain current bindings for this draw. |
 | `RenderPass::set_index_buffer(&mut self, buffer: &Buffer, offset: u64, format: IndexFormat) -> Result<(), RenderEncodeError>` | Check exact device, Index usage, offset <= size, then format alignment; retain binding. |
 | `RenderPass::draw_indexed(&mut self, indices: Range<u32>, base_vertex: i32) -> Result<(), RenderEncodeError>` | Require pipeline, vertex buffer, then index buffer. Check ascending triangle-list index range and full index byte extent; retain all three bindings. Validate live references at submission. |
@@ -414,6 +421,7 @@ recording retains live source bytes, not a snapshot.
 
 | Method | Behavior |
 | --- | --- |
+| `DrawTriangles::bind_group(&self) -> Option<&BindGroup>` | Borrow the captured layout-aware group; legacy draws retain none. |
 | `DrawTriangles::vertex_buffer(&self) -> &Buffer` | Borrow retained vertex source. |
 | `DrawTriangles::vertex_offset(&self) -> u64` | Binding offset in bytes. |
 | `DrawTriangles::vertices(&self) -> Range<u32>` | Return an owned direct vertex range; indexed draws store unused 0..0. |
@@ -480,6 +488,7 @@ result vector. Constants must be finite; references are register indices.
 | Variant and public payload | Operation |
 | --- | --- |
 | `ShaderInstruction::Input { location: u32 }` | Read an input vector with location less than input_count. |
+| `ShaderInstruction::LoadUniform { binding: u32, element: u32 }` | Read a static float4 element (0..256) relative to uniform slot 0..8; all stages. |
 | `ShaderInstruction::LoadStorage { binding: u32 }` | Compute-only: read current global linear element from storage slot 0..8. |
 | `ShaderInstruction::SampleTexture { binding: u32, coordinates: u32 }` | Fragment-only sampling from slot 0..8; XY of an earlier register are normalized view-local UVs. |
 | `ShaderInstruction::Constant([f32; 4])` | Literal vector. |
@@ -607,6 +616,7 @@ and creating device. Clones share immutable state and identity.
 | Method | Behavior |
 | --- | --- |
 | `GraphicsPipeline::label(&self) -> &str` | Borrow owned debug label. |
+| `GraphicsPipeline::binding_layout(&self) -> Option<&BindGroupLayout>` | Borrow the retained resource interface; legacy pipelines return None. |
 | `GraphicsPipeline::vertex_shader(&self) -> &Shader` | Borrow retained vertex program. |
 | `GraphicsPipeline::fragment_shader(&self) -> &Shader` | Borrow retained fragment program. |
 | `GraphicsPipeline::vertex_stride(&self) -> u64` | Byte distance between vertices. |
@@ -748,6 +758,7 @@ Source: [render.rs](crates/expansex-core/src/render.rs).
 
 | Variant and public payload | Meaning |
 | --- | --- |
+| `RenderEncodeError::Bindings { source: BindingValidationError }` | Invalid/missing resource interface or group; retains validation source. |
 | `RenderEncodeError::ForeignFramebuffer { label: String }` | Target belongs to another device. |
 | `RenderEncodeError::ForeignStencilBuffer { label: String }` | Stencil attachment belongs to another device. |
 | `RenderEncodeError::StencilExtentMismatch { colour_width: u32, colour_height: u32, stencil_width: u32, stencil_height: u32 }` | Stencil and colour extents differ. |
@@ -789,6 +800,8 @@ Source: [render.rs](crates/expansex-core/src/render.rs).
 
 | Variant and public payload | Meaning |
 | --- | --- |
+| `RenderExecutionError::UniformStoragePoisoned { binding: u32, label: String }` | Used parameter snapshot is untrusted; scope outputs unchanged. |
+| `RenderExecutionError::MissingUniformBinding { binding: u32, element: u32 }` | Internal uniform context is incomplete; validated recording prevents ordinary misuse. |
 | `RenderExecutionError::VertexStoragePoisoned { label: String }` | Nonempty draw's vertex source is untrusted. |
 | `RenderExecutionError::StencilStoragePoisoned { label: String }` | Attached stencil storage is untrusted, including empty scopes. |
 | `RenderExecutionError::MissingStencilBuffer` | Internal invariant failure; validated public recording prevents ordinary misuse from reaching it. |
@@ -820,6 +833,7 @@ Source: [shader.rs](crates/expansex-core/src/shader.rs). All variants have no so
 | --- | --- |
 | `ShaderValidationError::TooManyInputs { count: u32, maximum: u32 }` | More than 16 input vectors. |
 | `ShaderValidationError::TextureSamplingStage { instruction: usize, stage: ShaderStage }` | SampleTexture is supported only in Fragment programs. |
+| `ShaderValidationError::InvalidUniformLoad { instruction: usize, binding: u32, element: u32 }` | Uniform slot outside 0..8 or element outside 0..256. |
 | `ShaderValidationError::StorageLoadingStage { instruction: usize, stage: ShaderStage }` | LoadStorage requires Compute. |
 | `ShaderValidationError::InvalidStorageBinding { instruction: usize, binding: u32 }` | Storage slot outside 0..8. |
 | `ShaderValidationError::ComputeInputCount { count: u32 }` | Compute requires exactly four built-in input vectors. |
@@ -845,6 +859,7 @@ Source: [shader.rs](crates/expansex-core/src/shader.rs). All variants have no so
 | --- | --- |
 | `ShaderExecutionError::WrongInputCount { expected: u32, actual: usize }` | Exact input count mismatch. |
 | `ShaderExecutionError::MissingTextureBinding { binding: u32 }` | Standalone evaluation encountered sampling without bound resources. |
+| `ShaderExecutionError::MissingUniformBinding { binding: u32, element: u32 }` | No bound uniform element; standalone evaluation cannot supply resources. |
 | `ShaderExecutionError::MissingStorageBinding { binding: u32 }` | Standalone evaluation encountered LoadStorage without dispatch bindings. |
 | `ShaderExecutionError::NonFiniteInput { location: usize }` | Input has a non-finite component. |
 | `ShaderExecutionError::NonFiniteResult { instruction: usize }` | Instruction produced a non-finite vector. |
@@ -856,6 +871,7 @@ Source: [pipeline.rs](crates/expansex-core/src/pipeline.rs).
 
 | Variant and public payload | Meaning |
 | --- | --- |
+| `GraphicsPipelineCreateError::Bindings { source: BindingValidationError }` | Invalid/missing resource interface or group; retains validation source. |
 | `GraphicsPipelineCreateError::ForeignShader { stage: ShaderStage, label: String }` | Shader for this stage belongs to another device. |
 | `GraphicsPipelineCreateError::WrongShaderStage { expected: ShaderStage, actual: ShaderStage }` | Shader stage does not match its pipeline role. |
 | `GraphicsPipelineCreateError::InvalidStride { stride: u64 }` | Stride is zero or not four-byte aligned. |
@@ -1434,6 +1450,7 @@ Private fields; clones share immutable configuration/identity and retain device/
 | Method | Behavior |
 | --- | --- |
 | `ComputePipeline::label(&self) -> &str` | Borrow owned label. |
+| `ComputePipeline::binding_layout(&self) -> Option<&BindGroupLayout>` | Borrow the retained resource interface; legacy pipelines return None. |
 | `ComputePipeline::shader(&self) -> &Shader` | Borrow retained shader. |
 | `ComputePipeline::workgroup_size(&self) -> [u32; 3]` | Local invocation dimensions. |
 | `ComputePipeline::output_bindings(&self) -> &[u32]` | Output slots in shader output order. |
@@ -1474,6 +1491,7 @@ invocations are at most 1,048,576. A zero group axis makes the dispatch empty.
 
 | Method | Behavior |
 | --- | --- |
+| `ComputeDispatch::bind_group(&self) -> Option<&BindGroup>` | Borrow retained group; legacy dispatches return None. |
 | `ComputeDispatch::pipeline(&self) -> &ComputePipeline` | Retained pipeline. |
 | `ComputeDispatch::workgroups(&self) -> [u32; 3]` | Recorded group counts. |
 | `ComputeDispatch::invocation_count(&self) -> u32` | Product of global dimensions, or zero. |
@@ -1483,6 +1501,7 @@ invocations are at most 1,048,576. A zero group axis makes the dispatch empty.
 
 | Variant and public payload | Meaning |
 | --- | --- |
+| `ComputePipelineCreateError::Bindings { source: BindingValidationError }` | Invalid/missing resource interface or group; retains validation source. |
 | `ComputePipelineCreateError::ForeignShader { label: String }` | Shader belongs to another device. |
 | `ComputePipelineCreateError::WrongShaderStage { actual: ShaderStage }` | Shader is not Compute. |
 | `ComputePipelineCreateError::InvalidWorkgroupSize { size: [u32; 3] }` | Zero/oversized local axis or product exceeds 1024. |
@@ -1494,11 +1513,12 @@ invocations are at most 1,048,576. A zero group axis makes the dispatch empty.
 ### ComputeEncodeError
 
 Failed recording appends nothing, modifies no resource, and retains no new handles.
-Validation order: pipeline device, group axes, total invocations, supplied slots/devices/
+Legacy validation checks missing group first for layout-aware pipelines, then pipeline device, group axes, total invocations, supplied slots/devices/
 usages/alignment/ranges, required slots/capacity, overlap, reservations.
 
 | Variant and public payload | Meaning |
 | --- | --- |
+| `ComputeEncodeError::Bindings { source: BindingValidationError }` | Invalid/missing resource interface or group; retains validation source. |
 | `ComputeEncodeError::ForeignPipeline { label: String }` | Pipeline belongs to another device. |
 | `ComputeEncodeError::InvalidWorkgroups { counts: [u32; 3] }` | Group axis exceeds 65535. |
 | `ComputeEncodeError::TooManyInvocations { workgroups: [u32; 3], workgroup_size: [u32; 3] }` | Product overflow or more than 1,048,576 invocations. |
@@ -1523,11 +1543,136 @@ usages/alignment/ranges, required slots/capacity, overlap, reservations.
 
 All variants leave every dispatch output unchanged. These variants retain no
 underlying error source; QueueSubmitError::ComputeFailed retains this error.
-Completed earlier commands remain; later work is skipped. All used unique buffers
+Completed earlier commands remain; later work is skipped. Used uniform views are snapshotted before storage locks. All used unique storage buffers
 stay locked through evaluation and commit under the device gate; loads see starting
 bytes, tail bytes remain unchanged. There are no shared-memory/barrier/atomic,
 arbitrary indexing, texture, integer, or branching compute instructions yet.
 
+
+## Reusable shader bindings
+
+Source: [bindings.rs](crates/expansex-core/src/bindings.rs).
+Contract and supported shader profile: [BINDINGS.md](docs/BINDINGS.md).
+One immutable group with eight sparse slots supports uniform views, compute storage
+views and paired fragment texture/samplers. Resources remain live across submissions.
+
+### ShaderVisibility
+
+Variants: `Vertex`, `Fragment`, `Graphics` (Vertex/Fragment), `Compute`, `All`.
+
+| Method | Behavior |
+| --- | --- |
+| `ShaderVisibility::contains(&self, stage: ShaderStage) -> bool` | Test the supported stage set. |
+
+### BindingType
+
+No inherent methods. Variants: `UniformBuffer { min_size: u64 }`,
+`StorageBuffer { read_only: bool }`, `SampledTexture`. Uniform minimum is positive,
+16-aligned, at most 4096 bytes. Writable storage is required for compute outputs.
+
+### BindGroupLayoutEntry
+
+No inherent methods. Public fields: `binding: u32` (0..8),
+`visibility: ShaderVisibility`, `ty: BindingType`.
+
+### BindGroupLayoutDescriptor
+
+No inherent methods. Borrowed public fields: `label: &'a str`,
+`entries: &'a [BindGroupLayoutEntry]`. Creation owns a sorted copy. Empty layouts
+are supported; duplicate/out-of-range slots and invalid uniform minima are rejected.
+
+### BindGroupLayout
+
+Private shared immutable state retaining device/label/entries.
+
+| Method | Behavior |
+| --- | --- |
+| `BindGroupLayout::label(&self) -> &str` | Borrow owned label. |
+| `BindGroupLayout::entries(&self) -> &[BindGroupLayoutEntry]` | Borrow definitions sorted by slot. |
+| `BindGroupLayout::device(&self) -> Device` | Retain original device. |
+| `BindGroupLayout::belongs_to(&self, device: &Device) -> bool` | Check ownership. |
+| `BindGroupLayout::is_same(&self, other: &Self) -> bool` | Compare creation identity. |
+| `BindGroupLayout::is_compatible(&self, other: &Self) -> bool` | Same device and identical sorted definitions; labels/identity ignored. |
+
+### BufferBinding
+
+No inherent methods. Public fields: `buffer: Buffer`, `offset: u64`, `size: u64`.
+Owns a handle, not copied bytes. Group creation requires a nonzero 16-aligned
+in-bounds view; uniform size is at most 4096 and covers the layout's minimum.
+HostAccess does not authorize or restrict shader reads.
+
+### BindingResource
+
+No inherent methods. Public variants: `UniformBuffer(BufferBinding)`,
+`StorageBuffer(BufferBinding)`, `SampledTexture { view: TextureView, sampler: Sampler }`.
+Creation checks the expected layout type, device, Uniform/Storage usages and view
+range. Both texture and sampler must share the group's device.
+
+### BindGroupEntry
+
+No inherent methods. Public fields: `binding: u32`, `resource: BindingResource`.
+Every layout entry must appear once; no extras are allowed.
+
+### BindGroupDescriptor
+
+No inherent methods. Public borrowed fields: `label: &'a str`,
+`layout: &'a BindGroupLayout`, `entries: &'a [BindGroupEntry]`.
+Creation owns metadata and retains handles; it reads no bytes.
+
+### BindGroup
+
+Private immutable shared state, reusable across structurally compatible pipelines.
+
+| Method | Behavior |
+| --- | --- |
+| `BindGroup::label(&self) -> &str` | Borrow owned label. |
+| `BindGroup::layout(&self) -> &BindGroupLayout` | Borrow retained interface. |
+| `BindGroup::entries(&self) -> &[BindGroupEntry]` | Borrow immutable entries sorted by slot. |
+| `BindGroup::device(&self) -> Device` | Retain layout's owning device. |
+| `BindGroup::belongs_to(&self, device: &Device) -> bool` | Check ownership. |
+| `BindGroup::is_same(&self, other: &Self) -> bool` | Compare shared group identity. |
+
+Layout-aware draws/dispatches capture the current group. Each nonempty operation
+snapshots used uniform views under the gate before other source/storage locks;
+only loaded results must be finite. Extra slots/zero sources skip reads and poison.
+Later copies/CPU writes are visible on submission and reuse. Legacy pipelines use
+existing texture/storage APIs and ignore a bound graphics group.
+
+### BindingValidationError
+
+No inherent methods; implements Error with no underlying source.
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `InvalidBinding { binding: u32 }` | Slot outside 0..8. |
+| `DuplicateBinding { binding: u32 }` | Repeated slot. |
+| `InvalidMinimum { binding: u32, size: u64 }` | Uniform minimum is not 16-aligned in 16..=4096. |
+| `ForeignLayout` | Layout/group belongs to another device. |
+| `ForeignResource { binding: u32, label: String }` | Concrete resource has foreign ownership. |
+| `MissingBinding { binding: u32 }` | Required layout/group/shader slot absent. |
+| `UnexpectedBinding { binding: u32 }` | Group supplied a slot outside its layout. |
+| `WrongType { binding: u32, expected: BindingType }` | Shader/concrete resource type differs from expected kind. |
+| `InvalidRange { binding: u32, offset: u64, size: u64, buffer_size: u64 }` | Empty, unaligned, overflowing/out-of-bounds view or uniform size exceeds 4096. |
+| `MissingUsage { binding: u32, usage: BufferUsage }` | Buffer lacks required shader permission. |
+| `LayoutRequired` | Uniform shader creation or group dispatch needs layout-aware construction. |
+| `MissingGroup` | Layout-aware operation has no group. |
+| `IncompatibleLayout` | Group and pipeline definitions/device differ. |
+| `StageNotVisible { binding: u32, stage: ShaderStage }` | Shader stage cannot access the entry. |
+| `UniformTooSmall { binding: u32, required: u64, declared: u64 }` | Pipeline minimum/view size does not cover required bytes. |
+| `ReadOnlyOutput { binding: u32 }` | Compute output slot is read-only. |
+| `OverlappingUniformStorage { uniform: u32, storage: u32 }` | Uniform view overlaps used writable storage view. |
+
+Layout-aware compute group/alias validation precedes existing dispatch range checks.
+Graphics checks device on setting a group, compatibility when recording each draw.
+Failures append no operation; failed setters preserve current state. Errors are
+wrapped by Bindings variants of graphics/compute pipeline creation and recording.
+
+### BindingCreateError
+
+No inherent methods. Variants: `InvalidDescriptor(BindingValidationError)`,
+`AllocationFailed { source: std::collections::TryReserveError }`. Both retain their
+underlying Error::source. `From<BindingValidationError>` wraps InvalidDescriptor.
+Creation validates before retaining metadata; no storage mutation occurs.
 
 ## Resource dependencies
 
@@ -1569,10 +1714,11 @@ Public variants retain their corresponding handle: `Buffer(Buffer)`,
 | `TransferReadWrite` | Buffer with both transfer usages; permits either transfer role. |
 | `VertexRead` | Buffer with Vertex usage. |
 | `IndexRead` | Buffer with Index usage. |
+| `UniformRead` | Buffer with Uniform usage; parameters actually loaded by a shader. |
 | `StorageRead` | Buffer with Storage usage, read access. |
 | `StorageWrite` | Buffer with Storage usage, write access. |
 | `StorageReadWrite` | Buffer with Storage usage; permits either storage role. |
-| `BufferRead` | Buffer with at least one supported read usage; permits TransferRead/VertexRead/IndexRead/StorageRead and combined render-source reads. |
+| `BufferRead` | Buffer with at least one supported read usage; permits TransferRead/VertexRead/IndexRead/StorageRead/UniformRead and combined render-source reads. |
 | `SampledRead` | Texture, underlying allocation of sampled views. |
 | `ColourReadWrite` | Framebuffer attachment. |
 | `DepthReadWrite` | DepthBuffer attachment. |
@@ -1653,7 +1799,7 @@ Runtime storage/shader failures retain completed-prefix/atomic-operation rules.
 ## Explicit standard trait support
 
 This lists implemented/derived traits, not Rust's blanket implementations or
-auto traits. They are separate from the 193 inherent methods above.
+auto traits. They are separate from the 216 inherent methods above.
 
 | Type | Traits |
 | --- | --- |
@@ -1759,6 +1905,18 @@ auto traits. They are separate from the 193 inherent methods above.
 | `HazardKind` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
 | `DependencyEncodeError` | `Debug`, `Display`, `Error` |
 | `DependencyValidationError` | `Debug`, `Clone`, `PartialEq`, `Eq`, `Display`, `Error` |
+| `ShaderVisibility` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `BindingType` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `BindGroupLayoutEntry` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `BindGroupLayoutDescriptor<'a>` | `Debug`, `Clone`, `Copy` |
+| `BindGroupLayout` | `Debug`, `Clone` |
+| `BufferBinding` | `Debug`, `Clone` |
+| `BindingResource` | `Debug`, `Clone` |
+| `BindGroupEntry` | `Debug`, `Clone` |
+| `BindGroupDescriptor<'a>` | `Debug`, `Clone`, `Copy` |
+| `BindGroup` | `Debug`, `Clone` |
+| `BindingValidationError` | `Debug`, `Clone`, `PartialEq`, `Eq`, `Display`, `Error` |
+| `BindingCreateError` | `Debug`, `Display`, `Error`, `From<BindingValidationError>` |
 
 Standard trait operations include:
 
@@ -1766,10 +1924,12 @@ Standard trait operations include:
 | --- | --- |
 | `Clone::clone(&self) -> Self` | Types marked `Clone` above. Device/queue/buffer/framebuffer/depth/stencil/shader/pipeline/texture/view/sampler/binding handles retain shared state; `AdapterInfo` clones its owned metadata. |
 | `Default::default() -> Self` | `Instance`, `CommandRecorder`: same as `new()`. GraphicsPipelineOptions: depth/blend None. RenderAttachments: all None. SynchronizationMode: Ordered. |
-| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 102 types; buffer/framebuffer/depth/stencil formatting exposes metadata rather than stored data. |
+| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 114 types; buffer/framebuffer/depth/stencil formatting exposes metadata rather than stored data. |
 | `PartialEq::eq(&self, other: &Self) -> bool` | Types marked `PartialEq`; handle identity instead uses explicit `is_same`/`belongs_to` methods. |
-| `Display::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | Thirty error types and `CopyBufferRole`. |
-| `Error::source(&self) -> Option<&(dyn std::error::Error + 'static)>` | All thirty error types. Buffer/framebuffer/depth/stencil/shader/texture creation retain descriptor/reservation sources, sampler creation retains reservation sources, pipeline creation/command/render recording and shader evaluation retain reservation sources, and submission RenderFailed/ComputeFailed retain RenderExecutionError/ComputeExecutionError. Compute creation/recording and DependencyEncodeError::AllocationFailed retain reservation sources; submission DependencyFailed retains DependencyValidationError. Other current variants return None. |
+| `Display::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | Thirty-two error types and `CopyBufferRole`. |
+| `Error::source(&self) -> Option<&(dyn std::error::Error + 'static)>` | All thirty-two error types. Buffer/framebuffer/depth/stencil/shader/texture creation retain descriptor/reservation sources, sampler creation retains reservation sources, pipeline creation/command/render recording and shader evaluation retain reservation sources, and submission RenderFailed/ComputeFailed retain RenderExecutionError/ComputeExecutionError. Compute creation/recording and DependencyEncodeError::AllocationFailed retain reservation sources; submission DependencyFailed retains DependencyValidationError. BindingCreateError retains validation/reservation sources; pipeline/recording Bindings variants retain BindingValidationError. Other current variants return None. |
+
+`From<BindingValidationError>::from(source: BindingValidationError) -> BindingCreateError` wraps InvalidDescriptor.
 
 Other inherited standard trait methods, such as `clone_from` and `ne`, follow
 their standard-library contracts. Error trait objects also support standard
@@ -1779,7 +1939,7 @@ their standard-library contracts. Error trait objects also support standard
 ## Not implemented
 
 There are currently no public APIs for asynchronous submission/completion, mipmaps,
-texture attachments/storage/transfer commands, arbitrary resource bind groups,
+texture attachments/storage/transfer commands, multiple groups, binding arrays/dynamic offsets,
 external shader language/format importer or frontend/compiler,
 instanced draws, primitive restart, indirect drawing/dispatch,
 presentation, mapped memory, hardware discovery/drivers, managed planning,

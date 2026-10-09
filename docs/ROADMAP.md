@@ -29,7 +29,7 @@ Phase 4 feature roadmap without treating every future feature as a core-launch g
 | 2 — First software triangle | Complete | Public render scopes produce a verified PNG through EX's own clipped fixed-function rasterizer |
 | 3 — Programmability and pipeline milestone | Complete | Pipeline-controlled triangles, layouts, perspective interpolation, and validated u16/u32 indexed drawing |
 | 4 — Modern GPU concepts | In progress | Sampled RGBA8 textures/views, nearest/bilinear samplers, eight fragment resource slots, depth/stencil attachments/tests, blending, and storage-buffer compute dispatch and checked whole-resource dependencies |
-| Immediate milestone — Core Preview | In progress | Supported-profile gates in CORE-MILESTONE.md; whole-resource dependencies work; shader/resource interfaces are next |
+| Immediate milestone — Core Preview | In progress | Supported-profile gates in CORE-MILESTONE.md; dependencies and reusable shader interfaces work; texture/resource flows are next |
 | Following milestone — SDK Preview | Planned after core | Templates, shader/build integration, developer tools, onboarding, and packaging over the completed core |
 | Future — Hardware drivers | Deferred | A selected target, viable driver interfaces, and demonstrated execution |
 
@@ -229,6 +229,7 @@ the checklist below is the wider feature backlog. SDK development follows core c
 - [x] Sampled 2D RGBA8 textures, rectangular views, nearest/bilinear samplers, and eight fragment texture/sampler slots.
 - [x] Depth/stencil and blending - separate attachments, comparisons/updates, channel masks, and atomic commits.
 - [x] Compute pipelines and dispatch - bounded float4 storage access, invocation IDs, workgroups, and atomic outputs.
+- [x] Reusable single-group shader layouts/bindings and uniform parameter buffers under [BINDINGS.md](BINDINGS.md); broader resource profiles remain future work.
 - [x] Explicit resource transitions, read/write hazards, and execution/memory dependencies for synchronous whole-resource work ([contract](DEPENDENCIES.md)); range/stage/async precision remains future work.
 - [ ] Asynchronous completion, fences/timelines, multiple queues, and cross-queue dependencies.
 - [ ] Multithreaded recording, indirect operations, and measured allocator/command reuse.
@@ -293,12 +294,21 @@ and executable documentation cover all command families and failure boundaries.
 The [explicit tile workload](../crates/ex-api/examples/explicit_dependencies.rs)
 uses upload, compute, vertex fetch and readback transitions; it verifies 288 vertices,
 48 tile centres, and 101,568 covered pixels. An independent full-image check matches
-all 196,608 pixels; the image was inspected. All 209 workspace tests pass.
+all 196,608 pixels; the image was inspected. The dependency checkpoint passed 209 workspace tests.
 
-Phase 4 is still incomplete. Next: reusable shader/resource interfaces and parameter
-buffers for the supported Core Preview profile. Texture mipmaps, transfer
-commands, attachments, storage images, arbitrary bind groups, and general shader
-resources need separate demonstrated contracts.
+Reusable interfaces work under [BINDINGS.md](BINDINGS.md): structurally compatible
+layouts, immutable retained groups, stage/type/size validation, uniform float4
+loads in every shader stage, paired textures and compute storage. Fifteen public
+tests, two internal poison/lifetime tests and executable documentation verify the
+profile. The [shared parameter example](../crates/ex-api/examples/shared_parameters.rs)
+uses one group in compute, vertex and fragment execution with explicit dependencies.
+It verifies 288 generated vertices and 48 tile centres, then reuses unchanged commands
+with new material bytes. Independent coverage/checksum calculations match every
+pixel in both 512x384 images. All 227 tests and project checks pass.
+
+Phase 4 and the Core Preview remain incomplete. Next: texture transfers and
+render-to-texture resource flows. Mipmaps, storage images, multiple groups,
+dynamic bindings and broader shader profiles require separate contracts.
 
 Each feature needs a chosen EX contract, a working reference implementation,
 misuse validation, executable evidence, and updated documentation before its box
@@ -309,7 +319,7 @@ is checked. Performance or hardware-conformance claims require separate evidence
 The [EX Witness direction](../DOCUMENTATION.md#ex-witness-experimental-differentiation)
 explores explanation → replay → smaller executable tests for selected failures.
 It uses the same contracts for managed and explicit work. This track adds no new
-Phase 1 completion requirement; the main roadmap continues with shader/resource interfaces.
+Phase 1 completion requirement; the main roadmap continues with texture/resource flows.
 
 After the copy/submission foundation works:
 

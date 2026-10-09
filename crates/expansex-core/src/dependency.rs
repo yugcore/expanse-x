@@ -95,6 +95,7 @@ impl Resource {
                     }
                     A::VertexRead => has(BufferUsage::Vertex),
                     A::IndexRead => has(BufferUsage::Index),
+                    A::UniformRead => has(BufferUsage::Uniform),
                     A::StorageRead | A::StorageWrite | A::StorageReadWrite => {
                         has(BufferUsage::Storage)
                     }
@@ -103,6 +104,7 @@ impl Resource {
                         BufferUsage::Vertex,
                         BufferUsage::Index,
                         BufferUsage::Storage,
+                        BufferUsage::Uniform,
                     ]
                     .into_iter()
                     .any(has),
@@ -125,6 +127,7 @@ pub enum ResourceAccess {
     TransferReadWrite,
     VertexRead,
     IndexRead,
+    UniformRead,
     StorageRead,
     StorageWrite,
     StorageReadWrite,
@@ -156,7 +159,11 @@ impl ResourceAccess {
             || match self {
                 Self::BufferRead => matches!(
                     required,
-                    Self::TransferRead | Self::VertexRead | Self::IndexRead | Self::StorageRead
+                    Self::TransferRead
+                        | Self::VertexRead
+                        | Self::IndexRead
+                        | Self::StorageRead
+                        | Self::UniformRead
                 ),
                 Self::StorageReadWrite => {
                     matches!(required, Self::StorageRead | Self::StorageWrite)
@@ -400,6 +407,9 @@ impl CommandBuffer {
                         };
                         add(Resource::Buffer(binding.buffer().clone()), access)?;
                     }
+                    if let Some(group) = dispatch.bind_group() {
+                        add_uniform_uses(&mut add, group, pipeline.shader().required_uniforms())?;
+                    }
                 }
                 Command::RenderPass(pass) => {
                     add(
@@ -429,6 +439,15 @@ impl CommandBuffer {
                         )?;
                         if let Some(indexed) = draw.indexed() {
                             add(Resource::Buffer(indexed.buffer().clone()), A::IndexRead)?;
+                        }
+                        if let (Some(group), Some(pipeline)) = (draw.bind_group(), draw.pipeline())
+                        {
+                            add_uniform_uses(
+                                &mut add,
+                                group,
+                                pipeline.vertex_shader().required_uniforms()
+                                    | pipeline.fragment_shader().required_uniforms(),
+                            )?;
                         }
                         for slot in 0..8 {
                             if let Some(binding) = draw.texture(slot) {
@@ -554,9 +573,9 @@ fn add_use(
         .find(|usage| usage.resource.is_same(&resource))
     {
         if previous.access != access {
-            // A command's buffer accesses are either transfer roles, storage
-            // roles, or render-source reads. Mixed families cannot occur within
-            // a single recorded operation under the current command contracts.
+            // Copies combine transfer roles. Draws combine read-only sources.
+            // Compute combines storage and uniform reads; a writer makes its
+            // whole-allocation summary StorageReadWrite even for disjoint views.
             previous.access = if !previous.access.is_write() && !access.is_write() {
                 ResourceAccess::BufferRead
             } else if matches!(
@@ -579,5 +598,25 @@ fn add_use(
         resource,
         access,
     });
+    Ok(())
+}
+
+fn add_uniform_uses(
+    add: &mut impl FnMut(Resource, ResourceAccess) -> Result<(), DependencyValidationError>,
+    group: &crate::BindGroup,
+    mask: u8,
+) -> Result<(), DependencyValidationError> {
+    for entry in group
+        .entries()
+        .iter()
+        .filter(|e| mask & (1 << e.binding) != 0)
+    {
+        if let crate::BindingResource::UniformBuffer(view) = &entry.resource {
+            add(
+                Resource::Buffer(view.buffer.clone()),
+                ResourceAccess::UniformRead,
+            )?;
+        }
+    }
     Ok(())
 }

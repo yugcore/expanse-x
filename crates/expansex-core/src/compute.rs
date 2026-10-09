@@ -20,17 +20,36 @@ pub struct ComputePipelineDescriptor<'a> {
 
 #[derive(Debug)]
 pub enum ComputePipelineCreateError {
-    ForeignShader { label: String },
-    WrongShaderStage { actual: ShaderStage },
-    InvalidWorkgroupSize { size: [u32; 3] },
-    OutputCountMismatch { expected: usize, actual: usize },
-    InvalidOutputBinding { binding: u32 },
-    DuplicateOutputBinding { binding: u32 },
-    AllocationFailed { source: TryReserveError },
+    Bindings {
+        source: crate::BindingValidationError,
+    },
+    ForeignShader {
+        label: String,
+    },
+    WrongShaderStage {
+        actual: ShaderStage,
+    },
+    InvalidWorkgroupSize {
+        size: [u32; 3],
+    },
+    OutputCountMismatch {
+        expected: usize,
+        actual: usize,
+    },
+    InvalidOutputBinding {
+        binding: u32,
+    },
+    DuplicateOutputBinding {
+        binding: u32,
+    },
+    AllocationFailed {
+        source: TryReserveError,
+    },
 }
 impl fmt::Display for ComputePipelineCreateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Bindings { source } => write!(f, "compute resource interface: {source}"),
             Self::ForeignShader { label } => {
                 write!(f, "compute shader {label:?} belongs to another device")
             }
@@ -61,6 +80,7 @@ impl fmt::Display for ComputePipelineCreateError {
 impl Error for ComputePipelineCreateError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
+            Self::Bindings { source } => Some(source),
             Self::AllocationFailed { source } => Some(source),
             _ => None,
         }
@@ -75,6 +95,7 @@ struct ComputeState {
     workgroup_size: [u32; 3],
     outputs: Vec<u32>,
     reads: u8,
+    binding_layout: Option<crate::BindGroupLayout>,
 }
 
 /// Shared immutable compute program retaining its shader and logical device.
@@ -115,6 +136,20 @@ impl Device {
         &self,
         descriptor: ComputePipelineDescriptor<'_>,
     ) -> Result<ComputePipeline, ComputePipelineCreateError> {
+        self.create_compute_with_layout(descriptor, None)
+    }
+    pub fn create_compute_pipeline_with_bindings(
+        &self,
+        descriptor: ComputePipelineDescriptor<'_>,
+        layout: &crate::BindGroupLayout,
+    ) -> Result<ComputePipeline, ComputePipelineCreateError> {
+        self.create_compute_with_layout(descriptor, Some(layout))
+    }
+    fn create_compute_with_layout(
+        &self,
+        descriptor: ComputePipelineDescriptor<'_>,
+        binding_layout: Option<&crate::BindGroupLayout>,
+    ) -> Result<ComputePipeline, ComputePipelineCreateError> {
         use ComputePipelineCreateError as E;
         if !descriptor.shader.belongs_to(self) {
             return Err(E::ForeignShader {
@@ -152,6 +187,13 @@ impl Device {
             }
             seen |= 1 << binding;
         }
+        crate::bindings::validate_shader(
+            self,
+            binding_layout,
+            descriptor.shader,
+            descriptor.output_bindings,
+        )
+        .map_err(|source| E::Bindings { source })?;
         let mut label = String::new();
         label
             .try_reserve_exact(descriptor.label.len())
@@ -178,11 +220,15 @@ impl Device {
                 workgroup_size: descriptor.workgroup_size,
                 outputs,
                 reads,
+                binding_layout: binding_layout.cloned(),
             }),
         })
     }
 }
 impl ComputePipeline {
+    pub fn binding_layout(&self) -> Option<&crate::BindGroupLayout> {
+        self.state.binding_layout.as_ref()
+    }
     pub fn label(&self) -> &str {
         &self.state.label
     }
@@ -255,8 +301,12 @@ pub struct ComputeDispatch {
     dimensions: [u32; 3],
     invocation_count: u32,
     bindings: Vec<ComputeBufferBinding>,
+    bind_group: Option<crate::BindGroup>,
 }
 impl ComputeDispatch {
+    pub fn bind_group(&self) -> Option<&crate::BindGroup> {
+        self.bind_group.as_ref()
+    }
     pub fn pipeline(&self) -> &ComputePipeline {
         &self.pipeline
     }
@@ -274,6 +324,9 @@ impl ComputeDispatch {
 /// A rejected request appends no command and changes no resource.
 #[derive(Debug)]
 pub enum ComputeEncodeError {
+    Bindings {
+        source: crate::BindingValidationError,
+    },
     ForeignPipeline {
         label: String,
     },
@@ -328,6 +381,7 @@ pub enum ComputeEncodeError {
 impl fmt::Display for ComputeEncodeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Bindings { source } => write!(f, "compute group: {source}"),
             Self::ForeignPipeline { label } => write!(f, "compute pipeline {label:?} belongs to another device"),
             Self::InvalidWorkgroups { counts } => write!(f, "workgroup counts {counts:?} exceed 65535 per axis"),
             Self::TooManyInvocations { workgroups, workgroup_size } => write!(f, "dispatch {workgroups:?} with local size {workgroup_size:?} exceeds 1048576 invocations"),
@@ -347,6 +401,7 @@ impl fmt::Display for ComputeEncodeError {
 impl Error for ComputeEncodeError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
+            Self::Bindings { source } => Some(source),
             Self::AllocationFailed { source } => Some(source),
             _ => None,
         }
@@ -361,7 +416,65 @@ impl CommandEncoder {
         workgroups: [u32; 3],
         bindings: &[StorageBufferBinding<'_>],
     ) -> Result<(), ComputeEncodeError> {
+        self.record_dispatch(pipeline, workgroups, bindings, None)
+    }
+    pub fn dispatch_with_bind_group(
+        &mut self,
+        pipeline: &ComputePipeline,
+        workgroups: [u32; 3],
+        group: &crate::BindGroup,
+    ) -> Result<(), ComputeEncodeError> {
+        use crate::{BindingResource, BindingValidationError as B};
+        if pipeline.binding_layout().is_none() {
+            return Err(ComputeEncodeError::Bindings {
+                source: B::LayoutRequired,
+            });
+        }
+        crate::bindings::check_group(pipeline.binding_layout(), Some(group))
+            .map_err(|source| ComputeEncodeError::Bindings { source })?;
+        let mut views = Vec::new();
+        views
+            .try_reserve_exact(8)
+            .map_err(|source| ComputeEncodeError::AllocationFailed { source })?;
+        for entry in group.entries() {
+            if let BindingResource::StorageBuffer(view) = &entry.resource {
+                views.push(StorageBufferBinding {
+                    binding: entry.binding,
+                    buffer: &view.buffer,
+                    offset: view.offset,
+                    size: view.size,
+                });
+            }
+        }
+        for entry in group.entries() {
+            if let BindingResource::UniformBuffer(uniform) = &entry.resource {
+                for storage in views.iter().filter(|b| pipeline.writes(b.binding)) {
+                    if uniform.buffer.is_same(storage.buffer)
+                        && uniform.offset < storage.offset + storage.size
+                        && storage.offset < uniform.offset + uniform.size
+                    {
+                        return Err(ComputeEncodeError::Bindings {
+                            source: B::OverlappingUniformStorage {
+                                uniform: entry.binding,
+                                storage: storage.binding,
+                            },
+                        });
+                    }
+                }
+            }
+        }
+        self.record_dispatch(pipeline, workgroups, &views, Some(group))
+    }
+    fn record_dispatch(
+        &mut self,
+        pipeline: &ComputePipeline,
+        workgroups: [u32; 3],
+        bindings: &[StorageBufferBinding<'_>],
+        group: Option<&crate::BindGroup>,
+    ) -> Result<(), ComputeEncodeError> {
         use ComputeEncodeError as E;
+        crate::bindings::check_group(pipeline.binding_layout(), group)
+            .map_err(|source| E::Bindings { source })?;
         if !pipeline.belongs_to(&self.device) {
             return Err(E::ForeignPipeline {
                 label: pipeline.label().to_owned(),
@@ -482,6 +595,7 @@ impl CommandEncoder {
             dimensions,
             invocation_count,
             bindings: retained,
+            bind_group: group.cloned(),
         }));
         Ok(())
     }
@@ -527,6 +641,20 @@ pub(crate) fn execute(dispatch: &ComputeDispatch) -> Result<(), ComputeExecution
         return Ok(());
     }
     let pipeline = &dispatch.pipeline;
+    let uniforms = if let Some(group) = dispatch.bind_group() {
+        group
+            .snapshot_uniforms(pipeline.shader().required_uniforms())
+            .map_err(|error| match error {
+                crate::bindings::SnapshotError::Allocation => {
+                    ComputeExecutionError::AllocationFailed
+                }
+                crate::bindings::SnapshotError::Poison { binding, label } => {
+                    ComputeExecutionError::StoragePoisoned { binding, label }
+                }
+            })?
+    } else {
+        Vec::new()
+    };
     // At most eight unique allocations; fixed arrays avoid allocation for locks.
     let mut buffers: [Option<&ComputeBufferBinding>; 8] = [None; 8];
     let mut slot_indices = [0_usize; 8];
@@ -580,7 +708,7 @@ pub(crate) fn execute(dispatch: &ComputeDispatch) -> Result<(), ComputeExecution
         let mut outputs = [[0.0; 4]; 8];
         pipeline
             .shader()
-            .evaluate_with_resources(
+            .evaluate_bound(
                 &inputs,
                 &mut outputs,
                 |binding, _| Err(crate::ShaderExecutionError::MissingTextureBinding { binding }),
@@ -603,6 +731,7 @@ pub(crate) fn execute(dispatch: &ComputeDispatch) -> Result<(), ComputeExecution
                         ])
                     }))
                 },
+                |binding, element| crate::bindings::load_uniform(&uniforms, binding, element),
             )
             .map_err(|error| ComputeExecutionError::ShaderFailed {
                 invocation: global,

@@ -145,3 +145,11 @@ analysis. Accepted plans execute under the same gate and atomic operation contra
 Transitions preserve data and establish full execution/write-visibility dependencies;
 the synchronous reference executor already supplies those effects through ordering.
 Local declared roles are rebuilt on every submission; there is no persistent layout.
+
+
+Used uniform parameter views are snapshotted once per nonempty operation under
+the execution gate before storage/vertex locks. Locks are released before other
+sources are acquired, including same-allocation aliases. Snapshot poison or loaded
+nonfinite values retain the same atomic failed-operation/completed-prefix rules.
+Unused slots and zero source operations skip parameter reads. [BINDINGS.md](BINDINGS.md)
+defines the retained, live group contract.

@@ -68,3 +68,14 @@ Implementation: [resources](../crates/expansex-core/src/texture.rs),
 [bindings](../crates/expansex-core/src/render/textures.rs),
 [shader](../crates/expansex-core/src/shader.rs), and
 [renderer](../crates/expansex-core/src/reference/programmable.rs).
+
+
+## Reusable resource interfaces
+
+[BINDINGS.md](BINDINGS.md) adds retained single-group layouts, uniform parameters
+in all shader stages, compute storage views and paired fragment texture/samplers.
+Layout-aware pipelines validate slot/type/visibility/minimum size; programmable
+and indexed draws capture the current compatible group. Legacy pipelines keep
+existing bindings. Used uniform snapshots precede evaluation and other source
+locks; failures preserve existing operation boundaries. Actual parameter reads
+join dependency summaries as UniformRead, with aliases combined conservatively.

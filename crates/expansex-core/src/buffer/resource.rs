@@ -332,6 +332,198 @@ mod tests {
     use crate::Instance;
 
     #[test]
+    fn uniform_poison_preserves_render_compute_outputs_and_skips_empty_sources() {
+        use crate::*;
+        let d = Instance::new().default_adapter().create_device();
+        let parameters = d
+            .create_buffer(BufferDescriptor {
+                label: "parameters",
+                size: 16,
+                usages: &[BufferUsage::Uniform],
+                host_access: HostAccess::ReadWrite,
+            })
+            .unwrap();
+        let state = Arc::downgrade(&parameters.state);
+        let out = d
+            .create_buffer(BufferDescriptor {
+                label: "output",
+                size: 16,
+                usages: &[BufferUsage::Storage],
+                host_access: HostAccess::Read,
+            })
+            .unwrap();
+        let layout = d
+            .create_bind_group_layout(BindGroupLayoutDescriptor {
+                label: "resources",
+                entries: &[
+                    BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderVisibility::All,
+                        ty: BindingType::UniformBuffer { min_size: 16 },
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: ShaderVisibility::Compute,
+                        ty: BindingType::StorageBuffer { read_only: false },
+                    },
+                ],
+            })
+            .unwrap();
+        let group = d
+            .create_bind_group(BindGroupDescriptor {
+                label: "g",
+                layout: &layout,
+                entries: &[
+                    BindGroupEntry {
+                        binding: 0,
+                        resource: BindingResource::UniformBuffer(BufferBinding {
+                            buffer: parameters.clone(),
+                            offset: 0,
+                            size: 16,
+                        }),
+                    },
+                    BindGroupEntry {
+                        binding: 1,
+                        resource: BindingResource::StorageBuffer(BufferBinding {
+                            buffer: out.clone(),
+                            offset: 0,
+                            size: 16,
+                        }),
+                    },
+                ],
+            })
+            .unwrap();
+        let make_shader = |stage, input_count, op| {
+            d.create_shader(ShaderDescriptor {
+                label: "s",
+                stage,
+                input_count,
+                instructions: &[op],
+                outputs: &[0],
+            })
+            .unwrap()
+        };
+        let kernel = make_shader(
+            ShaderStage::Compute,
+            4,
+            ShaderInstruction::LoadUniform {
+                binding: 0,
+                element: 0,
+            },
+        );
+        let compute = d
+            .create_compute_pipeline_with_bindings(
+                ComputePipelineDescriptor {
+                    label: "c",
+                    shader: &kernel,
+                    workgroup_size: [1; 3],
+                    output_bindings: &[1],
+                },
+                &layout,
+            )
+            .unwrap();
+        let vertex = make_shader(
+            ShaderStage::Vertex,
+            0,
+            ShaderInstruction::Constant([0., 0., 0., 1.]),
+        );
+        let fragment = make_shader(
+            ShaderStage::Fragment,
+            0,
+            ShaderInstruction::LoadUniform {
+                binding: 0,
+                element: 0,
+            },
+        );
+        let graphics = d
+            .create_graphics_pipeline_with_bindings(
+                GraphicsPipelineDescriptor {
+                    label: "g",
+                    vertex_shader: &vertex,
+                    fragment_shader: &fragment,
+                    vertex_layout: VertexBufferLayout {
+                        stride: 4,
+                        attributes: &[],
+                    },
+                    colour_format: FramebufferFormat::Rgba8Unorm,
+                },
+                GraphicsPipelineOptions::default(),
+                None,
+                &layout,
+            )
+            .unwrap();
+        let vertices = d
+            .create_buffer(BufferDescriptor {
+                label: "v",
+                size: 12,
+                usages: &[BufferUsage::Vertex],
+                host_access: HostAccess::None,
+            })
+            .unwrap();
+        let target = d
+            .create_framebuffer(FramebufferDescriptor {
+                label: "t",
+                width: 1,
+                height: 1,
+                format: FramebufferFormat::Rgba8Unorm,
+            })
+            .unwrap();
+        poison(&parameters);
+        let mut retained = Vec::new();
+        for count in [3, 0] {
+            let mut e = d.create_command_encoder();
+            let mut pass = e.begin_render_pass(&target, Some([7; 4])).unwrap();
+            pass.set_pipeline(&graphics).unwrap();
+            pass.set_vertex_buffer(&vertices, 0).unwrap();
+            pass.set_bind_group(&group).unwrap();
+            pass.draw_programmable(0..count).unwrap();
+            pass.finish().unwrap();
+            let commands = e.finish();
+            commands.resource_uses().unwrap();
+            if count == 3 {
+                assert!(matches!(
+                    d.default_queue().submit(&commands),
+                    Err(QueueSubmitError::RenderFailed {
+                        source: RenderExecutionError::UniformStoragePoisoned { binding: 0, .. },
+                        ..
+                    })
+                ));
+                assert_eq!(target.pixel(0, 0).unwrap(), [0; 4]);
+            } else {
+                d.default_queue().submit(&commands).unwrap();
+                assert_eq!(target.pixel(0, 0).unwrap(), [7; 4]);
+            }
+            retained.push(commands);
+        }
+        for count in [1, 0] {
+            let mut e = d.create_command_encoder();
+            e.dispatch_with_bind_group(&compute, [count, 1, 1], &group)
+                .unwrap();
+            let commands = e.finish();
+            if count == 1 {
+                assert!(matches!(
+                    d.default_queue().submit(&commands),
+                    Err(QueueSubmitError::ComputeFailed {
+                        source: ComputeExecutionError::StoragePoisoned { binding: 0, .. },
+                        ..
+                    })
+                ));
+            } else {
+                d.default_queue().submit(&commands).unwrap();
+            }
+            let mut bytes = [9; 16];
+            out.read(0, &mut bytes).unwrap();
+            assert_eq!(bytes, [0; 16]);
+            retained.push(commands);
+        }
+        drop(parameters);
+        drop(group);
+        assert!(state.upgrade().is_some());
+        drop(retained);
+        assert!(state.upgrade().is_none());
+    }
+
+    #[test]
     fn transition_commands_retain_storage_until_finished_work_drops() {
         let b = buffer();
         let state = Arc::downgrade(&b.state);

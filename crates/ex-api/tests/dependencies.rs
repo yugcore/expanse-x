@@ -145,6 +145,7 @@ fn buffer_roles_require_creation_permissions() {
         A::TransferReadWrite,
         A::VertexRead,
         A::IndexRead,
+        A::UniformRead,
         A::StorageRead,
         A::StorageWrite,
         A::StorageReadWrite,
@@ -156,6 +157,7 @@ fn buffer_roles_require_creation_permissions() {
         BufferUsage::Vertex,
         BufferUsage::Index,
         BufferUsage::Storage,
+        BufferUsage::Uniform,
     ] {
         let b = d
             .create_buffer(BufferDescriptor {
@@ -172,6 +174,7 @@ fn buffer_roles_require_creation_permissions() {
                 A::TransferReadWrite => false,
                 A::VertexRead => usage == BufferUsage::Vertex,
                 A::IndexRead => usage == BufferUsage::Index,
+                A::UniformRead => usage == BufferUsage::Uniform,
                 A::StorageRead | A::StorageWrite | A::StorageReadWrite => {
                     usage == BufferUsage::Storage
                 }

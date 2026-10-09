@@ -64,8 +64,8 @@ Vulkan shader ingestion, hardware conformance, or a parallel execution promise.
 Execution is sequential CPU reference execution. Local groups currently provide
 identity, not cooperating threads. No performance or hardware parallelism claim
 follows from dispatch counts. Integer/control-flow IR, arbitrary storage access,
-storage images, push constants, asynchronous queues, and explicit transitions
-need separate contracts. Current ordered synchronous commands already make a
+storage images, push constants and asynchronous queues need separate contracts.
+Explicit whole-resource dependencies now work under [DEPENDENCIES.md](DEPENDENCIES.md). Current ordered synchronous commands already make a
 compute output visible to a following draw; future hardware dependency APIs must
 preserve this defined behavior.
 
@@ -75,7 +75,7 @@ recording, and execution through the shared [shader interpreter](../crates/expan
 tests, and executable compute documentation verify stage/grid/view validation,
 all built-in IDs, eight output slots, limits/empty dispatch, aliasing, in-place
 updates, ordering, live reuse, retention, device-only storage, complete rollback,
-and compute-to-graphics visibility. All 192 workspace tests and project checks pass.
+and compute-to-graphics visibility. The compute checkpoint passed 192 workspace tests and project checks.
 
 The [tile example](../crates/ex-api/examples/compute_tiles.rs) runs 288 invocations
 in 48 groups and draws 48 generated squares in the same submission. It checks
@@ -85,3 +85,15 @@ float32 geometry, and coverage calculations match all 196,608 pixels, including
 `target/phase4-compute-tiles.png`. Reservation failures are reported but tests
 never deliberately exhaust memory. Handles/message allocations retain normal
 Rust OOM behavior; comprehensive allocation recovery is not claimed.
+
+
+## Reusable groups and uniforms
+
+Layout-aware creation validates compute loads and output slots against a retained
+BindGroupLayout. dispatch_with_bind_group uses group storage views and the existing
+bounds/alias/atomic staging rules. Legacy dispatch needs a legacy pipeline.
+Used uniform views are snapshotted under the gate before storage locks; snapshots
+release locks before evaluation to support aliases safely. Uniform views overlapping
+writable storage are rejected; disjoint and read-only aliases are supported.
+Uniform poison maps to StoragePoisoned with its slot/label. Zero operations and
+unused parameters skip reads. See [BINDINGS.md](BINDINGS.md) for the complete contract.

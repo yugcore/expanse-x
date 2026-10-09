@@ -127,6 +127,7 @@ impl RenderPass<'_> {
                 buffer_size: buffer.size(),
             });
         }
+        let bind_group = self.draw_bind_group(Some(pipeline))?;
         let textures = self.draw_resources(Some(pipeline))?;
         self.commands
             .draws
@@ -139,6 +140,7 @@ impl RenderPass<'_> {
             colour: [0; 4],
             pipeline: Some(pipeline.clone()),
             textures,
+            bind_group,
             indexed: Some(IndexedTriangles {
                 buffer: buffer.clone(),
                 offset: *offset,

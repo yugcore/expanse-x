@@ -19,6 +19,7 @@ struct SampledTexture {
 
 pub(super) struct PreparedDraw {
     textures: Vec<Option<SampledTexture>>,
+    uniforms: crate::bindings::Uniforms,
     vertices: Vec<Vertex>,
     pipeline: GraphicsPipeline,
 }
@@ -34,6 +35,23 @@ pub(super) fn prepare(
             let indices = indexed.indices();
             (indices.end - indices.start) as usize
         });
+    let uniforms = if let Some(group) = draw.bind_group().filter(|_| count != 0) {
+        group
+            .snapshot_uniforms(
+                pipeline.vertex_shader().required_uniforms()
+                    | pipeline.fragment_shader().required_uniforms(),
+            )
+            .map_err(|e| match e {
+                crate::bindings::SnapshotError::Allocation => {
+                    RenderExecutionError::AllocationFailed
+                }
+                crate::bindings::SnapshotError::Poison { binding, label } => {
+                    RenderExecutionError::UniformStoragePoisoned { binding, label }
+                }
+            })?
+    } else {
+        Vec::new()
+    };
     let mut textures = Vec::new();
     if count != 0 && pipeline.fragment_shader().required_textures() != 0 {
         textures
@@ -110,6 +128,7 @@ pub(super) fn prepare(
                             &bytes[start..start + stride as usize],
                             pipeline,
                             vertex_index,
+                            &uniforms,
                         )?);
                     }
                     Ok(())
@@ -126,7 +145,7 @@ pub(super) fn prepare(
             .with_bytes(start..end, |bytes| {
                 for (index, record) in bytes.chunks_exact(stride as usize).enumerate() {
                     let vertex_index = range.start + index as u32;
-                    vertices.push(decode_vertex(record, pipeline, vertex_index)?);
+                    vertices.push(decode_vertex(record, pipeline, vertex_index, &uniforms)?);
                 }
                 Ok(())
             })
@@ -136,6 +155,7 @@ pub(super) fn prepare(
     }
     Ok(PreparedDraw {
         textures,
+        uniforms,
         vertices,
         pipeline: pipeline.clone(),
     })
@@ -145,6 +165,7 @@ fn decode_vertex(
     record: &[u8],
     pipeline: &GraphicsPipeline,
     vertex_index: u32,
+    uniforms: &crate::bindings::Uniforms,
 ) -> Result<Vertex, RenderExecutionError> {
     let mut inputs = [[0.0; 4]; 16];
     for attribute in pipeline.vertex_attributes() {
@@ -163,6 +184,7 @@ fn decode_vertex(
         &inputs[..pipeline.vertex_shader().input_count() as usize],
         &mut outputs,
         None,
+        uniforms,
     )?;
     if outputs[0][3] <= 0.0 {
         return Err(RenderExecutionError::InvalidClipW { vertex_index });
@@ -187,21 +209,31 @@ fn shade(
     inputs: &[[f32; 4]],
     outputs: &mut [[f32; 4]],
     textures: Option<&[Option<SampledTexture>]>,
+    uniforms: &crate::bindings::Uniforms,
 ) -> Result<(), RenderExecutionError> {
     shader
-        .evaluate_with_sampler(inputs, outputs, |binding, uv| {
-            let source = textures
-                .and_then(|t| t[binding as usize].as_ref())
-                .ok_or(ShaderExecutionError::MissingTextureBinding { binding })?;
-            Ok(crate::texture::sample(
-                source.width,
-                source.height,
-                &source.sampler,
-                uv,
-                |x, y| source.pixels[y as usize * source.width as usize + x as usize],
-            ))
-        })
+        .evaluate_bound(
+            inputs,
+            outputs,
+            |binding, uv| {
+                let source = textures
+                    .and_then(|t| t[binding as usize].as_ref())
+                    .ok_or(ShaderExecutionError::MissingTextureBinding { binding })?;
+                Ok(crate::texture::sample(
+                    source.width,
+                    source.height,
+                    &source.sampler,
+                    uv,
+                    |x, y| source.pixels[y as usize * source.width as usize + x as usize],
+                ))
+            },
+            |binding| Err(ShaderExecutionError::MissingStorageBinding { binding }),
+            |binding, element| crate::bindings::load_uniform(uniforms, binding, element),
+        )
         .map_err(|error| match error {
+            ShaderExecutionError::MissingUniformBinding { binding, element } => {
+                RenderExecutionError::MissingUniformBinding { binding, element }
+            }
             ShaderExecutionError::MissingStorageBinding { binding } => {
                 RenderExecutionError::UnexpectedStorageBinding { binding }
             }
@@ -282,7 +314,13 @@ pub(super) fn render(
         height,
     };
     for &triangle in draw.vertices.as_chunks::<3>().0 {
-        clipped_triangle(&mut target, triangle, &draw.pipeline, &draw.textures)?;
+        clipped_triangle(
+            &mut target,
+            triangle,
+            &draw.pipeline,
+            &draw.textures,
+            &draw.uniforms,
+        )?;
     }
     Ok(())
 }
@@ -292,6 +330,7 @@ fn clipped_triangle(
     triangle: [Vertex; 3],
     pipeline: &GraphicsPipeline,
     textures: &[Option<SampledTexture>],
+    uniforms: &crate::bindings::Uniforms,
 ) -> Result<(), RenderExecutionError> {
     // Six planes can add at most six vertices to a clipped convex triangle.
     let mut polygon = [Vertex::default(); 12];
@@ -354,6 +393,7 @@ fn clipped_triangle(
             [polygon[0], polygon[index], polygon[index + 1]],
             pipeline,
             textures,
+            uniforms,
         )?;
     }
     Ok(())
@@ -364,6 +404,7 @@ fn rasterize(
     mut triangle: [Vertex; 3],
     pipeline: &GraphicsPipeline,
     textures: &[Option<SampledTexture>],
+    uniforms: &crate::bindings::Uniforms,
 ) -> Result<(), RenderExecutionError> {
     let (width, height) = (target.width, target.height);
     let screen = |vertex: Vertex| {
@@ -472,6 +513,7 @@ fn rasterize(
                 &inputs[..varying_count],
                 &mut output,
                 Some(textures),
+                uniforms,
             )?;
             if let Some((state, face)) = stencil {
                 target.update_stencil(state, face.pass_op, pixel_index)?;

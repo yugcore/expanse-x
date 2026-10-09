@@ -24,7 +24,7 @@ stage masks, GPU cache operations, or physical image layouts.
   Identity is allocation identity, never label equality. All transition resources
   must belong to the encoder's device. Samplers/pipelines are immutable metadata
   and need no mutable-memory transition.
-- `ResourceAccess` declares TransferRead/Write/ReadWrite, VertexRead, IndexRead,
+- `ResourceAccess` declares TransferRead/Write/ReadWrite, VertexRead, IndexRead, UniformRead,
   StorageRead/Write/ReadWrite, BufferRead, SampledRead, ColourReadWrite,
   DepthReadWrite, or StencilReadWrite. BufferRead covers supported read-only buffer
   roles. StorageReadWrite covers storage reads/writes; TransferReadWrite covers
@@ -88,7 +88,8 @@ The explicit path proves the supported dependency contract under EX's reference
 execution; it does not prove a future device driver or shader's arbitrary access.
 
 Range/stage/subresource precision and richer memory models require separate
-contracts. Shader/resource interfaces remain the next Core Preview gate. The SDK
+contracts. Shader/resource interfaces now work under [BINDINGS.md](BINDINGS.md);
+texture/resource flows are the next Core Preview gate. The SDK
 is deferred until core completion.
 
 ## Verification
@@ -98,7 +99,7 @@ poison/retention tests and an executable transfer example verify mode compatibil
 batch atomicity, role permissions, allocation identity, all hazard classes, before
 state, read/read reuse, disjoint alias conservatism, no-op sources, compute slots,
 render attachments, index/vertex aliases, sampled textures, and error boundaries.
-All 209 workspace tests and the formatting/build/lint/documentation checks pass.
+The dependency checkpoint passed 209 workspace tests and all project checks.
 
 The [explicit dependency example](../crates/ex-api/examples/explicit_dependencies.rs)
 records four transition commands around copy, compute, render and readback. Its
@@ -107,3 +108,11 @@ seven actual uses cover four allocations; it verifies 288 generated vertices and
 196,608 pixels, including 101,568 cyan pixels. The image was visually inspected.
 Console printing belongs to this example; validation APIs return structured errors
 and do not print automatically.
+
+
+Uniform parameter reads from layout-aware groups are summarized only for used
+slots/nonempty operations. BufferRead accepts UniformRead. Read-only alias families
+combine as BufferRead; a compute storage writer sharing disjoint allocation regions
+with uniform reads conservatively combines as StorageReadWrite. CPU copies into
+parameters require a transition to UniformRead before consumption. Uniform usage
+and pipeline/group checks remain independent of transitions.

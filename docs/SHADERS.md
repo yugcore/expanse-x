@@ -21,9 +21,10 @@ not a new shader language or a full compiler.
 - Instructions are Input, Constant, componentwise Add and Multiply, Dot4
   (four-component dot product broadcast into all lanes), Swizzle, and fragment
   SampleTexture { binding, coordinates } (XY of a prior register), and compute
-  LoadStorage { binding } (current global linear float4 element).
+  LoadStorage { binding } (current global linear float4 element), and all-stage
+  LoadUniform { binding, element } (a static float4 relative to a bound parameter view).
 - Operands must reference earlier results. There are no explicit store instructions, branches, loops,
-  arbitrary buffer indexing, uniforms, or arbitrary Rust callbacks. Compute outputs
+  arbitrary buffer indexing or arbitrary Rust callbacks. Compute outputs
   write storage and four built-in vectors identify invocation/workgroup grids. Texture
   sampling supports eight paired slots, normalized view-local coordinates, and
   nearest/bilinear clamp/repeat; no derivatives or LOD exists.
@@ -113,3 +114,15 @@ A possible route is HLSL/GLSL -> SPIR-V -> validated EX IR -> EX execution.
 importer and supported subset are future work, not current language support.
 EX's current vector instructions need to grow before general shader import is
 possible. This decision preserves EX's ownership of rendering and execution.
+
+
+## Parameter interface
+
+LoadUniform accepts slot 0..8 and element 0..256. Layout-aware pipeline creation
+checks declared type, stage visibility and minimum size covering every uniform
+instruction. Standalone evaluate has no bindings and reports MissingUniformBinding.
+Bound execution reads snapshots of used views under the device gate; loaded values
+pass the same finite-result checks as arithmetic. Unloaded elements can contain
+arbitrary bytes. [BINDINGS.md](BINDINGS.md) defines reusable layout/group behavior.
+This is the supported EX IR profile; no external shader language/format importer
+or complete SPIR-V interpreter is claimed.

@@ -399,7 +399,7 @@ Twelve public compute tests, two internal poison/lifetime tests, and executable
 compute documentation verify grids, views, finite arithmetic, validation, retention,
 ordering, reuse, aliasing, zero/limit cases, output rollback, and generated vertices.
 Independent pixel calculations verify the compute tile example.
-The workspace runs 192 tests, including documentation tests.
+The workspace runs 209 tests, including documentation tests.
 Tests do not induce allocator OOM by exhausting host memory.
 
 ## Next contract
@@ -413,6 +413,20 @@ EX and produce observable bytes/pixels. Shader representation, stage interfaces,
 and programmable execution now work through pipeline validation, vertex layouts,
 interpolation, and indexed drawing. Sampled textures, views, samplers, and eight
 fragment resource slots, depth/stencil tests, blending, and compute pipelines/dispatch
-also work. Explicit resource transitions and execution/memory dependencies are next;
+also work. Explicit whole-resource transitions and dependencies now work under
+[DEPENDENCIES.md](DEPENDENCIES.md). Shader/resource interfaces and parameter buffers are next;
 language/format import remains future work.
 There is no implemented execution-backend ABI yet.
+
+## Explicit synchronization contract
+
+Existing encoders use Ordered semantics; opt-in Explicit mode preserves synchronous
+completion while requiring local declarations and barriers for cross-command
+read/write conflicts. Resource roles and immutable transition commands are exposed
+through `ex`; finished work exposes actual resource-use summaries and validation.
+Queue submission rejects the entire invalid plan before execution, retaining a
+DependencyValidationError in QueueSubmitError::DependencyFailed. Runtime failures
+keep their existing completed-prefix and atomic failed-operation boundaries.
+See [DEPENDENCIES.md](DEPENDENCIES.md) for supported roles, validation precedence,
+whole-allocation conservatism, reuse, and limits. This does not add physical image
+layouts, asynchronous queues, range/stage precision, or managed planning.

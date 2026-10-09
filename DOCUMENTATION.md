@@ -304,9 +304,9 @@ arrays, expose invocation/workgroup IDs, and generate vertices for subsequent
 drawing with atomic output commits. Established shader
 languages/toolchains are the accepted future ingestion direction; a custom EX
 source language is deferred. Current examples use EX instructions directly.
-Managed planning, general
-execution hazard validation, EX Witness, EX Proof, and hardware drivers remain
-planned, as defined by the roadmap, [submission contract](docs/SUBMISSION.md),
+Explicit whole-resource declarations, access transitions, and checked execution/visibility
+dependencies now work under [DEPENDENCIES.md](docs/DEPENDENCIES.md). Managed planning,
+finer dependency precision, EX Witness, EX Proof, and hardware drivers remain planned, as defined by the roadmap, [submission contract](docs/SUBMISSION.md),
 and [rendering contract](docs/RENDERING.md).
 
 ## Design commitments

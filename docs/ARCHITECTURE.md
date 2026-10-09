@@ -112,7 +112,8 @@ device-side usages. CPU upload/readback copy bytes through a private storage
 mutex after full-range checks. Buffer clones retain one allocation. No public
 mutable slice is exposed. Whole submissions and CPU copies serialize per device;
 this does not define future asynchronous GPU visibility. Heaps, device-local placement,
-mapping, residency, alignment rules, and resource transitions remain deferred.
+mapping, residency, and richer alignment rules remain deferred. Whole-resource
+transitions now work under [DEPENDENCIES.md](DEPENDENCIES.md).
 
 ## Synchronization and lifetime
 
@@ -128,7 +129,7 @@ Recorded work retains its resources, and the synchronous borrow preserves them
 through completion. Cross-device work and overlapping copy ranges are checked.
 Ordered chains observe earlier copy writes; general execution dependencies remain future work.
 Multiple queues,
-barriers, semaphores, and richer timelines remain future decisions, not claimed
+GPU stage/range barriers, semaphores, and richer timelines remain future decisions, not claimed
 features. The synchronous contract already covers render scopes and framebuffer
 readback; it does not establish asynchronous hardware synchronization.
 
@@ -206,3 +207,17 @@ Implement one piece, exercise it through the public API, test its failure cases,
 review the diff, and commit a coherent change. The triangle milestone is complete
 only when the EX public API records/submits work and EX's own software pipeline
 produces an image. The Phase 0 example does not meet that criterion.
+
+
+## Dependency boundary
+
+[dependency.rs](../crates/expansex-core/src/dependency.rs) owns retained allocation
+identities, access summaries, and local explicit-plan validation. Encoder recording
+checks structural permissions; finished validation checks declarations, role state,
+and cross-command hazards without storage access. Queue submission performs this
+preflight before acquiring the execution gate. Invalid plans execute nothing;
+accepted plans keep existing per-operation failure boundaries. New command variants
+must define their actual resource uses here as well as their execution semantics.
+The reference executor satisfies full barriers through ordered execution and the
+device gate. Later targets must fulfill the same execution and visibility contract.
+This is not a hardware cache/layout or asynchronous backend implementation.

@@ -6,11 +6,14 @@
 //! copies and fixed/programmed triangles synchronously on the CPU. Owned shaders,
 //! pipelines, layouts, perspective interpolation, sampled textures, depth tests,
 //! colour blending, stencil tests/updates, and storage-buffer compute dispatch work.
+//! Ordered encoders preserve synchronous visibility; Explicit encoders declare
+//! whole-resource roles and dependencies validated before submission.
 //! Prototype labels remain.
 
 mod buffer;
 mod command;
 mod compute;
+mod dependency;
 mod depth;
 mod framebuffer;
 mod object;
@@ -73,4 +76,9 @@ pub use stencil::{
 pub use compute::{
     ComputeBufferBinding, ComputeDispatch, ComputeEncodeError, ComputeExecutionError,
     ComputePipeline, ComputePipelineCreateError, ComputePipelineDescriptor, StorageBufferBinding,
+};
+
+pub use dependency::{
+    DependencyEncodeError, DependencyValidationError, HazardKind, Resource, ResourceAccess,
+    ResourceKind, ResourceTransition, ResourceTransitions, ResourceUse, SynchronizationMode,
 };

@@ -24,9 +24,10 @@ establish their final scheduling API or force future hardware to execute on the 
 
 1. Reject a command buffer from another logical device, even if empty. This changes
    no bytes. Devices on the same adapter are still distinct.
-2. Acquire the device's shared execution gate.
-3. Execute commands in order, reading source contents at each operation.
-4. Return `Ok(())` after every operation has finished. Subsequent permitted CPU reads
+2. Validate the entire Explicit dependency plan; a failure executes nothing.
+3. Acquire the device's shared execution gate.
+4. Execute commands in order, reading source contents at each operation.
+5. Return `Ok(())` after every operation has finished. Subsequent permitted CPU reads
    observe the results unless another ordered operation changes them first.
 
 Only the encoder can construct copies; devices, usages, ranges, and overlap were
@@ -41,6 +42,8 @@ Zero-byte copies execute as no-ops without locking storage, even if it is poison
 `std::error::Error`:
 
 - `ForeignCommandBuffer`: finished work belongs to another device; nothing executed.
+- `DependencyFailed { source: DependencyValidationError }`: full preflight failed;
+  no command executed. Exposes its underlying Error::source.
 - `StoragePoisoned { command_index: usize, role: CopyBufferRole, label: String }`:
   a nonempty copy could not trust its source/destination storage. The index is
   zero-based. Earlier commands completed; the failing copy changes no destination
@@ -127,5 +130,18 @@ images together, or preserves all on failure. Stencil fail/depth-fail updates ar
 part of that same scope boundary. Clears/empty scopes still check stencil poison.
 See [STENCIL.md](STENCIL.md). No GPU driver,
 asynchronous job, multiple queues, fence, semaphore,
-barrier, timeline, cancellation, or execution-backend ABI is implemented here.
+timeline, cancellation, or execution-backend ABI is implemented here. Explicit
+whole-resource barriers are supported under [DEPENDENCIES.md](DEPENDENCIES.md).
 Completion covers the submitted command buffer, not future calls from other threads.
+
+
+## Explicit preflight
+
+Before the device gate, submit rejects foreign work and validates any Explicit plan
+in full. DependencyFailed retains its validation source and changes no submitted
+resources, including operations before the invalid use. Metadata analysis does not
+read resource bytes, check poison, or execute shaders. Ordered mode skips this
+analysis. Accepted plans execute under the same gate and atomic operation contracts.
+Transitions preserve data and establish full execution/write-visibility dependencies;
+the synchronous reference executor already supplies those effects through ordering.
+Local declared roles are rebuilt on every submission; there is no persistent layout.

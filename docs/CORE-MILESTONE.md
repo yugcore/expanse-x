@@ -24,11 +24,11 @@ all engine features, or permanent API stability.
 | Gate | Required evidence | Current status |
 | --- | --- | --- |
 | Resource and pipeline execution | Owned storage, programmable graphics, compute, and validation execute through `ex` with documented limits and failure rules | Working under current contracts; richer resources below remain pending |
-| Resource uses and dependencies | Explicit read/write access and transition/dependency rules for supported copies, compute, and rendering; invalid use is rejected with meaningful context | Next implementation step; current submission is synchronous and ordered |
+| Resource uses and dependencies | Explicit read/write access and transition/dependency rules for supported copies, compute, and rendering; invalid use is rejected with meaningful context | Working under [DEPENDENCIES.md](DEPENDENCIES.md): whole-resource roles, full explicit dependencies, preflight errors, and copy/compute/render evidence; range/stage/async precision deferred |
 | Shader/resource interfaces | A defined supported shader profile plus reusable binding/layout and parameter-buffer contracts for supported graphics/compute workloads | Partial: small EX vector IR, texture slots, and per-element compute storage; general layouts/parameters pending |
 | Resource flow across passes | Supported upload/transfer and render-to-texture paths sufficient for a small compute/render/readback workload, with documented formats and ownership | Partial: byte copies, CPU texture upload, standalone attachments, and compute-to-draw work; texture transfers and render-to-texture pending |
 | Execution and backend boundary | Defined ownership/completion/error obligations, an implementation boundary, and reusable tests for a target implementing the supported profile | Partial: synchronous queue/device gate and failure contracts work; backend boundary/profile tests pending |
-| Completion proof | One maintained public workload exercises the supported profile; required checks pass; API catalog, contracts and capability limits agree | Partial: individual examples and 192 passing tests exist; final integrated gate remains pending |
+| Completion proof | One maintained public workload exercises the supported profile; required checks pass; API catalog, contracts and capability limits agree | Partial: individual examples and 209 passing tests exist; final integrated gate remains pending |
 
 Choose each gate's concrete subset through its workload and topic contract before
 implementation. Unsupported shader operations and capabilities must be reported

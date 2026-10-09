@@ -29,7 +29,7 @@ control clip positions; fragment shaders control stored pixel colours. Indexed
 drawing shares vertex records using u16/u32 indices and a signed base vertex.
 RGBA8 textures, rectangular views, nearest/bilinear samplers, and fragment texture
 bindings, depth/stencil attachments/tests, and colour blending now work. Phase 4 is in
-progress; hardware drivers remain deferred.
+progress; [explicit whole-resource dependencies](docs/DEPENDENCIES.md) now work. Hardware drivers remain deferred.
 
 ```text
 cargo run -p ex-api --example software_triangle --locked --offline
@@ -167,10 +167,9 @@ owned resources, copies, fixed-function drawing, and synchronous readback now wo
 Phase 3 completes programmable pipelines, layouts, interpolation, and indexed
 drawing. Phase 4 now has sampled textures, views, samplers, and eight fragment
 resource slots, depth/stencil attachments/tests, blending, and compute pipelines/dispatch.
-The workspace passes 192 tests, including documentation tests.
+The workspace passes 209 tests, including documentation tests.
 The immediate target is [core completion](docs/CORE-MILESTONE.md), followed by the
-SDK; a complete/stable v1 API remains a later goal. Next: explicit resource
-transitions and execution/memory dependencies. The core milestone defines a
+SDK; a complete/stable v1 API remains a later goal. Next: reusable shader/resource interfaces and parameter buffers. The core milestone defines a
 bounded supported reference profile and its completion gates. Other modern GPU
 features and hardware drivers follow demonstrated workloads, one capability at a time.
 
@@ -184,3 +183,16 @@ The [shader contract](docs/SHADERS.md) describes the working interpreter and its
 The [pipeline contract](docs/PIPELINES.md) describes programmable execution.
 See [coding conventions](docs/CONTRIBUTING.md)
 for implementation and commit policy.
+
+## Explicit dependency example
+
+```powershell
+cargo run -p ex-api --example explicit_dependencies --locked --offline
+```
+
+This workload declares access roles, transitions copy output into compute storage,
+then into vertex reads and transfer readback. It inspects seven actual resource uses,
+validates the plan before execution, and verifies generated geometry and pixels.
+Output: `target/phase4-explicit-dependencies.png`. Existing encoders default to Ordered;
+use `create_command_encoder_with_synchronization(SynchronizationMode::Explicit)`
+for checked declarations/barriers. See [the dependency contract](docs/DEPENDENCIES.md).

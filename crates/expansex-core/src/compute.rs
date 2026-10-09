@@ -204,10 +204,13 @@ impl ComputePipeline {
     pub fn is_same(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.state, &other.state)
     }
-    fn writes(&self, binding: u32) -> bool {
+    pub(crate) fn reads(&self, binding: u32) -> bool {
+        self.state.reads & (1 << binding) != 0
+    }
+    pub(crate) fn writes(&self, binding: u32) -> bool {
         self.output_bindings().contains(&binding)
     }
-    fn uses(&self, binding: u32) -> bool {
+    pub(crate) fn uses(&self, binding: u32) -> bool {
         self.state.reads & (1 << binding) != 0 || self.writes(binding)
     }
 }

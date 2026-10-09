@@ -331,6 +331,76 @@ mod tests {
     use super::*;
     use crate::Instance;
 
+    #[test]
+    fn transition_commands_retain_storage_until_finished_work_drops() {
+        let b = buffer();
+        let state = Arc::downgrade(&b.state);
+        let mut e = b
+            .device()
+            .create_command_encoder_with_synchronization(crate::SynchronizationMode::Explicit);
+        e.transition_resources(&[crate::ResourceTransition {
+            resource: crate::Resource::Buffer(b.clone()),
+            before: None,
+            after: crate::ResourceAccess::StorageRead,
+        }])
+        .unwrap();
+        drop(b);
+        let commands = e.finish();
+        commands.validate_dependencies().unwrap();
+        assert!(state.upgrade().is_some());
+        drop(commands);
+        assert!(state.upgrade().is_none());
+    }
+
+    #[test]
+    fn dependency_analysis_skips_poison_and_precedes_all_execution() {
+        let d = Instance::new().default_adapter().create_device();
+        let a = transfer(&d, "source");
+        let bad = transfer(&d, "poisoned");
+        let out = transfer(&d, "out");
+        a.write(0, &[1; 4]).unwrap();
+        poison(&bad);
+        let mut e =
+            d.create_command_encoder_with_synchronization(crate::SynchronizationMode::Explicit);
+        e.copy_buffer(&a, 0, &out, 0, 4).unwrap();
+        e.copy_buffer(&bad, 0, &out, 0, 4).unwrap();
+        let commands = e.finish();
+        assert_eq!(commands.resource_uses().unwrap().len(), 4);
+        assert!(matches!(
+            d.default_queue().submit(&commands),
+            Err(crate::QueueSubmitError::DependencyFailed { .. })
+        ));
+        let mut bytes = [9; 4];
+        out.read(0, &mut bytes).unwrap();
+        assert_eq!(bytes, [0; 4]);
+        let mut e =
+            d.create_command_encoder_with_synchronization(crate::SynchronizationMode::Explicit);
+        e.transition_resources(&[
+            crate::ResourceTransition {
+                resource: crate::Resource::Buffer(bad.clone()),
+                before: None,
+                after: crate::ResourceAccess::TransferRead,
+            },
+            crate::ResourceTransition {
+                resource: crate::Resource::Buffer(out.clone()),
+                before: None,
+                after: crate::ResourceAccess::TransferWrite,
+            },
+        ])
+        .unwrap();
+        e.copy_buffer(&bad, 0, &out, 0, 4).unwrap();
+        let commands = e.finish();
+        commands.validate_dependencies().unwrap();
+        assert!(matches!(
+            d.default_queue().submit(&commands),
+            Err(crate::QueueSubmitError::StoragePoisoned { .. })
+        ));
+        let mut e =
+            d.create_command_encoder_with_synchronization(crate::SynchronizationMode::Explicit);
+        e.copy_buffer(&bad, 4, &out, 4, 0).unwrap();
+        d.default_queue().submit(&e.finish()).unwrap();
+    }
+
     fn buffer() -> Buffer {
         Instance::new()
             .default_adapter()

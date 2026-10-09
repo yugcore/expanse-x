@@ -267,3 +267,8 @@ pub use expansex_core::{
     ComputeBufferBinding, ComputeDispatch, ComputeEncodeError, ComputeExecutionError,
     ComputePipeline, ComputePipelineCreateError, ComputePipelineDescriptor, StorageBufferBinding,
 };
+
+pub use expansex_core::{
+    DependencyEncodeError, DependencyValidationError, HazardKind, Resource, ResourceAccess,
+    ResourceKind, ResourceTransition, ResourceTransitions, ResourceUse, SynchronizationMode,
+};

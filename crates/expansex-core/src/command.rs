@@ -93,6 +93,7 @@ impl Error for CommandEncodeError {
 #[non_exhaustive]
 pub enum Command {
     CopyBuffer(BufferCopy),
+    ResourceTransitions(crate::ResourceTransitions),
     Dispatch(crate::ComputeDispatch),
     RenderPass(crate::RenderCommands),
 }
@@ -133,19 +134,36 @@ impl BufferCopy {
 pub struct CommandEncoder {
     pub(crate) device: Device,
     pub(crate) commands: Vec<Command>,
+    synchronization: crate::SynchronizationMode,
 }
 
 impl Device {
     /// Creates an empty encoder in this logical device's ownership domain.
     pub fn create_command_encoder(&self) -> CommandEncoder {
+        self.create_command_encoder_with_synchronization(crate::SynchronizationMode::Ordered)
+    }
+}
+
+impl Device {
+    /// Select ordered execution or checked explicit resource dependencies.
+    pub fn create_command_encoder_with_synchronization(
+        &self,
+        synchronization: crate::SynchronizationMode,
+    ) -> CommandEncoder {
         CommandEncoder {
             device: self.clone(),
             commands: Vec::new(),
+            synchronization,
         }
     }
 }
 
 impl CommandEncoder {
+    /// Immutable synchronization contract for this recorded sequence.
+    pub fn synchronization_mode(&self) -> crate::SynchronizationMode {
+        self.synchronization
+    }
+
     /// Retains the original device, rather than creating another logical device.
     pub fn device(&self) -> Device {
         self.device.clone()
@@ -248,6 +266,7 @@ impl CommandEncoder {
         CommandBuffer {
             device: self.device,
             commands: self.commands,
+            synchronization: self.synchronization,
         }
     }
 }
@@ -278,9 +297,15 @@ fn checked_end(
 pub struct CommandBuffer {
     device: Device,
     commands: Vec<Command>,
+    synchronization: crate::SynchronizationMode,
 }
 
 impl CommandBuffer {
+    /// The recorded synchronization contract; unchanged by reuse.
+    pub fn synchronization_mode(&self) -> crate::SynchronizationMode {
+        self.synchronization
+    }
+
     pub fn device(&self) -> Device {
         self.device.clone()
     }

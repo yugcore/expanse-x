@@ -2,7 +2,7 @@
 
 Updated: 2026-10-09. Scope: every currently exported EX type, inherent method,
 public field, enum variant, and explicit standard trait implementation.
-There are **92 public types and 179 inherent methods**. Phase 3 is complete;
+There are **102 public types and 193 inherent methods**. Phase 3 is complete;
 these remain provisional APIs, not a completed or stable v1 specification.
 The immediate milestone is [core completion](docs/CORE-MILESTONE.md); SDK
 development follows that gate. This catalog describes working APIs, not planned SDK commands.
@@ -28,6 +28,7 @@ currently exported.
 | Discovery and ownership | [Instance](#instance), [Adapter](#adapter), [AdapterInfo](#adapterinfo), [BackendKind](#backendkind), [Device](#device), [Queue](#queue) |
 | Buffers | [BufferDescriptor](#bufferdescriptor), [BufferUsage](#bufferusage), [HostAccess](#hostaccess), [Buffer](#buffer) |
 | Copy recording | [CommandEncoder](#commandencoder), [CommandBuffer](#commandbuffer), [Command](#command), [BufferCopy](#buffercopy), [CopyBufferRole](#copybufferrole) |
+| Dependencies | [SynchronizationMode](#synchronizationmode), [Resource](#resource), [ResourceKind](#resourcekind), [ResourceAccess](#resourceaccess), [ResourceTransition](#resourcetransition), [ResourceTransitions](#resourcetransitions), [ResourceUse](#resourceuse), [HazardKind](#hazardkind), [DependencyEncodeError](#dependencyencodeerror), [DependencyValidationError](#dependencyvalidationerror) |
 | Framebuffers | [Framebuffer](#framebuffer), [FramebufferDescriptor](#framebufferdescriptor), [FramebufferFormat](#framebufferformat) |
 | Rendering | [RenderPass](#renderpass), [RenderCommands](#rendercommands), [DrawTriangles](#drawtriangles), [IndexFormat](#indexformat), [IndexedTriangles](#indexedtriangles) |
 | Textures and sampling | [Texture](#texture), [TextureDescriptor](#texturedescriptor), [TextureFormat](#textureformat), [TextureView](#textureview), [TextureViewDescriptor](#textureviewdescriptor), [Sampler](#sampler), [SamplerDescriptor](#samplerdescriptor), [FilterMode](#filtermode), [AddressMode](#addressmode), [TextureBinding](#texturebinding) |
@@ -114,7 +115,8 @@ implemented across [object.rs](crates/expansex-core/src/object.rs),
 | `Device::default_queue(&self) -> Queue` | Retain the device's one default endpoint; starts no work. |
 | `Device::is_same(&self, other: &Self) -> bool` | Compare logical device identity. |
 | `Device::create_buffer(&self, descriptor: BufferDescriptor<'_>) -> Result<Buffer, BufferCreateError>` | Validate and allocate owned zero-initialized reference storage. |
-| `Device::create_command_encoder(&self) -> CommandEncoder` | Create an empty encoder bound to this device. |
+| `Device::create_command_encoder(&self) -> CommandEncoder` | Create an empty Ordered encoder bound to this device. |
+| `Device::create_command_encoder_with_synchronization(&self, synchronization: SynchronizationMode) -> CommandEncoder` | Select immutable Ordered or Explicit synchronization. |
 | `Device::create_framebuffer(&self, descriptor: FramebufferDescriptor<'_>) -> Result<Framebuffer, FramebufferCreateError>` | Validate extents/format and allocate zeroed RGBA reference pixels. |
 | `Device::create_shader(&self, descriptor: ShaderDescriptor<'_>) -> Result<Shader, ShaderCreateError>` | Validate and own immutable EX instruction source; no pipeline binding or rendering. |
 | `Device::create_compute_pipeline(&self, descriptor: ComputePipelineDescriptor<'_>) -> Result<ComputePipeline, ComputePipelineCreateError>` | Validate compute stage, local size and output slots; retain shader and own metadata. |
@@ -136,7 +138,7 @@ error path. Buffer creation has its documented fallible reservation path.
 
 Successful submission means all submitted operations finished. Concurrent submissions
 and CPU access on the device serialize for the whole operation; concurrent arrival
-order is unspecified. Foreign work changes nothing. Storage failure leaves earlier
+order is unspecified. Foreign work or failed explicit dependency preflight changes nothing anywhere in the submission. Storage failure leaves earlier
 commands completed, changes nothing in the failed copy, and skips later work.
 Expected render failure leaves that scope's target unchanged. See
 [SUBMISSION.md](docs/SUBMISSION.md) and [RENDERING.md](docs/RENDERING.md).
@@ -235,6 +237,8 @@ retains that device. All fields are private.
 | `CommandEncoder::commands(&self) -> &[Command]` | Inspect recorded operations. |
 | `CommandEncoder::copy_buffer(&mut self, source: &Buffer, source_offset: u64, destination: &Buffer, destination_offset: u64, size: u64) -> Result<(), CommandEncodeError>` | Validate and append a retained copy description. |
 | `CommandEncoder::dispatch(&mut self, pipeline: &ComputePipeline, workgroups: [u32; 3], bindings: &[StorageBufferBinding<'_>]) -> Result<(), ComputeEncodeError>` | Validate and retain one compute dispatch; no execution during recording. |
+| `CommandEncoder::synchronization_mode(&self) -> SynchronizationMode` | Inspect the fixed synchronization contract. |
+| `CommandEncoder::transition_resources(&mut self, transitions: &[ResourceTransition]) -> Result<(), DependencyEncodeError>` | Record validated retained dependency points; Explicit only, no execution. |
 | `CommandEncoder::finish(self) -> CommandBuffer` | Consume the encoder and move its work into immutable finished commands. |
 | `CommandEncoder::begin_render_pass(&mut self, target: &Framebuffer, clear: Option<[u8; 4]>) -> Result<RenderPass<'_>, RenderEncodeError>` | Open an exclusive borrowed render recorder; clear/draws change no pixels until submission. |
 
@@ -255,6 +259,9 @@ finish. All fields are private.
 | `CommandBuffer::device(&self) -> Device` | Retain the owning device. |
 | `CommandBuffer::belongs_to(&self, device: &Device) -> bool` | Test device membership. |
 | `CommandBuffer::commands(&self) -> &[Command]` | Inspect immutable finished operations. |
+| `CommandBuffer::synchronization_mode(&self) -> SynchronizationMode` | Inspect the retained mode. |
+| `CommandBuffer::resource_uses(&self) -> Result<Vec<ResourceUse>, DependencyValidationError>` | Inspect combined whole-allocation uses per command without reading bytes. |
+| `CommandBuffer::validate_dependencies(&self) -> Result<(), DependencyValidationError>` | Preflight the entire Explicit plan; Ordered succeeds without analysis. |
 
 There is no public constructor or clone implementation. The command sequence is
 immutable; buffer contents remain live. Resources are retained, not snapshotted.
@@ -266,6 +273,7 @@ immutable; buffer contents remain live. Resources are retained, not snapshotted.
 
 | Variant | Payload |
 | --- | --- |
+| `Command::ResourceTransitions(ResourceTransitions)` | Retained explicit access-role changes and full dependency points. |
 | `Command::CopyBuffer(BufferCopy)` | One validated buffer-copy description. |
 | `Command::Dispatch(ComputeDispatch)` | One validated compute grid with retained pipeline/storage views. |
 | `Command::RenderPass(RenderCommands)` | One finished render scope, retaining target and per-draw vertex/pipeline bindings. |
@@ -696,6 +704,7 @@ Source: [submission.rs](crates/expansex-core/src/submission.rs).
 | Variant and public payload | Meaning |
 | --- | --- |
 | `QueueSubmitError::ForeignCommandBuffer` | Finished work belongs to another device; nothing executed. |
+| `QueueSubmitError::DependencyFailed { source: DependencyValidationError }` | Full explicit preflight failed; no command executed, all submission resources unchanged. Retains source. |
 | `QueueSubmitError::StoragePoisoned { command_index: usize, role: CopyBufferRole, label: String }` | Failed nonempty copy at this zero-based index; earlier copies completed, failed destination unchanged, later work skipped. |
 | `QueueSubmitError::RenderFailed { command_index: usize, source: RenderExecutionError }` | Failed render command; its target unchanged, earlier commands completed, later work skipped. |
 | `QueueSubmitError::ComputeFailed { command_index: usize, source: ComputeExecutionError }` | Failed dispatch preserves all outputs and earlier commands; later commands skipped; source retained. |
@@ -1520,10 +1529,131 @@ bytes, tail bytes remain unchanged. There are no shared-memory/barrier/atomic,
 arbitrary indexing, texture, integer, or branching compute instructions yet.
 
 
+## Resource dependencies
+
+Source: [dependency.rs](crates/expansex-core/src/dependency.rs).
+Contract: [DEPENDENCIES.md](docs/DEPENDENCIES.md). These are whole-resource,
+command-buffer-local roles and full dependencies for synchronous reference work.
+They do not describe physical GPU layouts, stage masks, or cache operations.
+
+### SynchronizationMode
+
+No inherent methods. Variants: `Ordered` (default, fully ordered commands and
+write visibility), `Explicit` (declared accesses and checked hazards).
+
+### ResourceKind
+
+No inherent methods. Variants: `Buffer`, `Texture`, `Framebuffer`, `DepthBuffer`,
+`StencilBuffer`. These identify allocation categories in validation errors.
+
+### Resource
+
+Public variants retain their corresponding handle: `Buffer(Buffer)`,
+`Texture(Texture)`, `Framebuffer(Framebuffer)`, `DepthBuffer(DepthBuffer)`,
+`StencilBuffer(StencilBuffer)`. Labels are descriptive; identity is allocation identity.
+
+| Method | Behavior |
+| --- | --- |
+| `Resource::kind(&self) -> ResourceKind` | Get allocation category. |
+| `Resource::label(&self) -> &str` | Borrow retained label. |
+| `Resource::device(&self) -> Device` | Retain the owning device. |
+| `Resource::belongs_to(&self, device: &Device) -> bool` | Check ownership. |
+| `Resource::is_same(&self, other: &Self) -> bool` | Compare category and allocation identity. |
+
+### ResourceAccess
+
+| Variant | Required resource and use |
+| --- | --- |
+| `TransferRead` | Buffer with TransferSource usage. |
+| `TransferWrite` | Buffer with TransferDestination usage. |
+| `TransferReadWrite` | Buffer with both transfer usages; permits either transfer role. |
+| `VertexRead` | Buffer with Vertex usage. |
+| `IndexRead` | Buffer with Index usage. |
+| `StorageRead` | Buffer with Storage usage, read access. |
+| `StorageWrite` | Buffer with Storage usage, write access. |
+| `StorageReadWrite` | Buffer with Storage usage; permits either storage role. |
+| `BufferRead` | Buffer with at least one supported read usage; permits TransferRead/VertexRead/IndexRead/StorageRead and combined render-source reads. |
+| `SampledRead` | Texture, underlying allocation of sampled views. |
+| `ColourReadWrite` | Framebuffer attachment. |
+| `DepthReadWrite` | DepthBuffer attachment. |
+| `StencilReadWrite` | StencilBuffer attachment. |
+
+| Method | Behavior |
+| --- | --- |
+| `ResourceAccess::is_read(&self) -> bool` | All roles except TransferWrite/StorageWrite. |
+| `ResourceAccess::is_write(&self) -> bool` | TransferWrite/ReadWrite, StorageWrite/ReadWrite and attachment roles. |
+
+Creation permissions and existing operation checks remain enforced. Broader
+read roles cannot grant missing usages. Other declared/required roles match exactly.
+
+### ResourceTransition
+
+No inherent methods. Public fields: `resource: Resource`,
+`before: Option<ResourceAccess>`, `after: ResourceAccess`.
+None introduces previously undeclared local state and preserves contents;
+Some must exactly match the current declared role. Every transition is a full
+dependency point for that allocation, including a same-role transition.
+
+### ResourceTransitions
+
+Private retained batch, constructed only by valid transition recording.
+
+| Method | Behavior |
+| --- | --- |
+| `ResourceTransitions::transitions(&self) -> &[ResourceTransition]` | Borrow immutable recorded requests. |
+
+### ResourceUse
+
+No inherent methods. Public fields: `command_index: usize`, `resource: Resource`,
+`access: ResourceAccess`. Returned owned handles retain allocation storage.
+Indices include barriers. Access summarizes a whole allocation within one command:
+nonempty copies, required nonzero compute slots, nonempty draw sources, and every
+attached render image (even empty/masked scopes). Unused bindings contribute no use.
+
+### HazardKind
+
+No inherent methods. Variants: `ReadAfterWrite`, `WriteAfterRead`, `WriteAfterWrite`.
+Read/read needs no barrier. If both uses write, WriteAfterWrite takes precedence.
+All conflicting cross-command uses require an intervening resource transition;
+disjoint regions still conflict under whole-allocation tracking.
+
+### DependencyEncodeError
+
+No inherent methods. A failed recording call appends no batch.
+
+| Variant | Meaning |
+| --- | --- |
+| `ExplicitModeRequired` | Ordered encoder cannot record transitions, including an empty request. |
+| `ForeignResource { kind: ResourceKind, label: String }` | Allocation belongs to another device. |
+| `InvalidAccess { kind: ResourceKind, label: String, access: ResourceAccess }` | Before/after role conflicts with kind or buffer usages. |
+| `DuplicateResource { kind: ResourceKind, label: String }` | Batch repeats allocation identity. |
+| `AllocationFailed { source: std::collections::TryReserveError }` | Retained batch/command reservation failed; retains source. |
+
+Validation order: mode, then for each request device, before/after role support,
+prior duplicate identity, then reservation. Empty Explicit batches append nothing.
+
+### DependencyValidationError
+
+No inherent methods. Preflight checks metadata only; it reads no bytes or poison.
+
+| Variant | Meaning |
+| --- | --- |
+| `AllocationFailed` | Resource-use or state reservation failed. |
+| `MissingTransition { command_index: usize, kind: ResourceKind, label: String, required: ResourceAccess }` | First actual use lacks a declaration. |
+| `AccessMismatch { command_index: usize, kind: ResourceKind, label: String, declared: ResourceAccess, required: ResourceAccess }` | Actual role does not fit declared role. |
+| `TransitionMismatch { command_index: usize, kind: ResourceKind, label: String, before: Option<ResourceAccess>, actual: Option<ResourceAccess> }` | Before-state differs from current local state. |
+| `MissingDependency { command_index: usize, previous_command_index: usize, kind: ResourceKind, label: String, hazard: HazardKind, previous: ResourceAccess, required: ResourceAccess }` | Conflicting uses have no intervening barrier for that resource. |
+
+These variants retain no underlying source. Submission wraps them in DependencyFailed.
+Validation rebuilds local state each time: check transitions and, for each actual
+use, declaration, hazard, then role. Completed synchronous submissions and CPU
+access use the existing device gate; no persistent cross-submission layout exists.
+Runtime storage/shader failures retain completed-prefix/atomic-operation rules.
+
 ## Explicit standard trait support
 
 This lists implemented/derived traits, not Rust's blanket implementations or
-auto traits. They are separate from the 179 inherent methods above.
+auto traits. They are separate from the 193 inherent methods above.
 
 | Type | Traits |
 | --- | --- |
@@ -1619,17 +1749,27 @@ auto traits. They are separate from the 179 inherent methods above.
 | `StencilFaceState` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
 | `StencilOperation` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
 | `RenderAttachments<'a>` | `Debug`, `Clone`, `Copy`, `Default` |
+| `SynchronizationMode` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`, `Default` |
+| `ResourceKind` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `Resource` | `Debug`, `Clone` |
+| `ResourceAccess` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `ResourceTransition` | `Debug`, `Clone` |
+| `ResourceTransitions` | `Debug` |
+| `ResourceUse` | `Debug`, `Clone` |
+| `HazardKind` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `DependencyEncodeError` | `Debug`, `Display`, `Error` |
+| `DependencyValidationError` | `Debug`, `Clone`, `PartialEq`, `Eq`, `Display`, `Error` |
 
 Standard trait operations include:
 
 | Operation | Implementing types / behavior |
 | --- | --- |
 | `Clone::clone(&self) -> Self` | Types marked `Clone` above. Device/queue/buffer/framebuffer/depth/stencil/shader/pipeline/texture/view/sampler/binding handles retain shared state; `AdapterInfo` clones its owned metadata. |
-| `Default::default() -> Self` | `Instance`, `CommandRecorder`: same as `new()`. GraphicsPipelineOptions: depth/blend None. RenderAttachments: all None. |
-| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 92 types; buffer/framebuffer/depth/stencil formatting exposes metadata rather than stored data. |
+| `Default::default() -> Self` | `Instance`, `CommandRecorder`: same as `new()`. GraphicsPipelineOptions: depth/blend None. RenderAttachments: all None. SynchronizationMode: Ordered. |
+| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 102 types; buffer/framebuffer/depth/stencil formatting exposes metadata rather than stored data. |
 | `PartialEq::eq(&self, other: &Self) -> bool` | Types marked `PartialEq`; handle identity instead uses explicit `is_same`/`belongs_to` methods. |
-| `Display::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | Twenty-eight error types and `CopyBufferRole`. |
-| `Error::source(&self) -> Option<&(dyn std::error::Error + 'static)>` | All twenty-eight error types. Buffer/framebuffer/depth/stencil/shader/texture creation retain descriptor/reservation sources, sampler creation retains reservation sources, pipeline creation/command/render recording and shader evaluation retain reservation sources, and submission RenderFailed/ComputeFailed retain RenderExecutionError/ComputeExecutionError. Compute creation and recording retain reservation sources. Other current variants return None. |
+| `Display::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | Thirty error types and `CopyBufferRole`. |
+| `Error::source(&self) -> Option<&(dyn std::error::Error + 'static)>` | All thirty error types. Buffer/framebuffer/depth/stencil/shader/texture creation retain descriptor/reservation sources, sampler creation retains reservation sources, pipeline creation/command/render recording and shader evaluation retain reservation sources, and submission RenderFailed/ComputeFailed retain RenderExecutionError/ComputeExecutionError. Compute creation/recording and DependencyEncodeError::AllocationFailed retain reservation sources; submission DependencyFailed retains DependencyValidationError. Other current variants return None. |
 
 Other inherited standard trait methods, such as `clone_from` and `ne`, follow
 their standard-library contracts. Error trait objects also support standard

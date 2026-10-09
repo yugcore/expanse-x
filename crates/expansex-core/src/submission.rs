@@ -7,6 +7,10 @@ use std::fmt;
 pub enum QueueSubmitError {
     /// No commands executed: the queue and finished work have different devices.
     ForeignCommandBuffer,
+    /// Dependency preflight failed; no command executed.
+    DependencyFailed {
+        source: crate::DependencyValidationError,
+    },
     /// Failed dispatch changed no storage output; earlier commands completed.
     ComputeFailed {
         command_index: usize,
@@ -29,6 +33,7 @@ pub enum QueueSubmitError {
 impl fmt::Display for QueueSubmitError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::DependencyFailed { source } => write!(f, "submission dependency validation failed: {source}; no commands executed"),
             Self::ForeignCommandBuffer => f.write_str(
                 "cannot submit commands from another device; use their owning device's queue",
             ),
@@ -45,6 +50,7 @@ impl fmt::Display for QueueSubmitError {
 impl Error for QueueSubmitError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
+            Self::DependencyFailed { source } => Some(source),
             Self::RenderFailed { source, .. } => Some(source),
             Self::ComputeFailed { source, .. } => Some(source),
             _ => None,
@@ -60,7 +66,8 @@ impl Queue {
     /// submission. Concurrent call order is unspecified; separate devices are
     /// independent. Successful return means all submitted operations have finished.
     ///
-    /// Foreign work changes nothing. On storage poison, earlier commands remain
+    /// Foreign work or failed explicit dependency preflight changes nothing.
+    /// On storage poison, earlier commands remain
     /// completed; the failed copy changes nothing and later commands are skipped.
     /// HostAccess governs public CPU access, not device-side transfer execution.
     /// Render failures change no pixels in their scope, preserve earlier completed
@@ -71,6 +78,9 @@ impl Queue {
         if !commands.belongs_to(&device) {
             return Err(QueueSubmitError::ForeignCommandBuffer);
         }
+        commands
+            .validate_dependencies()
+            .map_err(|source| QueueSubmitError::DependencyFailed { source })?;
         let _execution = device.lock_execution();
         for (command_index, command) in commands.commands().iter().enumerate() {
             crate::reference::execute(command_index, command)?;

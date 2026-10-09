@@ -5,6 +5,8 @@ mod programmable;
 
 pub(crate) fn execute(command_index: usize, command: &Command) -> Result<(), QueueSubmitError> {
     match command {
+        // Synchronous ordered execution already fulfils this full dependency.
+        Command::ResourceTransitions(_) => Ok(()),
         Command::CopyBuffer(copy) => copy
             .source()
             .copy_to(

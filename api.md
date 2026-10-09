@@ -4,8 +4,9 @@ Updated: 2026-10-09. Scope: every currently exported EX type, inherent method,
 public field, enum variant, and explicit standard trait implementation.
 There are **121 public types and 229 inherent methods**. Phase 3 is complete;
 these remain provisional APIs, not a completed or stable v1 specification.
-The immediate milestone is [core completion](docs/CORE-MILESTONE.md); SDK
-development follows that gate. This catalog describes working APIs, not planned SDK commands.
+The bounded [Core Preview milestone](docs/CORE-MILESTONE.md) is complete under
+[the integrated proof](docs/CORE-PROOF.md); SDK development is next. This catalog
+describes working APIs, not planned SDK commands.
 
 Applications depend on package `ex-api` and import its library as `ex`:
 
@@ -162,7 +163,8 @@ Source: [profile.rs](crates/expansex-core/src/profile.rs).
 Contract: [CORE-PROFILE.md](docs/CORE-PROFILE.md). BackendKind identifies an
 implementation; CoreProfile describes supported behavior. The public contract
 corpus runs against every discovered adapter advertising Preview1. Detailed
-numeric/alias/poison tests and final integrated proof remain separate evidence.
+numeric/alias/poison tests and the completed [integrated proof](docs/CORE-PROOF.md)
+provide separate evidence. This completion step adds no exported APIs.
 
 ### CoreProfile
 

@@ -178,7 +178,19 @@ cargo test -p ex-api --test core_profile --locked --offline
 The same [public contract cases](crates/ex-api/tests/core_profile/cases.rs) run
 against every discovered adapter advertising Preview1. They assert observable
 results and errors; no software adapter name or private lock inspection is
-required. This profile remains provisional; final integrated core proof is next.
+required. This profile remains provisional; the bounded Core Preview milestone
+is complete under [the integrated proof](docs/CORE-PROOF.md).
+
+```text
+cargo run -p ex-api --example core_preview --locked --offline
+```
+
+The [maintained example](crates/ex-api/examples/core_preview.rs) and integration
+test execute the same workload: padded upload, compute-generated indexed geometry,
+depth/stencil checks, blended two-pass rendering and padded readback. Two frames
+change live colours/parameters; missing-barrier and late-compute-failure checks
+verify rejection, rollback and repaired reuse. It writes `target/core-preview.png`.
+The test runs with normal workspace checks and verifies every pixel/attachment.
 
 ## Repository map
 
@@ -200,10 +212,10 @@ owned resources, copies, fixed-function drawing, and synchronous readback now wo
 Phase 3 completes programmable pipelines, layouts, interpolation, and indexed
 drawing. Phase 4 now has sampled textures, views, samplers, and eight fragment
 resource slots, depth/stencil attachments/tests, blending, and compute pipelines/dispatch.
-The workspace passes 256 tests, including documentation tests.
-The immediate target is [core completion](docs/CORE-MILESTONE.md), followed by the
-SDK; a complete/stable v1 API remains a later goal. Next: the final integrated Core Preview workload and completion review. The core milestone defines a
-bounded supported reference profile and its completion gates. Other modern GPU
+The workspace passes 257 tests, including documentation tests.
+[Core Preview 1](docs/CORE-MILESTONE.md) is complete for the bounded explicit
+software profile. SDK Preview is next; a complete/stable v1 API remains a later
+goal. Other modern GPU
 features and hardware drivers follow demonstrated workloads, one capability at a time.
 
 Read the [starting assessment](docs/ASSESSMENT.md),

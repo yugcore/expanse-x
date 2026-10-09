@@ -3,7 +3,7 @@
 Selected contract (2026-10-09). This gate defines the supported core profile,
 routes real submissions through a device-owned executor, and provides a reusable
 public contract corpus. Implemented evidence is recorded below.
-The final integrated Core Preview completion gate remains separate.
+The separate [integrated proof](CORE-PROOF.md) now meets the Core Preview completion gate.
 
 ## Purpose and scope
 
@@ -121,8 +121,9 @@ no execution on foreign/dependency rejection, runtime error indexing, prefix
 preservation, early stop, and absence of an ownership cycle. The fixture injects
 an error; it does not implement an alternate target.
 
-All 256 workspace tests and required project checks pass. The existing
+The profile checkpoint passed all 256 workspace tests and required project checks. The existing
 texture_flow workload runs through the selected backend and its 640x320 image
 matches the previously independently verified bytes exactly. This gate is met;
-the final maintained integrated workload/profile completion review is still
-pending before Core Preview completion and subsequent SDK work.
+the final maintained integrated workload/profile review now passes under
+[CORE-PROOF.md](CORE-PROOF.md), with 257 workspace tests and full checks. Core
+Preview 1 is complete within this bounded profile; SDK development follows.

@@ -117,5 +117,5 @@ dimension, decompression and pixel checks verify the final 640x320 image,
 including 131,072 panel pixels. The PNG was visually inspected. The right panel
 is vertically flipped using a vertex uniform; the first pass renders the image
 that both second-pass panels sample. This proves the transfer gate; the
-profile/executor gate now also works. Final integrated core completion and
-stable v1 remain separate milestones.
+profile/executor gate now also works. The subsequent [integrated proof](CORE-PROOF.md)
+meets bounded Core Preview completion. Stable v1 remains a later milestone.

@@ -78,8 +78,9 @@ Group mutation, descriptor arrays, multiple groups, dynamic offsets, storage ima
 graphics storage, compute textures, general shader indexing and reflection/import
 remain future contracts. EX's current supported shader profile is its bounded float4
 IR plus the resources above; accepting established shader languages later still
-requires a demonstrated importer. This step does not complete the whole Core Preview:
-resource flows, execution/backend boundary and final integrated proof remain pending.
+requires a demonstrated importer. Subsequent [resource flows](TEXTURE-FLOW.md),
+[execution/profile checks](CORE-PROFILE.md) and [integrated proof](CORE-PROOF.md)
+now meet bounded Core Preview completion. Broader interfaces remain future work.
 
 ## Supported shader limits
 

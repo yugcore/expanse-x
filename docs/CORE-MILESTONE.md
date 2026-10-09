@@ -1,7 +1,9 @@
 # Core completion milestone
 
 Accepted sequence: finish the EX core first, then build the SDK around it.
-The immediate target is a Core Preview, not a complete or stable v1 graphics API.
+This milestone defines a Core Preview, not a complete or stable v1 graphics API.
+Status: Core Preview 1 complete on 2026-10-09, under the bounded software profile
+and [integrated proof](CORE-PROOF.md). SDK Preview is the next development milestone.
 This is a development milestone under the [project design](../DOCUMENTATION.md),
 not a change to independent execution or the shared managed/explicit core.
 
@@ -19,7 +21,7 @@ integrated workload and contract tests. A Core Preview is useful working behavio
 with explicit limits; it does not establish hardware support, performance parity,
 all engine features, or permanent API stability.
 
-## Planned completion gates
+## Completion gates
 
 | Gate | Required evidence | Current status |
 | --- | --- | --- |
@@ -28,7 +30,7 @@ all engine features, or permanent API stability.
 | Shader/resource interfaces | A defined supported shader profile plus reusable binding/layout and parameter-buffer contracts for supported graphics/compute workloads | Working under [BINDINGS.md](BINDINGS.md): supported bounded float4 IR, reusable stage/type/size-checked layouts/groups, uniform loads in all stages, paired textures and compute storage; external shader import and broader profiles remain future work |
 | Resource flow across passes | Supported upload/transfer and render-to-texture paths sufficient for a small compute/render/readback workload, with documented formats and ownership | Working under [TEXTURE-FLOW.md](TEXTURE-FLOW.md): padded buffer/image transfers, rectangular image copies, shared full-image attachments, alias-aware dependencies and a two-pass compute/render/readback workload; broader formats/mips remain future work |
 | Execution and backend boundary | Defined ownership/completion/error obligations, an implementation boundary, and reusable tests for a target implementing the supported profile | Working under [CORE-PROFILE.md](CORE-PROFILE.md): named profile and shared validation limits, device-owned selected executor, runtime-owned sequencing/completion/error indices, and nine reusable adapter-parameterized contract cases plus internal boundary verification |
-| Completion proof | One maintained public workload exercises the supported profile; required checks pass; API catalog, contracts and capability limits agree | Partial: individual examples, a multi-pass resource-flow workload, a declared profile and reusable corpus, and 256 passing tests exist; final integrated gate remains pending |
+| Completion proof | One maintained public workload exercises the supported profile; required checks pass; API catalog, contracts and capability limits agree | Met under [CORE-PROOF.md](CORE-PROOF.md): the example/test share a 15-command, 27-use workload covering upload, compute, indexed multi-pass rendering, depth/stencil/blend, readback, preflight rejection, late failure and repaired reuse; independently verified PNG, 257 tests and all project checks pass |
 
 Choose each gate's concrete subset through its workload and topic contract before
 implementation. Unsupported shader operations and capabilities must be reported

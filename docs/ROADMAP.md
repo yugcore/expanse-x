@@ -15,9 +15,9 @@ and verify the explicit core first. Add managed planning over those contracts
 when a working workload justifies it; this is a future capability, not a second
 renderer or a reason to postpone the programmable rendering milestone.
 
-The immediate milestone is [core completion](CORE-MILESTONE.md), followed by the
-SDK. A complete/stable v1 API is a later goal. Finish and verify a bounded explicit
-reference core before building new SDK tooling around it; retain the broader
+The bounded [Core Preview](CORE-MILESTONE.md) is complete. SDK Preview is the
+next milestone; a complete/stable v1 API is a later goal. Build new SDK tooling
+around this verified explicit reference core; retain the broader
 Phase 4 feature roadmap without treating every future feature as a core-launch gate.
 
 ## Status at a glance
@@ -29,8 +29,8 @@ Phase 4 feature roadmap without treating every future feature as a core-launch g
 | 2 — First software triangle | Complete | Public render scopes produce a verified PNG through EX's own clipped fixed-function rasterizer |
 | 3 — Programmability and pipeline milestone | Complete | Pipeline-controlled triangles, layouts, perspective interpolation, and validated u16/u32 indexed drawing |
 | 4 — Modern GPU concepts | In progress | Sampled RGBA8 textures/views, nearest/bilinear samplers, eight fragment resource slots, depth/stencil attachments/tests, blending, and storage-buffer compute dispatch, reusable bindings/uniforms, checked whole-resource dependencies, and multi-pass image flows |
-| Immediate milestone — Core Preview | In progress | Supported-profile gates in CORE-MILESTONE.md; dependencies, reusable shader interfaces and texture/resource flows work; execution/backend boundary and reusable profile checks work; final integrated proof is next |
-| Following milestone — SDK Preview | Planned after core | Templates, shader/build integration, developer tools, onboarding, and packaging over the completed core |
+| Core Preview 1 | Complete | Bounded software profile, selected executor, reusable profile corpus and maintained integrated proof in CORE-PROOF.md; 257 tests and all project checks pass |
+| Next milestone — SDK Preview | Planned | Templates, shader/build integration, developer tools, onboarding, and packaging over the completed core |
 | Future — Hardware drivers | Deferred | A selected target, viable driver interfaces, and demonstrated execution |
 
 Checked items mean implemented and verified behavior.
@@ -328,8 +328,18 @@ preflight, gate ownership, selected execution, failure stop and cleanup. All 256
 workspace tests and project checks pass. The existing image-flow workload executes
 through this boundary and matches its independently verified image byte for byte.
 
-Phase 4 and the Core Preview remain incomplete. Next: the final maintained
-integrated workload and completion review against Preview1.
+The final [integrated proof](CORE-PROOF.md) now passes: the example and normal
+integration test share one 15-command, 27-use public workload. It verifies padded
+uploads, computed indexed geometry, depth/stencil rejection, blending, two render
+passes, every pixel/attachment and padded readback in two reusable successful
+submissions. Missing-barrier rejection preserves the full plan's outputs; late
+compute overflow preserves its output, publishes the completed prefix and skips
+later rendering/readback. Repairing live data reuses the same successful plan.
+The final 128x64 PNG passes independent CRC/decompression and all-pixel checks
+and visual inspection. All 257 workspace tests and project checks pass.
+
+Core Preview 1 is complete within the declared bounded software profile. SDK
+Preview is the next milestone. Phase 4 remains incomplete.
 Mipmaps, storage images, multiple groups,
 dynamic bindings and broader shader profiles require separate contracts.
 

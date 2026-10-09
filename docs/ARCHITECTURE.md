@@ -45,8 +45,8 @@ not supply those capabilities. Hardware work is deferred.
 
 | Component | Implemented now | Next responsibility |
 | --- | --- | --- |
-| `ex-api`, library name `ex` | Resources, render scopes, submission/readback, shaders/pipelines/layouts, graphics, compute, explicit dependencies, profile queries, and public examples/tests | Maintained integrated core proof |
-| `expansex-core` | Ownership, allocation, recording, queue policy, shared profile bounds, and the private selected executor alongside resource/shader contracts | Final profile completion review |
+| `ex-api`, library name `ex` | Resources, render scopes, submission/readback, shaders/pipelines/layouts, graphics, compute, explicit dependencies, profile queries, and public examples/tests | SDK workflows using the verified core |
+| `expansex-core` | Ownership, allocation, recording, queue policy, shared profile bounds, and the private selected executor alongside resource/shader contracts | Preserve Preview1 contracts as demonstrated workloads expand |
 | Validation | Resource identity/usages/ranges, layouts/stages, render state, finite arithmetic, attachment checks, compute bounds, and alias-aware explicit-plan preflight | Broader profiles only with implemented behavior |
 | Reference backend | ReferenceBackend executes copies, image transfers, fixed/programmed triangles and compute using the existing staged algorithms, under the runtime's device gate | Future targets require real storage and execution integration |
 | Shader subsystem | shader.rs owns/validates EX instructions and evaluates standalone or allocation-free renderer invocations | Richer instructions and later external import |
@@ -265,4 +265,6 @@ hardware memory abstraction or public driver ABI.
 
 Nine public adapter-parameterized profile cases and an internal traced-executor
 test verify observable behavior and runtime policy. See [CORE-PROFILE.md](CORE-PROFILE.md).
-The final integrated workload and completion review remain the next core gate.
+The [maintained integrated workload and completion review](CORE-PROOF.md) now
+meet the bounded Core Preview gate. SDK development follows; broader Phase 4
+capabilities and hardware integration remain future work.

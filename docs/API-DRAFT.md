@@ -401,13 +401,13 @@ Twelve public compute tests, two internal poison/lifetime tests, and executable
 compute documentation verify grids, views, finite arithmetic, validation, retention,
 ordering, reuse, aliasing, zero/limit cases, output rollback, and generated vertices.
 Independent pixel calculations verify the compute tile example.
-The workspace runs 256 tests, including documentation tests.
+The workspace runs 257 tests, including documentation tests.
 Tests do not induce allocator OOM by exhausting host memory.
 
 ## Next contract
 
-The immediate milestone is [core completion](CORE-MILESTONE.md), followed by SDK
-development. A complete/stable v1 API remains later work. The supported-profile
+The bounded [Core Preview milestone](CORE-MILESTONE.md) is complete; SDK
+development is next. A complete/stable v1 API remains later work. The supported-profile
 gates keep the first core milestone bounded; the Phase 4 list remains the wider backlog.
 
 Phases 1–3 are complete: copies and fixed-function triangles execute through
@@ -419,8 +419,9 @@ also work. Explicit whole-resource transitions and dependencies now work under
 [DEPENDENCIES.md](DEPENDENCIES.md). Reusable shader/resource interfaces and parameter
 buffers now work under [BINDINGS.md](BINDINGS.md). Texture/resource flows now work
 under [TEXTURE-FLOW.md](TEXTURE-FLOW.md). The execution boundary and reusable profile
-checks work under [CORE-PROFILE.md](CORE-PROFILE.md); final integrated proof is next;
-language/format import remains future work.
+checks work under [CORE-PROFILE.md](CORE-PROFILE.md). The integrated workload and
+review meet the bounded Core Preview milestone under [CORE-PROOF.md](CORE-PROOF.md).
+SDK Preview is next; language/format import remains future work.
 The execution interface is private Rust code; no public driver/plugin ABI exists.
 
 ## Explicit synchronization contract

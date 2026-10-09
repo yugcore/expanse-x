@@ -1,10 +1,11 @@
 # EX shader representation and interpreter
 
-EX supplies owned, validated vertex and fragment programs and a CPU interpreter
+EX supplies owned, validated vertex, fragment, and compute programs and a CPU interpreter
 callable through `Shader::evaluate`. Programs also execute through recorded
 graphics pipelines, vertex layouts, and perspective-correct interpolation; see
 [PIPELINES.md](PIPELINES.md). Fragment texture sampling is also implemented under
-[TEXTURES.md](TEXTURES.md). The fixed-function path remains available.
+[TEXTURES.md](TEXTURES.md). [COMPUTE.md](COMPUTE.md) defines storage dispatch
+through the same interpreter. The fixed-function path remains available.
 
 Vulkan accepts SPIR-V shader modules and defines interfaces between shader stages
 ([shader contract](https://docs.vulkan.org/spec/latest/chapters/shaders.html),
@@ -19,9 +20,11 @@ not a new shader language or a full compiler.
   instruction 0 creates register 0, instruction 1 creates register 1, and so on.
 - Instructions are Input, Constant, componentwise Add and Multiply, Dot4
   (four-component dot product broadcast into all lanes), Swizzle, and fragment
-  SampleTexture { binding, coordinates } (XY of a prior register).
-- Operands must reference earlier results. There are no writes, branches, loops,
-  buffer accesses, uniforms, built-in inputs, or arbitrary Rust callbacks. Texture
+  SampleTexture { binding, coordinates } (XY of a prior register), and compute
+  LoadStorage { binding } (current global linear float4 element).
+- Operands must reference earlier results. There are no explicit store instructions, branches, loops,
+  arbitrary buffer indexing, uniforms, or arbitrary Rust callbacks. Compute outputs
+  write storage and four built-in vectors identify invocation/workgroup grids. Texture
   sampling supports eight paired slots, normalized view-local coordinates, and
   nearest/bilinear clamp/repeat; no derivatives or LOD exists.
 - A descriptor borrows a label, instructions, and output register indices.
@@ -31,7 +34,8 @@ not a new shader language or a full compiler.
 - At most 16 input vectors, 256 instructions, and 17 vertex outputs are accepted.
   A vertex program requires output 0 (reserved for homogeneous clip position
   x,y,z,w) and may return up to 16 additional vectors (varyings). A fragment
-  program returns exactly one RGBA vector. Output indices can repeat.
+  program returns exactly one RGBA vector. Compute requires four built-in inputs
+  and 1..=8 outputs mapped to unique pipeline storage slots. Output indices can repeat.
 - These stage interfaces are linked when creating a graphics pipeline. Standalone
   evaluation returns raw vectors: it performs no projection, clipping, interpolation, colour
   clamping, byte conversion, or stage compatibility check.
@@ -46,7 +50,8 @@ not a new shader language or a full compiler.
 Descriptor validation checks input count, instruction count, stage output count,
 then each instruction in order (input location, finite constant, prior operand,
 swizzle lane, sampling stage/slot/register), then output indices. No allocation
-is needed for validation. SampleTexture requires Fragment stage and binding < 8.
+is needed for validation. Compute input count is checked before output count.
+SampleTexture requires Fragment; LoadStorage requires Compute; both slots are < 8.
 Referenced indices are u32; swizzle lanes are u8 in 0..4. Self references, forward
 references, cycles, missing outputs, and out-of-range inputs are rejected.
 
@@ -63,7 +68,11 @@ Standalone evaluation encounters MissingTextureBinding at a sample instruction;
 bound rendering supplies view snapshots, while TextureView::sample offers
 synchronized standalone sampling. All sample instructions contribute required
 slots even when their results are unused. Existing descriptor literals need no
-new field, and arithmetic-only evaluation remains compatible.
+new field, and arithmetic-only evaluation remains compatible. LoadStorage similarly
+reports MissingStorageBinding in standalone evaluation. Dispatch supplies elements
+from locked pre-dispatch storage; every load result is checked finite. Used load
+slots are required even if the register is not selected as an output. The executor
+stages storage writes outside the interpreter and commits them after all invocations.
 
 ```rust
 use ex::{Instance, ShaderDescriptor, ShaderInstruction as Op, ShaderStage};

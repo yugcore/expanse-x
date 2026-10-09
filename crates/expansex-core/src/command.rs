@@ -93,6 +93,7 @@ impl Error for CommandEncodeError {
 #[non_exhaustive]
 pub enum Command {
     CopyBuffer(BufferCopy),
+    Dispatch(crate::ComputeDispatch),
     RenderPass(crate::RenderCommands),
 }
 
@@ -124,7 +125,7 @@ impl BufferCopy {
     }
 }
 
-/// Records copies and render scopes for one device, retaining referenced resources.
+/// Records copies, compute dispatches, and render scopes, retaining resources.
 ///
 /// There is no public constructor independent of a device. Finishing consumes
 /// the encoder without executing its work; use Queue::submit afterward.

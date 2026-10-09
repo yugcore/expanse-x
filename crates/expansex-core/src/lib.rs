@@ -5,11 +5,12 @@
 //! buffer-copy descriptions independently of execution. Queues execute recorded
 //! copies and fixed/programmed triangles synchronously on the CPU. Owned shaders,
 //! pipelines, layouts, perspective interpolation, sampled textures, depth tests,
-//! colour blending, and stencil tests/updates work.
+//! colour blending, stencil tests/updates, and storage-buffer compute dispatch work.
 //! Prototype labels remain.
 
 mod buffer;
 mod command;
+mod compute;
 mod depth;
 mod framebuffer;
 mod object;
@@ -67,4 +68,9 @@ pub use render::RenderAttachments;
 pub use stencil::{
     StencilBuffer, StencilBufferAccessError, StencilBufferCreateError, StencilBufferDescriptor,
     StencilBufferDescriptorError,
+};
+
+pub use compute::{
+    ComputeBufferBinding, ComputeDispatch, ComputeEncodeError, ComputeExecutionError,
+    ComputePipeline, ComputePipelineCreateError, ComputePipelineDescriptor, StorageBufferBinding,
 };

@@ -22,6 +22,12 @@ pub(crate) fn execute(command_index: usize, command: &Command) -> Result<(), Que
                 }
                 .to_owned(),
             }),
+        Command::Dispatch(dispatch) => {
+            crate::compute::execute(dispatch).map_err(|source| QueueSubmitError::ComputeFailed {
+                command_index,
+                source,
+            })
+        }
         Command::RenderPass(pass) => {
             render(pass).map_err(|source| QueueSubmitError::RenderFailed {
                 command_index,

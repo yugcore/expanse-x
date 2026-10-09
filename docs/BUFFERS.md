@@ -37,8 +37,9 @@ process's contiguous `Vec<u8>` capacity (`usize` and `isize::MAX`). Duplicate
 usages are preserved and have no extra meaning. An empty label remains valid.
 Transfer usages are checked when [recording copies](COMMANDS.md). Vertex and
 Index roles are checked for [rendering](RENDERING.md) and [indexed draws](INDEXED-DRAWING.md).
-Uniform/Storage shader access and compute remain future operations. A single
-allocation may have both Vertex and Index usage. Recording does not execute work.
+Storage access now works through [compute dispatch](COMPUTE.md); Uniform shader
+access remains future work. A single allocation can combine Storage, Vertex,
+Index, and transfer roles. Recording does not execute work.
 
 Byte and metadata reservations use `try_reserve_exact`. Reservation failures
 become `BufferCreateError::AllocationFailed` with their standard Rust source;

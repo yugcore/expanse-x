@@ -10,14 +10,15 @@ and explicit control levels, Rust-based ownership, and validated execution.
 Build the explicit core first; managed planning is a future layer over the same
 resources and execution rules.
 
-## Current status: sampled textures render through EX
+## Current status: programmable graphics and compute through EX
 
 EX now discovers its built-in software adapter, creates independent logical
 devices, and returns default queue handles with shared ownership. The workspace
 also allocates owned reference buffers with explicit CPU upload/readback
 permissions, bounds checks, and shared storage. Device-bound encoders now record
 validated buffer copies and retain their resources without executing them.
-Queue submission executes finished copies synchronously in order on the CPU,
+Queue submission executes finished copies, compute dispatches, and render scopes
+synchronously in order on the CPU,
 with whole-submission serialization against CPU access and defined partial failure.
 EX now owns RGBA framebuffers and records clear/vertex-binding/triangle-list scopes.
 Its own CPU rasterizer clips 2D geometry, samples pixel centres, and writes constant
@@ -110,6 +111,21 @@ Colour, depth, and stencil readback are verified. Independent PNG, coverage,
 sampling, and blend calculations check every pixel of `target/phase4-stencil-mask.png`.
 See [stencil testing](docs/STENCIL.md).
 
+## Compute-generated geometry
+
+```text
+cargo run -p ex-api --example compute_tiles --locked --offline
+```
+
+The example runs 288 compute invocations in 48 workgroups to generate a grid of
+48 squares, then draws the computed vertices in the same submission. The vertices
+use HostAccess::None; recorded copies upload and read back the data. All 288
+computed vertices and 48 tile centres are checked. Independent PNG checksums,
+float32 geometry, and coverage calculations match all 196,608 image pixels,
+including 101,568 covered pixels. Output: `target/phase4-compute-tiles.png`.
+See [the compute contract](docs/COMPUTE.md) for storage slots, IDs, validation,
+in-place updates, atomic dispatch failure, and current limits.
+
 ## Build and check
 
 Install Rust through rustup. `rust-toolchain.toml` selects stable Rust with
@@ -150,8 +166,9 @@ owned resources, copies, fixed-function drawing, and synchronous readback now wo
 
 Phase 3 completes programmable pipelines, layouts, interpolation, and indexed
 drawing. Phase 4 now has sampled textures, views, samplers, and eight fragment
-resource slots, depth/stencil attachments/tests, and blending. The workspace passes 177 tests,
-including documentation tests. Next: compute pipelines and dispatch. Other modern GPU features
+resource slots, depth/stencil attachments/tests, blending, and compute pipelines/dispatch.
+The workspace passes 192 tests, including documentation tests.
+Next: explicit resource transitions and execution/memory dependencies. Other modern GPU features
 and hardware drivers follow working reference semantics, one capability at a time.
 
 Read the [starting assessment](docs/ASSESSMENT.md),

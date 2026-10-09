@@ -15,6 +15,8 @@ pub enum ShaderStage {
     Vertex,
     /// Exactly one output vector, containing RGBA colour.
     Fragment,
+    /// Four built-in input vectors; 1..=8 storage output vectors.
+    Compute,
 }
 
 /// An EX instruction producing one four-component f32 result.
@@ -25,6 +27,8 @@ pub enum ShaderStage {
 pub enum ShaderInstruction {
     /// Read one supplied input vector by location.
     Input { location: u32 },
+    /// Read this compute invocation's float4 element from a storage slot.
+    LoadStorage { binding: u32 },
     /// Sample a fragment texture/sampler slot using XY of an earlier register.
     SampleTexture { binding: u32, coordinates: u32 },
     /// Produce a finite literal vector.
@@ -46,17 +50,28 @@ pub struct ShaderDescriptor<'a> {
     pub label: &'a str,
     /// Stage interface meaning, checked when validating output count.
     pub stage: ShaderStage,
-    /// Exact number of input vectors required, at most 16.
+    /// Exact input count, at most 16; compute requires four built-in vectors.
     pub input_count: u32,
     /// At most 256 instructions; each result is addressed by its list index.
     pub instructions: &'a [ShaderInstruction],
-    /// Output registers in order; 1..=17 for vertex, exactly 1 for fragment.
+    /// Output registers: 1..=17 vertex, exactly 1 fragment, 1..=8 compute.
     pub outputs: &'a [u32],
 }
 
 /// Structural or constant-value error, reported before a shader can be created.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ShaderValidationError {
+    StorageLoadingStage {
+        instruction: usize,
+        stage: ShaderStage,
+    },
+    InvalidStorageBinding {
+        instruction: usize,
+        binding: u32,
+    },
+    ComputeInputCount {
+        count: u32,
+    },
     TextureSamplingStage {
         instruction: usize,
         stage: ShaderStage,
@@ -104,11 +119,14 @@ pub enum ShaderValidationError {
 impl fmt::Display for ShaderValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::StorageLoadingStage { instruction, stage } => write!(f, "instruction {instruction} loads storage in {stage:?}; only Compute supports storage"),
+            Self::InvalidStorageBinding { instruction, binding } => write!(f, "instruction {instruction} uses storage slot {binding}; valid slots are 0..8"),
+            Self::ComputeInputCount { count } => write!(f, "compute shader needs four built-in input vectors, received {count}"),
             Self::TextureSamplingStage { instruction, stage } => write!(f, "instruction {instruction} samples a texture in {stage:?}; only Fragment supports sampling"),
             Self::InvalidTextureBinding { instruction, binding } => write!(f, "instruction {instruction} uses texture slot {binding}; valid slots are 0..8"),
             Self::TooManyInputs { count, maximum } => write!(f, "shader requests {count} inputs; maximum is {maximum}"),
             Self::TooManyInstructions { count, maximum } => write!(f, "shader has {count} instructions; maximum is {maximum}"),
-            Self::InvalidOutputCount { stage, count } => write!(f, "{stage:?} shader has invalid output count {count}; vertex requires 1..=17, fragment requires 1"),
+            Self::InvalidOutputCount { stage, count } => write!(f, "{stage:?} shader has invalid output count {count}; vertex requires 1..=17, fragment requires 1, compute requires 1..=8"),
             Self::InvalidInputLocation { instruction, location, input_count } => write!(f, "instruction {instruction} reads input {location}, outside {input_count} inputs"),
             Self::NonFiniteConstant { instruction } => write!(f, "instruction {instruction} contains a non-finite constant"),
             Self::InvalidOperand { instruction, operand } => write!(f, "instruction {instruction} references register {operand}; operands must reference earlier instructions"),
@@ -135,9 +153,15 @@ impl ShaderDescriptor<'_> {
                 maximum: MAX_INSTRUCTIONS,
             });
         }
+        if self.stage == ShaderStage::Compute && self.input_count != 4 {
+            return Err(ShaderValidationError::ComputeInputCount {
+                count: self.input_count,
+            });
+        }
         let valid_outputs = match self.stage {
             ShaderStage::Vertex => (1..=MAX_VERTEX_OUTPUTS).contains(&self.outputs.len()),
             ShaderStage::Fragment => self.outputs.len() == 1,
+            ShaderStage::Compute => (1..=8).contains(&self.outputs.len()),
         };
         if !valid_outputs {
             return Err(ShaderValidationError::InvalidOutputCount {
@@ -157,6 +181,20 @@ impl ShaderDescriptor<'_> {
                 }
             };
             match *op {
+                ShaderInstruction::LoadStorage { binding } => {
+                    if self.stage != ShaderStage::Compute {
+                        return Err(ShaderValidationError::StorageLoadingStage {
+                            instruction,
+                            stage: self.stage,
+                        });
+                    }
+                    if binding >= 8 {
+                        return Err(ShaderValidationError::InvalidStorageBinding {
+                            instruction,
+                            binding,
+                        });
+                    }
+                }
                 ShaderInstruction::SampleTexture {
                     binding,
                     coordinates,
@@ -247,6 +285,7 @@ impl Error for ShaderCreateError {
 /// Evaluation failed; no partial output is returned and no resource is modified.
 #[derive(Debug)]
 pub enum ShaderExecutionError {
+    MissingStorageBinding { binding: u32 },
     MissingTextureBinding { binding: u32 },
     WrongInputCount { expected: u32, actual: usize },
     NonFiniteInput { location: usize },
@@ -256,6 +295,10 @@ pub enum ShaderExecutionError {
 impl fmt::Display for ShaderExecutionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::MissingStorageBinding { binding } => write!(
+                f,
+                "shader storage load needs slot {binding}; use compute dispatch"
+            ),
             Self::MissingTextureBinding { binding } => write!(
                 f,
                 "shader sampling needs texture/sampler slot {binding}; use bound rendering"
@@ -414,6 +457,18 @@ impl Shader {
         outputs: &mut [[f32; 4]],
         sample: impl Fn(u32, [f32; 2]) -> Result<[f32; 4], ShaderExecutionError>,
     ) -> Result<(), ShaderExecutionError> {
+        self.evaluate_with_resources(inputs, outputs, sample, |binding| {
+            Err(ShaderExecutionError::MissingStorageBinding { binding })
+        })
+    }
+
+    pub(crate) fn evaluate_with_resources(
+        &self,
+        inputs: &[[f32; 4]],
+        outputs: &mut [[f32; 4]],
+        sample: impl Fn(u32, [f32; 2]) -> Result<[f32; 4], ShaderExecutionError>,
+        load: impl Fn(u32) -> Result<[f32; 4], ShaderExecutionError>,
+    ) -> Result<(), ShaderExecutionError> {
         if inputs.len() != self.input_count() as usize {
             return Err(ShaderExecutionError::WrongInputCount {
                 expected: self.input_count(),
@@ -431,6 +486,7 @@ impl Shader {
         for (instruction, op) in self.instructions().iter().enumerate() {
             let value = match *op {
                 ShaderInstruction::Input { location } => inputs[location as usize],
+                ShaderInstruction::LoadStorage { binding } => load(binding)?,
                 ShaderInstruction::SampleTexture {
                     binding,
                     coordinates,

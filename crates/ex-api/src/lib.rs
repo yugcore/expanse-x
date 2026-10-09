@@ -262,3 +262,8 @@ pub use expansex_core::{
     StencilBufferDescriptor, StencilBufferDescriptorError, StencilFaceState, StencilOperation,
     StencilState,
 };
+
+pub use expansex_core::{
+    ComputeBufferBinding, ComputeDispatch, ComputeEncodeError, ComputeExecutionError,
+    ComputePipeline, ComputePipelineCreateError, ComputePipelineDescriptor, StorageBufferBinding,
+};

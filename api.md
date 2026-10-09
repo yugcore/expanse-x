@@ -2,7 +2,7 @@
 
 Updated: 2026-10-09. Scope: every currently exported EX type, inherent method,
 public field, enum variant, and explicit standard trait implementation.
-There are **84 public types and 162 inherent methods**. Phase 3 is complete;
+There are **92 public types and 179 inherent methods**. Phase 3 is complete;
 these remain provisional APIs, not a completed or stable v1 specification.
 
 Applications depend on package `ex-api` and import its library as `ex`:
@@ -34,6 +34,7 @@ currently exported.
 | Blending | [GraphicsPipelineOptions](#graphicspipelineoptions), [BlendState](#blendstate), [BlendComponent](#blendcomponent), [BlendFactor](#blendfactor), [BlendOperation](#blendoperation) |
 | Stencil | [StencilBuffer](#stencilbuffer), [StencilBufferDescriptor](#stencilbufferdescriptor), [StencilBufferDescriptorError](#stencilbufferdescriptorerror), [StencilBufferCreateError](#stencilbuffercreateerror), [StencilBufferAccessError](#stencilbufferaccesserror), [StencilOperation](#stenciloperation), [StencilFaceState](#stencilfacestate), [StencilState](#stencilstate), [RenderAttachments](#renderattachments) |
 | Shaders | [Shader](#shader), [ShaderDescriptor](#shaderdescriptor), [ShaderStage](#shaderstage), [ShaderInstruction](#shaderinstruction) |
+| Compute | [ComputePipeline](#computepipeline), [ComputePipelineDescriptor](#computepipelinedescriptor), [StorageBufferBinding](#storagebufferbinding), [ComputeBufferBinding](#computebufferbinding), [ComputeDispatch](#computedispatch), [ComputePipelineCreateError](#computepipelinecreateerror), [ComputeEncodeError](#computeencodeerror), [ComputeExecutionError](#computeexecutionerror) |
 | Pipelines and layouts | [GraphicsPipeline](#graphicspipeline), [GraphicsPipelineDescriptor](#graphicspipelinedescriptor), [VertexBufferLayout](#vertexbufferlayout), [VertexAttribute](#vertexattribute), [VertexFormat](#vertexformat), [GraphicsPipelineCreateError](#graphicspipelinecreateerror) |
 | Prototype labels | [CommandRecorder](#commandrecorder), [DebugMarkerBuffer](#debugmarkerbuffer) |
 | Errors | [BufferDescriptorError](#bufferdescriptorerror), [BufferCreateError](#buffercreateerror), [BufferAccessError](#bufferaccesserror), [CommandEncodeError](#commandencodeerror), [QueueSubmitError](#queuesubmiterror) |
@@ -114,6 +115,7 @@ implemented across [object.rs](crates/expansex-core/src/object.rs),
 | `Device::create_command_encoder(&self) -> CommandEncoder` | Create an empty encoder bound to this device. |
 | `Device::create_framebuffer(&self, descriptor: FramebufferDescriptor<'_>) -> Result<Framebuffer, FramebufferCreateError>` | Validate extents/format and allocate zeroed RGBA reference pixels. |
 | `Device::create_shader(&self, descriptor: ShaderDescriptor<'_>) -> Result<Shader, ShaderCreateError>` | Validate and own immutable EX instruction source; no pipeline binding or rendering. |
+| `Device::create_compute_pipeline(&self, descriptor: ComputePipelineDescriptor<'_>) -> Result<ComputePipeline, ComputePipelineCreateError>` | Validate compute stage, local size and output slots; retain shader and own metadata. |
 | `Device::create_graphics_pipeline(&self, descriptor: GraphicsPipelineDescriptor<'_>) -> Result<GraphicsPipeline, GraphicsPipelineCreateError>` | Validate shader devices/stages, vertex layout, and varying interface; own metadata and retain shaders. |
 
 Cloning retains the same domain; `Adapter::create_device()` creates a new one.
@@ -128,7 +130,7 @@ error path. Buffer creation has its documented fallible reservation path.
 | --- | --- |
 | `Queue::device(&self) -> Device` | Retain the original owning device. |
 | `Queue::belongs_to(&self, device: &Device) -> bool` | Test device membership. |
-| `Queue::submit(&self, commands: &CommandBuffer) -> Result<(), QueueSubmitError>` | Execute reusable finished copies and render scopes synchronously in order on the CPU. |
+| `Queue::submit(&self, commands: &CommandBuffer) -> Result<(), QueueSubmitError>` | Execute reusable finished copies, compute dispatches, and render scopes synchronously in order on the CPU. |
 
 Successful submission means all submitted operations finished. Concurrent submissions
 and CPU access on the device serialize for the whole operation; concurrent arrival
@@ -165,18 +167,18 @@ and values, not storage. There is no `Default` implementation.
 ### BufferUsage
 
 `ex::BufferUsage` has no inherent methods. All variants can be requested in a
-descriptor; transfer and Vertex roles currently participate in recording/execution.
+descriptor; transfer, Vertex, Index, and Storage roles participate in recording/execution.
 
 | Variant | Role |
 | --- | --- |
 | `BufferUsage::Vertex` | Vertex input for fixed-layout or pipeline-controlled triangles. |
 | `BufferUsage::Index` | Indexed triangle input; binding validates this role. |
 | `BufferUsage::Uniform` | Future shader parameters. |
-| `BufferUsage::Storage` | Future shader-accessible data. |
+| `BufferUsage::Storage` | Float4 loads/outputs through compute dispatch; CPU access still follows HostAccess. |
 | `BufferUsage::TransferSource` | Required source role for recorded copies. |
 | `BufferUsage::TransferDestination` | Required destination role for recorded copies. |
 
-A usage flag alone executes no work. Copies and triangle draws execute on submission.
+A usage flag alone executes no work. Copies, compute dispatches, and triangle draws execute on submission.
 Standalone shader evaluation accepts input vectors independently of buffers.
 
 ### HostAccess
@@ -230,6 +232,7 @@ retains that device. All fields are private.
 | `CommandEncoder::belongs_to(&self, device: &Device) -> bool` | Test device membership. |
 | `CommandEncoder::commands(&self) -> &[Command]` | Inspect recorded operations. |
 | `CommandEncoder::copy_buffer(&mut self, source: &Buffer, source_offset: u64, destination: &Buffer, destination_offset: u64, size: u64) -> Result<(), CommandEncodeError>` | Validate and append a retained copy description. |
+| `CommandEncoder::dispatch(&mut self, pipeline: &ComputePipeline, workgroups: [u32; 3], bindings: &[StorageBufferBinding<'_>]) -> Result<(), ComputeEncodeError>` | Validate and retain one compute dispatch; no execution during recording. |
 | `CommandEncoder::finish(self) -> CommandBuffer` | Consume the encoder and move its work into immutable finished commands. |
 | `CommandEncoder::begin_render_pass(&mut self, target: &Framebuffer, clear: Option<[u8; 4]>) -> Result<RenderPass<'_>, RenderEncodeError>` | Open an exclusive borrowed render recorder; clear/draws change no pixels until submission. |
 
@@ -262,6 +265,7 @@ immutable; buffer contents remain live. Resources are retained, not snapshotted.
 | Variant | Payload |
 | --- | --- |
 | `Command::CopyBuffer(BufferCopy)` | One validated buffer-copy description. |
+| `Command::Dispatch(ComputeDispatch)` | One validated compute grid with retained pipeline/storage views. |
 | `Command::RenderPass(RenderCommands)` | One finished render scope, retaining target and per-draw vertex/pipeline bindings. |
 
 External matches need a fallback arm. Descriptions are not executor closures or
@@ -456,6 +460,7 @@ indices, and all operands must refer to earlier instructions.
 | --- | --- |
 | `ShaderStage::Vertex` | First output is homogeneous clip position x,y,z,w; remaining outputs are pipeline varyings. |
 | `ShaderStage::Fragment` | Exactly one RGBA output vector. |
+| `ShaderStage::Compute` | Four built-in input vectors, 1..=8 float4 storage outputs; independent dispatch invocations. |
 
 ### ShaderInstruction
 
@@ -465,6 +470,7 @@ result vector. Constants must be finite; references are register indices.
 | Variant and public payload | Operation |
 | --- | --- |
 | `ShaderInstruction::Input { location: u32 }` | Read an input vector with location less than input_count. |
+| `ShaderInstruction::LoadStorage { binding: u32 }` | Compute-only: read current global linear element from storage slot 0..8. |
 | `ShaderInstruction::SampleTexture { binding: u32, coordinates: u32 }` | Fragment-only sampling from slot 0..8; XY of an earlier register are normalized view-local UVs. |
 | `ShaderInstruction::Constant([f32; 4])` | Literal vector. |
 | `ShaderInstruction::Add { left: u32, right: u32 }` | Componentwise addition. |
@@ -479,10 +485,10 @@ result vector. Constants must be finite; references are register indices.
 | Public field | Type | Meaning |
 | --- | --- | --- |
 | `label` | `&'a str` | Debug label; empty allowed. |
-| `stage` | `ShaderStage` | Vertex or fragment interface. |
-| `input_count` | `u32` | Exact invocation input count, at most 16. |
+| `stage` | `ShaderStage` | Vertex, fragment, or compute interface. |
+| `input_count` | `u32` | Exact invocation input count, at most 16; compute requires four built-ins. |
 | `instructions` | `&'a [ShaderInstruction]` | At most 256 instructions in execution order. |
-| `outputs` | `&'a [u32]` | Register indices in return order, duplicates allowed; vertex 1..=17, fragment exactly 1. |
+| `outputs` | `&'a [u32]` | Register indices in return order, duplicates allowed; vertex 1..=17, fragment exactly 1, compute 1..=8. |
 
 | Method | Behavior |
 | --- | --- |
@@ -512,8 +518,9 @@ output is returned on error. Calls can run repeatedly or concurrently without
 the device gate. No clipping, interpolation, projection, colour clamping, byte
 conversion, stage linking, or queue submission occurs.
 Standalone evaluation encountering SampleTexture returns MissingTextureBinding;
-bound fragment execution supplies retained resources. All sample instructions
-contribute required slots even when their results are unused.
+bound fragment execution supplies retained resources. All sample/load instructions contribute required slots even when their results
+are unused. Standalone LoadStorage reports MissingStorageBinding; dispatch supplies
+pre-dispatch elements. Compute built-in input meaning is defined in [COMPUTE.md](docs/COMPUTE.md).
 
 ## Graphics pipelines and vertex layouts
 
@@ -689,6 +696,7 @@ Source: [submission.rs](crates/expansex-core/src/submission.rs).
 | `QueueSubmitError::ForeignCommandBuffer` | Finished work belongs to another device; nothing executed. |
 | `QueueSubmitError::StoragePoisoned { command_index: usize, role: CopyBufferRole, label: String }` | Failed nonempty copy at this zero-based index; earlier copies completed, failed destination unchanged, later work skipped. |
 | `QueueSubmitError::RenderFailed { command_index: usize, source: RenderExecutionError }` | Failed render command; its target unchanged, earlier commands completed, later work skipped. |
+| `QueueSubmitError::ComputeFailed { command_index: usize, source: ComputeExecutionError }` | Failed dispatch preserves all outputs and earlier commands; later commands skipped; source retained. |
 
 Only RenderFailed supplies an underlying `Error::source`. Aliased copies report poisoned
 storage as `Source`; zero-byte copies never lock storage. No rollback is promised.
@@ -777,6 +785,7 @@ Source: [render.rs](crates/expansex-core/src/render.rs).
 | `RenderExecutionError::MissingDepthBuffer` | Internal depth context is absent; validated public recording prevents ordinary misuse from reaching this. |
 | `RenderExecutionError::TextureStoragePoisoned { label: String }` | Nonempty draw's sampled texture source is untrusted. |
 | `RenderExecutionError::MissingTextureBinding { binding: u32 }` | Internal sampling context is incomplete; validated public draw recording prevents ordinary misuse from reaching this. |
+| `RenderExecutionError::UnexpectedStorageBinding { binding: u32 }` | Internal invariant failure: validated graphics shaders cannot request compute storage. |
 | `RenderExecutionError::IndexStoragePoisoned { label: String }` | Nonempty indexed draw's index source is untrusted. |
 | `RenderExecutionError::InvalidVertexIndex { index_position: u32, index_value: u32, base_vertex: i32, vertex_label: String, available_vertices: u64 }` | Raw index plus base cannot address a complete u32-indexed vertex record. Position is the index element relative to the binding offset; capacity excludes trailing incomplete records. |
 | `RenderExecutionError::FramebufferStoragePoisoned { label: String }` | Target pixel storage is untrusted. |
@@ -800,9 +809,12 @@ Source: [shader.rs](crates/expansex-core/src/shader.rs). All variants have no so
 | --- | --- |
 | `ShaderValidationError::TooManyInputs { count: u32, maximum: u32 }` | More than 16 input vectors. |
 | `ShaderValidationError::TextureSamplingStage { instruction: usize, stage: ShaderStage }` | SampleTexture is supported only in Fragment programs. |
+| `ShaderValidationError::StorageLoadingStage { instruction: usize, stage: ShaderStage }` | LoadStorage requires Compute. |
+| `ShaderValidationError::InvalidStorageBinding { instruction: usize, binding: u32 }` | Storage slot outside 0..8. |
+| `ShaderValidationError::ComputeInputCount { count: u32 }` | Compute requires exactly four built-in input vectors. |
 | `ShaderValidationError::InvalidTextureBinding { instruction: usize, binding: u32 }` | SampleTexture slot is outside 0..8. |
 | `ShaderValidationError::TooManyInstructions { count: usize, maximum: usize }` | More than 256 instructions. |
-| `ShaderValidationError::InvalidOutputCount { stage: ShaderStage, count: usize }` | Vertex needs 1..=17 outputs; fragment needs exactly 1. |
+| `ShaderValidationError::InvalidOutputCount { stage: ShaderStage, count: usize }` | Vertex needs 1..=17 outputs; fragment exactly 1; compute 1..=8. |
 | `ShaderValidationError::InvalidInputLocation { instruction: usize, location: u32, input_count: u32 }` | Input location is outside declared inputs. |
 | `ShaderValidationError::NonFiniteConstant { instruction: usize }` | Constant contains NaN or infinity. |
 | `ShaderValidationError::InvalidOperand { instruction: usize, operand: u32 }` | Operand is not an earlier register. |
@@ -822,6 +834,7 @@ Source: [shader.rs](crates/expansex-core/src/shader.rs). All variants have no so
 | --- | --- |
 | `ShaderExecutionError::WrongInputCount { expected: u32, actual: usize }` | Exact input count mismatch. |
 | `ShaderExecutionError::MissingTextureBinding { binding: u32 }` | Standalone evaluation encountered sampling without bound resources. |
+| `ShaderExecutionError::MissingStorageBinding { binding: u32 }` | Standalone evaluation encountered LoadStorage without dispatch bindings. |
 | `ShaderExecutionError::NonFiniteInput { location: usize }` | Input has a non-finite component. |
 | `ShaderExecutionError::NonFiniteResult { instruction: usize }` | Instruction produced a non-finite vector. |
 | `ShaderExecutionError::AllocationFailed { source: TryReserveError }` | Returning owned outputs failed; only this variant retains a source. |
@@ -1378,10 +1391,137 @@ No inherent methods or source.
 | `StencilBufferAccessError::OutOfBounds { x: u32, y: u32, width: u32, height: u32 }` | Coordinates are outside storage. |
 | `StencilBufferAccessError::StoragePoisoned { label: String }` | Storage is untrusted after an interrupted operation. |
 
+## Compute pipelines and dispatch
+
+Source: [compute.rs](crates/expansex-core/src/compute.rs).
+Contract: [COMPUTE.md](docs/COMPUTE.md). Elements are little-endian float4 vectors;
+each invocation loads/writes its global linear element. Global coordinates flatten
+X fastest. Input locations 0/1/2/3 are global/local/group IDs and group counts;
+the first three include the respective linear index in W, group counts use W=0.
+All values are finite; each dispatch commits all outputs together after successful
+evaluation. Resources are live and retained. In-place transforms use one slot;
+overlapping distinct views involving a writer are rejected. CPU permissions are
+independent from Storage usage. Zero dispatches validate but access no bytes.
+
+### ComputePipelineDescriptor
+
+Borrowed configuration, `ex::ComputePipelineDescriptor<'a>`:
+
+| Public field | Type | Meaning |
+| --- | --- | --- |
+| `label` | `&'a str` | Owned on creation; empty allowed. |
+| `shader` | `&'a Shader` | Retained Compute-stage program from the creating device. |
+| `workgroup_size` | `[u32; 3]` | Each axis 1..=1024; product at most 1024. |
+| `output_bindings` | `&'a [u32]` | Unique slots in 0..8, one per shader output in output order; copied on creation. |
+
+No inherent methods. Use Device::create_compute_pipeline.
+
+### ComputePipeline
+
+Private fields; clones share immutable configuration/identity and retain device/shader.
+
+| Method | Behavior |
+| --- | --- |
+| `ComputePipeline::label(&self) -> &str` | Borrow owned label. |
+| `ComputePipeline::shader(&self) -> &Shader` | Borrow retained shader. |
+| `ComputePipeline::workgroup_size(&self) -> [u32; 3]` | Local invocation dimensions. |
+| `ComputePipeline::output_bindings(&self) -> &[u32]` | Output slots in shader output order. |
+| `ComputePipeline::device(&self) -> Device` | Retain original device. |
+| `ComputePipeline::belongs_to(&self, device: &Device) -> bool` | Logical device membership. |
+| `ComputePipeline::is_same(&self, other: &Self) -> bool` | Shared pipeline identity. |
+
+### StorageBufferBinding
+
+Borrowed recording request, `ex::StorageBufferBinding<'a>`. No inherent methods.
+
+| Public field | Type | Meaning |
+| --- | --- | --- |
+| `binding` | `u32` | Unique slot in 0..8. |
+| `buffer` | `&'a Buffer` | Same-device allocation with Storage usage. |
+| `offset` | `u64` | Byte offset, aligned to 16. |
+| `size` | `u64` | Byte range size, multiple of 16; zero allowed. |
+
+Offset plus size must fit. Required slots hold at least invocation_count * 16
+bytes. Unused bindings are validated and retained but not read or locked.
+
+### ComputeBufferBinding
+
+Validated owned view inside a recorded dispatch; fields private. Cloning retains storage.
+
+| Method | Behavior |
+| --- | --- |
+| `ComputeBufferBinding::binding(&self) -> u32` | Slot number. |
+| `ComputeBufferBinding::buffer(&self) -> &Buffer` | Retained live allocation. |
+| `ComputeBufferBinding::offset(&self) -> u64` | Byte offset. |
+| `ComputeBufferBinding::size(&self) -> u64` | Bound byte count. |
+
+### ComputeDispatch
+
+Private fields; only dispatch recording constructs this description. No Clone.
+Group counts are 0..=65535 per axis; local size comes from the pipeline. Total
+invocations are at most 1,048,576. A zero group axis makes the dispatch empty.
+
+| Method | Behavior |
+| --- | --- |
+| `ComputeDispatch::pipeline(&self) -> &ComputePipeline` | Retained pipeline. |
+| `ComputeDispatch::workgroups(&self) -> [u32; 3]` | Recorded group counts. |
+| `ComputeDispatch::invocation_count(&self) -> u32` | Product of global dimensions, or zero. |
+| `ComputeDispatch::bindings(&self) -> &[ComputeBufferBinding]` | Retained storage views in recording request order. |
+
+### ComputePipelineCreateError
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `ComputePipelineCreateError::ForeignShader { label: String }` | Shader belongs to another device. |
+| `ComputePipelineCreateError::WrongShaderStage { actual: ShaderStage }` | Shader is not Compute. |
+| `ComputePipelineCreateError::InvalidWorkgroupSize { size: [u32; 3] }` | Zero/oversized local axis or product exceeds 1024. |
+| `ComputePipelineCreateError::OutputCountMismatch { expected: usize, actual: usize }` | Output-slot count differs from shader output count. |
+| `ComputePipelineCreateError::InvalidOutputBinding { binding: u32 }` | Slot outside 0..8. |
+| `ComputePipelineCreateError::DuplicateOutputBinding { binding: u32 }` | Two outputs target the same slot. |
+| `ComputePipelineCreateError::AllocationFailed { source: TryReserveError }` | Metadata reservation failed; source retained. |
+
+### ComputeEncodeError
+
+Failed recording appends nothing, modifies no resource, and retains no new handles.
+Validation order: pipeline device, group axes, total invocations, supplied slots/devices/
+usages/alignment/ranges, required slots/capacity, overlap, reservations.
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `ComputeEncodeError::ForeignPipeline { label: String }` | Pipeline belongs to another device. |
+| `ComputeEncodeError::InvalidWorkgroups { counts: [u32; 3] }` | Group axis exceeds 65535. |
+| `ComputeEncodeError::TooManyInvocations { workgroups: [u32; 3], workgroup_size: [u32; 3] }` | Product overflow or more than 1,048,576 invocations. |
+| `ComputeEncodeError::InvalidBinding { binding: u32 }` | Slot outside 0..8. |
+| `ComputeEncodeError::DuplicateBinding { binding: u32 }` | Duplicate supplied slot. |
+| `ComputeEncodeError::ForeignBuffer { binding: u32, label: String }` | Buffer belongs to another device. |
+| `ComputeEncodeError::MissingStorageUsage { binding: u32, label: String }` | Buffer lacks Storage usage. |
+| `ComputeEncodeError::UnalignedRange { binding: u32, offset: u64, size: u64 }` | Offset or size is not a multiple of 16. |
+| `ComputeEncodeError::OutOfBounds { binding: u32, offset: u64, size: u64, buffer_size: u64 }` | Range overflows or exceeds allocation. |
+| `ComputeEncodeError::MissingBinding { binding: u32 }` | Required load/output slot absent, even for empty dispatch. |
+| `ComputeEncodeError::InsufficientElements { binding: u32, required_bytes: u64, size: u64 }` | View too small for all invocations. |
+| `ComputeEncodeError::OverlappingBindings { first: u32, second: u32 }` | Same-allocation views overlap and at least one is an output. |
+| `ComputeEncodeError::AllocationFailed { source: TryReserveError }` | Recorded-view or command reservation failed; source retained. |
+
+### ComputeExecutionError
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `ComputeExecutionError::StoragePoisoned { binding: u32, label: String }` | Used allocation lock poisoned; checked before any output commit. |
+| `ComputeExecutionError::AllocationFailed` | Staged output reservation failed; no source retained. |
+| `ComputeExecutionError::ShaderFailed { invocation: [u32; 3], message: String }` | Shader failure with global invocation coordinates and original explanation. |
+
+All variants leave every dispatch output unchanged. These variants retain no
+underlying error source; QueueSubmitError::ComputeFailed retains this error.
+Completed earlier commands remain; later work is skipped. All used unique buffers
+stay locked through evaluation and commit under the device gate; loads see starting
+bytes, tail bytes remain unchanged. There are no shared-memory/barrier/atomic,
+arbitrary indexing, texture, integer, or branching compute instructions yet.
+
+
 ## Explicit standard trait support
 
 This lists implemented/derived traits, not Rust's blanket implementations or
-auto traits. They are separate from the 162 inherent methods above.
+auto traits. They are separate from the 179 inherent methods above.
 
 | Type | Traits |
 | --- | --- |
@@ -1465,6 +1605,14 @@ auto traits. They are separate from the 162 inherent methods above.
 | `StencilBufferDescriptorError` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`, `Display`, `Error` |
 | `StencilBufferCreateError` | `Debug`, `Display`, `Error` |
 | `StencilBufferAccessError` | `Debug`, `Clone`, `PartialEq`, `Eq`, `Display`, `Error` |
+| `ComputePipeline` | `Debug`, `Clone` |
+| `ComputePipelineDescriptor<'a>` | `Debug`, `Clone`, `Copy` |
+| `StorageBufferBinding<'a>` | `Debug`, `Clone`, `Copy` |
+| `ComputeBufferBinding` | `Debug`, `Clone` |
+| `ComputeDispatch` | `Debug` |
+| `ComputePipelineCreateError` | `Debug`, `Display`, `Error` |
+| `ComputeEncodeError` | `Debug`, `Display`, `Error` |
+| `ComputeExecutionError` | `Debug`, `Clone`, `PartialEq`, `Eq`, `Display`, `Error` |
 | `StencilState` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
 | `StencilFaceState` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
 | `StencilOperation` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
@@ -1476,10 +1624,10 @@ Standard trait operations include:
 | --- | --- |
 | `Clone::clone(&self) -> Self` | Types marked `Clone` above. Device/queue/buffer/framebuffer/depth/stencil/shader/pipeline/texture/view/sampler/binding handles retain shared state; `AdapterInfo` clones its owned metadata. |
 | `Default::default() -> Self` | `Instance`, `CommandRecorder`: same as `new()`. GraphicsPipelineOptions: depth/blend None. RenderAttachments: all None. |
-| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 84 types; buffer/framebuffer/depth/stencil formatting exposes metadata rather than stored data. |
+| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 92 types; buffer/framebuffer/depth/stencil formatting exposes metadata rather than stored data. |
 | `PartialEq::eq(&self, other: &Self) -> bool` | Types marked `PartialEq`; handle identity instead uses explicit `is_same`/`belongs_to` methods. |
-| `Display::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | Twenty-five error types and `CopyBufferRole`. |
-| `Error::source(&self) -> Option<&(dyn std::error::Error + 'static)>` | All twenty-five error types. Buffer/framebuffer/depth/stencil/shader/texture creation retain descriptor/reservation sources, sampler creation retains reservation sources, pipeline creation/command/render recording and shader evaluation retain reservation sources, and submission RenderFailed retains RenderExecutionError. Other current variants return None. |
+| `Display::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | Twenty-eight error types and `CopyBufferRole`. |
+| `Error::source(&self) -> Option<&(dyn std::error::Error + 'static)>` | All twenty-eight error types. Buffer/framebuffer/depth/stencil/shader/texture creation retain descriptor/reservation sources, sampler creation retains reservation sources, pipeline creation/command/render recording and shader evaluation retain reservation sources, and submission RenderFailed/ComputeFailed retain RenderExecutionError/ComputeExecutionError. Compute creation and recording retain reservation sources. Other current variants return None. |
 
 Other inherited standard trait methods, such as `clone_from` and `ne`, follow
 their standard-library contracts. Error trait objects also support standard
@@ -1490,8 +1638,8 @@ their standard-library contracts. Error trait objects also support standard
 
 There are currently no public APIs for asynchronous submission/completion, mipmaps,
 texture attachments/storage/transfer commands, arbitrary resource bind groups,
-external shader language/format importer or frontend/compiler, compute
-pipelines, instanced draws, primitive restart, indirect drawing, dispatch,
+external shader language/format importer or frontend/compiler,
+instanced draws, primitive restart, indirect drawing/dispatch,
 presentation, mapped memory, hardware discovery/drivers, managed planning,
 EX Witness, or EX Proof. Resource branching is an unaccepted discussion idea,
 not an implemented or locked API.

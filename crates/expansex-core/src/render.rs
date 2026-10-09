@@ -518,6 +518,10 @@ impl RenderPass<'_> {
 /// Expected reference render failures occur before any target pixels change.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RenderExecutionError {
+    /// Internal invariant: graphics shaders cannot contain storage loads.
+    UnexpectedStorageBinding {
+        binding: u32,
+    },
     MissingStencilBuffer,
     StencilStoragePoisoned {
         label: String,
@@ -581,6 +585,7 @@ pub enum RenderExecutionError {
 impl fmt::Display for RenderExecutionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::UnexpectedStorageBinding { binding } => write!(f, "graphics shader unexpectedly requested compute storage slot {binding}"),
             Self::MissingStencilBuffer => f.write_str("stencil-enabled drawing requires a stencil attachment"),
             Self::StencilStoragePoisoned { label } => write!(f, "stencil buffer {label:?} storage is poisoned"),
             Self::MissingDepthBuffer => f.write_str("depth-enabled drawing requires a depth attachment"),

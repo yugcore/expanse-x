@@ -23,7 +23,7 @@ renderer or a reason to postpone the programmable rendering milestone.
 | 1 — Minimum runtime | Complete | Ordered synchronous copy execution, readback, concurrency/failure contract, public example, and tests |
 | 2 — First software triangle | Complete | Public render scopes produce a verified PNG through EX's own clipped fixed-function rasterizer |
 | 3 — Programmability and pipeline milestone | Complete | Pipeline-controlled triangles, layouts, perspective interpolation, and validated u16/u32 indexed drawing |
-| 4 — Modern GPU concepts | In progress | Sampled RGBA8 textures/views, nearest/bilinear samplers, eight fragment resource slots, depth/stencil attachments/tests and blending; compute next |
+| 4 — Modern GPU concepts | In progress | Sampled RGBA8 textures/views, nearest/bilinear samplers, eight fragment resource slots, depth/stencil attachments/tests, blending, and storage-buffer compute dispatch; dependencies next |
 | Future — Hardware drivers | Deferred | A selected target, viable driver interfaces, and demonstrated execution |
 
 Checked items mean implemented and verified behavior.
@@ -219,7 +219,7 @@ by an actual example's needs rather than implementing every object immediately.
 
 - [x] Sampled 2D RGBA8 textures, rectangular views, nearest/bilinear samplers, and eight fragment texture/sampler slots.
 - [x] Depth/stencil and blending - separate attachments, comparisons/updates, channel masks, and atomic commits.
-- [ ] Compute pipelines and dispatch.
+- [x] Compute pipelines and dispatch - bounded float4 storage access, invocation IDs, workgroups, and atomic outputs.
 - [ ] Explicit resource transitions, read/write hazards, and execution/memory dependencies.
 - [ ] Asynchronous completion, fences/timelines, multiple queues, and cross-queue dependencies.
 - [ ] Multithreaded recording, indirect operations, and measured allocator/command reuse.
@@ -263,10 +263,22 @@ Twelve public tests, two internal poison/lifetime tests, and combined public
 documentation verify the path. The [diamond-mask example](../crates/ex-api/examples/stencil_mask.rs)
 verifies all three attachments; independent PNG checksum, geometry, sampling, and
 blend calculations match all 196,608 pixels, including 66,560 masked pixels.
-The image was inspected. All 177 workspace tests pass. The depth/stencil/blend
+The image was inspected. The stencil checkpoint passed 177 workspace tests. The depth/stencil/blend
 group is complete under the current reference contracts, while Phase 4 remains in progress.
 
-Phase 4 is still incomplete. Next: compute pipelines and dispatch. Texture mipmaps, transfer
+Compute works under [COMPUTE.md](COMPUTE.md): immutable local size/output slots,
+3D dispatch grids, four built-in input vectors, float4 storage loads/outputs,
+in-place transforms, live references, checked aliases, and atomic output commits.
+[Twelve public tests](../crates/ex-api/tests/compute.rs), two internal poison/lifetime
+tests, and executable documentation verify misuse, all IDs, eight outputs,
+zero/limit cases, copy ordering, reuse, device-only storage, shader rollback,
+and compute-to-graphics visibility. The [tile example](../crates/ex-api/examples/compute_tiles.rs)
+verifies 288 computed vertices and 48 tile centres. Independent PNG checksums,
+float32 geometry, and coverage calculations match all 196,608 pixels, including
+101,568 covered pixels; the image was visually inspected. All 192 workspace tests pass.
+
+Phase 4 is still incomplete. Next: explicit resource transitions, read/write
+hazards, and execution/memory dependencies. Texture mipmaps, transfer
 commands, attachments, storage images, arbitrary bind groups, and general shader
 resources need separate demonstrated contracts.
 
@@ -279,7 +291,7 @@ is checked. Performance or hardware-conformance claims require separate evidence
 The [EX Witness direction](../DOCUMENTATION.md#ex-witness-experimental-differentiation)
 explores explanation → replay → smaller executable tests for selected failures.
 It uses the same contracts for managed and explicit work. This track adds no new
-Phase 1 completion requirement; the main roadmap continues with compute pipelines and dispatch.
+Phase 1 completion requirement; the main roadmap continues with explicit resource dependencies.
 
 After the copy/submission foundation works:
 

@@ -31,6 +31,12 @@ handle retention. The reference contract introduces no four-byte alignment rule.
 Future hardware must implement supported semantics or explicitly report limits;
 it cannot silently reinterpret EX's byte ranges.
 
+The same encoder also records render scopes and [compute dispatches](COMPUTE.md).
+Command::Dispatch retains a ComputePipeline and validated Storage buffer views;
+recording does not evaluate the kernel or modify storage. These operations share
+the same consuming finish, immutable inspection, device ownership, retention,
+and live-reference rules. The copy-specific checks below remain unchanged.
+
 ## Validation and failure effects
 
 Checks apply in this order:

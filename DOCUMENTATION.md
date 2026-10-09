@@ -295,7 +295,10 @@ complete. [Textures, views, samplers, and fragment bindings](docs/TEXTURES.md)
 now work as the first Phase 4 capability. [Depth testing](docs/DEPTH.md) also works,
 with colour/depth scope atomicity. [Colour blending](docs/BLENDING.md) now supports
 separate RGB/alpha equations and channel masks. [Stencil testing](docs/STENCIL.md)
-now supports region masks, front/back rules, and atomic commits for all attachments. Established shader
+now supports region masks, front/back rules, and atomic commits for all attachments.
+[Compute pipelines and dispatch](docs/COMPUTE.md) now transform float4 storage
+arrays, expose invocation/workgroup IDs, and generate vertices for subsequent
+drawing with atomic output commits. Established shader
 languages/toolchains are the accepted future ingestion direction; a custom EX
 source language is deferred. Current examples use EX instructions directly.
 Managed planning, general

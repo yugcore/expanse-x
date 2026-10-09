@@ -202,6 +202,9 @@ fn shade(
             ))
         })
         .map_err(|error| match error {
+            ShaderExecutionError::MissingStorageBinding { binding } => {
+                RenderExecutionError::UnexpectedStorageBinding { binding }
+            }
             ShaderExecutionError::MissingTextureBinding { binding } => {
                 RenderExecutionError::MissingTextureBinding { binding }
             }

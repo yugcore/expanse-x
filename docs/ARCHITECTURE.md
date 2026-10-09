@@ -4,7 +4,7 @@ Status: Phases 0–3 complete. Owned resources, validated recording, synchronous
 copies, shaders, graphics pipelines, vertex layouts, interpolation, and indexed
 software triangles work. Phase 4 now adds sampled textures/views, samplers, and
 fragment resource bindings, plus retained depth attachments and pipeline tests.
-Colour blending and front/back stencil rules also work.
+Colour blending, front/back stencil rules, and storage-buffer compute dispatch also work.
 
 The [development roadmap](ROADMAP.md) tracks verified work, pending steps, and
 phase completion gates. This document describes architectural responsibilities.
@@ -41,10 +41,10 @@ not supply those capabilities. Hardware work is deferred.
 
 | Component | Implemented now | Next responsibility |
 | --- | --- | --- |
-| `ex-api`, library name `ex` | Resources, render scopes, submission/readback, shaders/pipelines/layouts, indexed/textured/blended/stencil drawing, and public examples | Compute entry points |
-| `expansex-core` | Ownership, allocation, recording, queue policy, shaders, validated pipelines, indices, sampled textures, depth attachments, immutable blend state, and stencil storage/rules | Compute contracts |
-| Validation | Resource identity/usages/ranges, layouts/stages, render state, finite shader arithmetic, clip w, storage poison, live index references, texture views/slots/devices, depth/stencil attachment/clear checks | Compute resources and richer hazards |
-| Reference backend | reference.rs and reference/programmable.rs execute copies and fixed/programmed triangles, including indexed fetch, texture sampling, depth testing, blending, stencil updates, and staged attachment commits | Compute execution |
+| `ex-api`, library name `ex` | Resources, render scopes, submission/readback, shaders/pipelines/layouts, indexed/textured/blended/stencil drawing, compute entry points, and public examples | Explicit resource dependencies |
+| `expansex-core` | Ownership, allocation, recording, queue policy, shaders, validated pipelines, indices, sampled textures, depth attachments, immutable blend state, stencil storage/rules, and compute contracts | Explicit resource dependencies |
+| Validation | Resource identity/usages/ranges, layouts/stages, render state, finite shader arithmetic, clip w, storage poison, live index references, texture views/slots/devices, depth/stencil attachment/clear checks, compute slots/ranges/aliases/grid limits | Explicit hazards/dependencies |
+| Reference backend | reference.rs and reference/programmable.rs execute copies and fixed/programmed triangles, including indexed fetch, texture sampling, depth testing, blending, stencil updates, and staged attachment commits; compute.rs executes storage dispatch with staged outputs | Explicit execution/memory dependencies |
 | Shader subsystem | shader.rs owns/validates EX instructions and evaluates standalone or allocation-free renderer invocations | Richer instructions and later external import |
 
 The public crate solves a packaging problem: callers have one `ex` import while
@@ -73,7 +73,7 @@ Owned Framebuffer pixels and fixed-function RenderPass recorders now exist.
 Graphics pipelines and single-buffer vertex layouts also exist.
 Sampled 2D textures, rectangular views, and immutable samplers also exist, with
 eight paired fragment slots inferred from shader instructions. General resource
-layouts, compute pipelines, surfaces, and presentation remain deferred. Offscreen image
+layouts, surfaces, and presentation remain deferred. Compute pipelines now exist. Offscreen image
 output is sufficient for the first triangle; a window and swapchain are not
 required. Choose Rust ownership, enums, borrowing, and `Result` for actual
 contracts instead of reproducing every object from another graphics API.
@@ -165,8 +165,13 @@ f32 attachment. Both attachments stage/commit under the device gate and distinct
 storage guards. [Blending](BLENDING.md) applies independent RGB/alpha equations and
 channel masks against staged destination bytes after shading. [Stencil](STENCIL.md)
 tests/updates a separate S8 image before depth, with independent front/back rules.
-All attached images commit together. Compute is a later step,
-not hidden claims of full GPU conformance.
+All attached images commit together. [Compute](COMPUTE.md) uses the same shader
+interpreter with four built-in vectors and compute-only LoadStorage. Pipeline
+outputs target explicit float4 views; 3D global IDs index independent elements.
+The executor locks each used allocation once, stages all output ranges, and
+commits only after every invocation succeeds. Following draws read these writes
+under the same device gate. No shared memory, atomics, parallelism, or full GPU
+conformance is claimed.
 
 ## Validation and errors
 

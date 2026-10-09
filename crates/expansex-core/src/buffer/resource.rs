@@ -4,7 +4,7 @@ use std::collections::TryReserveError;
 use std::error::Error;
 use std::fmt;
 use std::ops::Range;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 /// Failure to create reference buffer storage.
 #[derive(Debug)]
@@ -312,6 +312,11 @@ impl Buffer {
     ) -> Result<R, ()> {
         let bytes = self.state.bytes.lock().map_err(|_| ())?;
         Ok(f(&bytes[range]))
+    }
+
+    /// Executor only: caller holds the device gate and locks each allocation once.
+    pub(crate) fn lock_bytes(&self) -> Result<MutexGuard<'_, Vec<u8>>, ()> {
+        self.state.bytes.lock().map_err(|_| ())
     }
 
     fn poisoned_error(&self) -> BufferAccessError {
@@ -727,5 +732,153 @@ mod tests {
         drop(commands);
         assert!(vertex_state.upgrade().is_none());
         assert!(index_state.upgrade().is_none());
+    }
+
+    #[test]
+    fn compute_poison_checks_all_outputs_before_commit_but_skips_empty_and_unused() {
+        use crate::{
+            ComputeExecutionError, ComputePipelineDescriptor, QueueSubmitError, ShaderDescriptor,
+            ShaderInstruction, ShaderStage, StorageBufferBinding,
+        };
+        let device = Instance::new().default_adapter().create_device();
+        let descriptor = BufferDescriptor {
+            label: "compute storage",
+            size: 16,
+            usages: &[BufferUsage::Storage],
+            host_access: HostAccess::ReadWrite,
+        };
+        let first = device.create_buffer(descriptor).unwrap();
+        let poisoned = device.create_buffer(descriptor).unwrap();
+        let kernel = device
+            .create_shader(ShaderDescriptor {
+                label: "outputs",
+                stage: ShaderStage::Compute,
+                input_count: 4,
+                instructions: &[ShaderInstruction::Constant([1.0; 4])],
+                outputs: &[0, 0],
+            })
+            .unwrap();
+        let pipeline = device
+            .create_compute_pipeline(ComputePipelineDescriptor {
+                label: "two",
+                shader: &kernel,
+                workgroup_size: [1, 1, 1],
+                output_bindings: &[0, 1],
+            })
+            .unwrap();
+        let alias = poisoned.clone();
+        assert!(std::panic::catch_unwind(move || {
+            let _guard = alias.state.bytes.lock().unwrap();
+            panic!("interrupted compute output");
+        })
+        .is_err());
+        let bindings = [
+            StorageBufferBinding {
+                binding: 0,
+                buffer: &first,
+                offset: 0,
+                size: 16,
+            },
+            StorageBufferBinding {
+                binding: 1,
+                buffer: &poisoned,
+                offset: 0,
+                size: 16,
+            },
+        ];
+        let mut encoder = device.create_command_encoder();
+        encoder.dispatch(&pipeline, [1, 1, 1], &bindings).unwrap();
+        assert!(matches!(
+            device.default_queue().submit(&encoder.finish()),
+            Err(QueueSubmitError::ComputeFailed {
+                source: ComputeExecutionError::StoragePoisoned { binding: 1, .. },
+                ..
+            })
+        ));
+        let mut bytes = [99; 16];
+        first.read(0, &mut bytes).unwrap();
+        assert_eq!(bytes, [0; 16]);
+        let mut encoder = device.create_command_encoder();
+        encoder.dispatch(&pipeline, [0, 1, 1], &bindings).unwrap();
+        device.default_queue().submit(&encoder.finish()).unwrap();
+        let one = device
+            .create_shader(ShaderDescriptor {
+                label: "one",
+                stage: ShaderStage::Compute,
+                input_count: 4,
+                instructions: &[ShaderInstruction::Constant([1.0; 4])],
+                outputs: &[0],
+            })
+            .unwrap();
+        let one = device
+            .create_compute_pipeline(ComputePipelineDescriptor {
+                label: "one",
+                shader: &one,
+                workgroup_size: [1, 1, 1],
+                output_bindings: &[0],
+            })
+            .unwrap();
+        let mut encoder = device.create_command_encoder();
+        encoder.dispatch(&one, [1, 1, 1], &bindings).unwrap();
+        device.default_queue().submit(&encoder.finish()).unwrap();
+        first.read(0, &mut bytes).unwrap();
+        assert_eq!(bytes, [1.0_f32.to_le_bytes(); 4].concat().as_slice());
+    }
+
+    #[test]
+    fn compute_commands_retain_and_release_buffer_storage() {
+        use crate::{
+            ComputePipelineDescriptor, ShaderDescriptor, ShaderInstruction, ShaderStage,
+            StorageBufferBinding,
+        };
+        let device = Instance::new().default_adapter().create_device();
+        let buffer = device
+            .create_buffer(BufferDescriptor {
+                label: "compute retained",
+                size: 16,
+                usages: &[BufferUsage::Storage],
+                host_access: HostAccess::None,
+            })
+            .unwrap();
+        let weak = Arc::downgrade(&buffer.state);
+        let kernel = device
+            .create_shader(ShaderDescriptor {
+                label: "one",
+                stage: ShaderStage::Compute,
+                input_count: 4,
+                instructions: &[ShaderInstruction::Constant([1.0; 4])],
+                outputs: &[0],
+            })
+            .unwrap();
+        let pipeline = device
+            .create_compute_pipeline(ComputePipelineDescriptor {
+                label: "one",
+                shader: &kernel,
+                workgroup_size: [1, 1, 1],
+                output_bindings: &[0],
+            })
+            .unwrap();
+        let mut encoder = device.create_command_encoder();
+        encoder
+            .dispatch(
+                &pipeline,
+                [1, 1, 1],
+                &[StorageBufferBinding {
+                    binding: 0,
+                    buffer: &buffer,
+                    offset: 0,
+                    size: 16,
+                }],
+            )
+            .unwrap();
+        let commands = encoder.finish();
+        drop(buffer);
+        drop(pipeline);
+        drop(kernel);
+        drop(device);
+        assert!(weak.upgrade().is_some());
+        commands.device().default_queue().submit(&commands).unwrap();
+        drop(commands);
+        assert!(weak.upgrade().is_none());
     }
 }

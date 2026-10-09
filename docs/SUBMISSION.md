@@ -1,6 +1,6 @@
 # EX synchronous reference submission
 
-Status: implemented Phase 1 contract, extended with fixed and programmable render scopes;
+Status: implemented Phase 1 contract, extended with render scopes and compute dispatch;
 public names remain provisional. This is CPU execution, not hardware support.
 
 ## Design
@@ -8,7 +8,7 @@ public names remain provisional. This is CPU execution, not hardware support.
 Recording describes work; submission makes that work happen. The reference target
 needs a small, observable upload → record → submit → readback path before drawing.
 `Queue::submit(&self, commands: &CommandBuffer) -> Result<(), QueueSubmitError>`
-borrows finished work and executes copies/render scopes synchronously in recording order.
+borrows finished work and executes copies/compute dispatches/render scopes synchronously in recording order.
 The command buffer remains inspectable and can be submitted again. Each submission
 reads live source bytes, including changes since recording and earlier copies.
 
@@ -46,6 +46,11 @@ Zero-byte copies execute as no-ops without locking storage, even if it is poison
   zero-based. Earlier commands completed; the failing copy changes no destination
   bytes, and later commands do not execute. There is no transaction or rollback.
   For an aliased copy the single lock is checked as `Source`.
+- `ComputeFailed { command_index: usize, source: ComputeExecutionError }`: a
+  dispatch could not lock storage, reserve outputs, or evaluate an invocation.
+  All dispatch outputs remain unchanged; completed earlier commands remain and
+  later work is skipped. The source includes poisoned slot/label or global
+  invocation coordinates and shader explanation. See [COMPUTE.md](COMPUTE.md).
 - `RenderFailed { command_index: usize, source: RenderExecutionError }`: that scope
   changed no target pixels; earlier commands completed and later commands are
   skipped. Vertex decoding/preflight precedes shading into a temporary image;
@@ -74,6 +79,13 @@ only one storage lock. Buffer metadata getters and Buffer Debug formatting acqui
 neither lock.
 This deliberately serializes even independent buffers on a device; finer-grained
 parallelism requires a new demonstrated workload and contract.
+
+Compute locks each unique used allocation once, before evaluation, retaining
+all guards through atomic output commit. Disjoint views can share storage;
+read-only overlaps are allowed, while distinct overlapping views involving a
+writer are rejected at recording. Loads see pre-dispatch bytes; following
+commands see committed outputs. Zero dispatches and unused slots skip locks.
+Public host permissions do not restrict device-side storage execution.
 
 The gate contains only `()`, not resource state. If an internal panic poisons it,
 EX recovers its guard and still serializes operations. Byte-storage poison remains

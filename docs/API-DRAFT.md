@@ -140,12 +140,14 @@ cargo run -p ex-api --example software_triangle --locked --offline
 
 ## Independent shader evaluation
 
-`Device::create_shader(ShaderDescriptor)` validates and owns a vertex or fragment
+`Device::create_shader(ShaderDescriptor)` validates and owns a vertex, fragment, or compute
 program. All values are four-component f32 vectors; result register numbers are
 instruction indices. Input, Constant, Add, Multiply, Dot4, and Swizzle execute
 through `Shader::evaluate` with bounded local registers. Descriptors require at
 most 16 inputs and 256 instructions; vertex programs return position and up to
-16 varyings, fragment programs return one RGBA vector. Only earlier registers
+16 varyings, fragment programs return one RGBA vector, compute programs require
+four inputs and return 1..=8 vectors. Fragment SampleTexture and compute LoadStorage
+need their bound execution contexts. Only earlier registers
 can be referenced. All constants, inputs, and evaluated results must be finite.
 
 Clones share immutable source and retain the creating device. Evaluation checks
@@ -311,6 +313,26 @@ sampling exists. See [STENCIL.md](STENCIL.md).
 cargo run -p ex-api --example stencil_mask --locked --offline
 ```
 
+## Compute pipelines and storage dispatch
+
+[COMPUTE.md](COMPUTE.md) defines Compute-stage programs, immutable pipeline local
+sizes/output slots, and CommandEncoder::dispatch. Compute requires four built-in
+input vectors (global ID, local ID, group ID, group counts) and 1..=8 outputs.
+LoadStorage reads the current invocation's little-endian float4 element from an
+explicit same-device Storage buffer view. Outputs write corresponding elements;
+a single slot supports in-place transformation. Overlapping distinct views with
+a writer are rejected. Local group product is at most 1024; each group count at
+most 65535; dispatch totals at most 1,048,576 invocations. Zero axes validate but
+execute no work. Recording retains live pipeline/buffer state without execution.
+
+The reference interpreter locks each used allocation once under the device gate,
+evaluates into staged output ranges, and commits all outputs together. Failures
+return QueueSubmitError::ComputeFailed with invocation/storage context, preserve
+every dispatch output and earlier commands, and skip later work. Later dispatches,
+copies, and draws see completed writes. HostAccess permissions do not restrict
+Storage execution. Shared memory, atomics, arbitrary indexing, barriers, integer
+instructions, branching, and parallel/hardware execution remain future capabilities.
+
 ## Standalone prototype labels
 
 `CommandRecorder` owns a `Vec<String>`. `new()` and `default()` start an empty
@@ -373,7 +395,11 @@ and failure. Independent calculations verify every comparison-example pixel.
 Twelve public stencil tests, two internal poison/lifetime tests, and combined public
 documentation verify storage, masks, facing, operations, rejected fragments, integration,
 and atomic three-attachment rollback. Independent pixel calculations verify the mask example.
-The workspace runs 177 tests, including documentation tests.
+Twelve public compute tests, two internal poison/lifetime tests, and executable
+compute documentation verify grids, views, finite arithmetic, validation, retention,
+ordering, reuse, aliasing, zero/limit cases, output rollback, and generated vertices.
+Independent pixel calculations verify the compute tile example.
+The workspace runs 192 tests, including documentation tests.
 Tests do not induce allocator OOM by exhausting host memory.
 
 ## Next contract
@@ -382,6 +408,7 @@ Phases 1–3 are complete: copies and fixed-function triangles execute through
 EX and produce observable bytes/pixels. Shader representation, stage interfaces,
 and programmable execution now work through pipeline validation, vertex layouts,
 interpolation, and indexed drawing. Sampled textures, views, samplers, and eight
-fragment resource slots, depth testing, and colour blending and stencil also work. Compute pipelines/dispatch are next;
+fragment resource slots, depth/stencil tests, blending, and compute pipelines/dispatch
+also work. Explicit resource transitions and execution/memory dependencies are next;
 language/format import remains future work.
 There is no implemented execution-backend ABI yet.

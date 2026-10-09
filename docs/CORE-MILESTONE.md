@@ -61,5 +61,8 @@ only when they exercise the real core; expand core features when an SDK workload
 demonstrates the need, with their own contracts and tests.
 
 Existing examples, checks, and documentation continue to support core development.
-This ordering defers new SDK infrastructure; it does not remove those working
-development aids. The [roadmap](ROADMAP.md) tracks implementation evidence.
+The [source SDK foundation](SDK.md) now supplies setup/build diagnostics,
+capability queries and a standalone Rust starter. The wider SDK Preview remains
+in progress; shader import/build and reflection are the next selected work area.
+SDK infrastructure builds on the verified core and its existing development
+aids. The [roadmap](ROADMAP.md) tracks implementation evidence.

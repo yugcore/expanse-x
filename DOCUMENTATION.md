@@ -314,6 +314,8 @@ boundary and reusable adapter-parameterized checks work under
 [CORE-PROFILE.md](docs/CORE-PROFILE.md). The maintained integrated workload and
 completion review now meet Core Preview 1 under [CORE-PROOF.md](docs/CORE-PROOF.md).
 SDK development follows this bounded explicit software core milestone.
+Source SDK setup checks, capability reporting and standalone Rust project creation
+now work under [SDK.md](docs/SDK.md); broader shader/tool integrations remain planned.
 Explicit whole-resource declarations, access transitions, and checked execution/visibility
 dependencies now work under [DEPENDENCIES.md](docs/DEPENDENCIES.md). Managed planning,
 finer dependency precision, EX Witness, EX Proof, and hardware drivers remain planned, as defined by the roadmap, [submission contract](docs/SUBMISSION.md),

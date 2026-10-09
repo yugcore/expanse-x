@@ -10,5 +10,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ex-sdk"
+version = "0.1.0"
+dependencies = [
+ "ex-api",
+]
+
+[[package]]
 name = "expansex-core"
 version = "0.1.0"

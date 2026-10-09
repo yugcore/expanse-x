@@ -192,6 +192,22 @@ change live colours/parameters; missing-barrier and late-compute-failure checks
 verify rejection, rollback and repaired reuse. It writes `target/core-preview.png`.
 The test runs with normal workspace checks and verifies every pixel/attachment.
 
+## Source SDK foundation
+
+```text
+cargo run -p ex-sdk --locked --offline -- doctor
+cargo run -p ex-sdk --locked --offline -- info
+cargo run -p ex-sdk --locked --offline -- new target/my-ex-app --name my-ex-app
+```
+
+The source SDK checks installed tools and an offline executable build, reports
+the supported profile/limits, and creates an independent Rust application. From
+the generated directory, run `cargo run --locked --offline` to render a checked
+triangle to `target/ex-starter.png`. Edit `src/shaders.rs` for current EX IR and
+`src/renderer.rs` for explicit resource/draw flow. Existing destinations are refused.
+See [SDK.md](docs/SDK.md) for checkout selection, path handling, errors and the
+remaining shader/import/reload/window/tooling gates. SDK Preview is in progress.
+
 ## Repository map
 
 | Path | Responsibility |
@@ -200,6 +216,7 @@ The test runs with normal workspace checks and verifies every pixel/attachment.
 | `api.md` | Complete catalog of currently exposed public APIs |
 | `crates/ex-api/` | Public Rust entry point, imported as `ex`; runnable example |
 | `crates/expansex-core/` | Ownership, resources, recording/submission, shader interpreter, and private reference rasterizer |
+| `crates/ex-sdk/` | Source SDK CLI, setup/capability checks and standalone Rust starter templates |
 | `docs/` | Current EX contracts, architecture, assessment, and conventions |
 | `scripts/` | Repeatable production checks |
 
@@ -212,9 +229,11 @@ owned resources, copies, fixed-function drawing, and synchronous readback now wo
 Phase 3 completes programmable pipelines, layouts, interpolation, and indexed
 drawing. Phase 4 now has sampled textures, views, samplers, and eight fragment
 resource slots, depth/stencil attachments/tests, blending, and compute pipelines/dispatch.
-The workspace passes 257 tests, including documentation tests.
+The workspace passes 262 tests, including documentation tests.
 [Core Preview 1](docs/CORE-MILESTONE.md) is complete for the bounded explicit
-software profile. SDK Preview is next; a complete/stable v1 API remains a later
+software profile. SDK Preview is in progress: setup checks, capability reporting
+and standalone Rust project generation work. Shader import/build and reflection
+are next; a complete/stable v1 API remains a later
 goal. Other modern GPU
 features and hardware drivers follow demonstrated workloads, one capability at a time.
 

@@ -5,8 +5,9 @@ public field, enum variant, and explicit standard trait implementation.
 There are **121 public types and 229 inherent methods**. Phase 3 is complete;
 these remain provisional APIs, not a completed or stable v1 specification.
 The bounded [Core Preview milestone](docs/CORE-MILESTONE.md) is complete under
-[the integrated proof](docs/CORE-PROOF.md); SDK development is next. This catalog
-describes working APIs, not planned SDK commands.
+[the integrated proof](docs/CORE-PROOF.md). The [source SDK CLI](docs/SDK.md)
+now provides info, doctor and project creation; wider SDK Preview work remains
+in progress. SDK binary commands are separate from this library API inventory.
 
 Applications depend on package `ex-api` and import its library as `ex`:
 

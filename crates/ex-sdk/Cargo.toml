@@ -1,0 +1,18 @@
+[package]
+name = "ex-sdk"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+description = "Source SDK tools for the bounded Expanse-X software core"
+
+[[bin]]
+name = "ex"
+path = "src/main.rs"
+# The CLI is documented in docs/SDK.md; preserve the library's rustdoc ex/ path.
+doc = false
+
+[dependencies]
+ex = { package = "ex-api", path = "../ex-api" }
+
+[lints]
+workspace = true

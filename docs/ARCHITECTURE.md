@@ -46,6 +46,7 @@ not supply those capabilities. Hardware work is deferred.
 | Component | Implemented now | Next responsibility |
 | --- | --- | --- |
 | `ex-api`, library name `ex` | Resources, render scopes, submission/readback, shaders/pipelines/layouts, graphics, compute, explicit dependencies, profile queries, and public examples/tests | SDK workflows using the verified core |
+| `ex-sdk`, binary name `ex` | Source-checkout/tool diagnostics, profile queries and standalone project generation through the public ex library | Established shader build/import/reflection over the supported profile |
 | `expansex-core` | Ownership, allocation, recording, queue policy, shared profile bounds, and the private selected executor alongside resource/shader contracts | Preserve Preview1 contracts as demonstrated workloads expand |
 | Validation | Resource identity/usages/ranges, layouts/stages, render state, finite arithmetic, attachment checks, compute bounds, and alias-aware explicit-plan preflight | Broader profiles only with implemented behavior |
 | Reference backend | ReferenceBackend executes copies, image transfers, fixed/programmed triangles and compute using the existing staged algorithms, under the runtime's device gate | Future targets require real storage and execution integration |

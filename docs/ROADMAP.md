@@ -15,8 +15,8 @@ and verify the explicit core first. Add managed planning over those contracts
 when a working workload justifies it; this is a future capability, not a second
 renderer or a reason to postpone the programmable rendering milestone.
 
-The bounded [Core Preview](CORE-MILESTONE.md) is complete. SDK Preview is the
-next milestone; a complete/stable v1 API is a later goal. Build new SDK tooling
+The bounded [Core Preview](CORE-MILESTONE.md) is complete. SDK Preview is in
+progress; a complete/stable v1 API is a later goal. Build new SDK tooling
 around this verified explicit reference core; retain the broader
 Phase 4 feature roadmap without treating every future feature as a core-launch gate.
 
@@ -30,7 +30,7 @@ Phase 4 feature roadmap without treating every future feature as a core-launch g
 | 3 — Programmability and pipeline milestone | Complete | Pipeline-controlled triangles, layouts, perspective interpolation, and validated u16/u32 indexed drawing |
 | 4 — Modern GPU concepts | In progress | Sampled RGBA8 textures/views, nearest/bilinear samplers, eight fragment resource slots, depth/stencil attachments/tests, blending, and storage-buffer compute dispatch, reusable bindings/uniforms, checked whole-resource dependencies, and multi-pass image flows |
 | Core Preview 1 | Complete | Bounded software profile, selected executor, reusable profile corpus and maintained integrated proof in CORE-PROOF.md; 257 tests and all project checks pass |
-| Next milestone — SDK Preview | Planned | Templates, shader/build integration, developer tools, onboarding, and packaging over the completed core |
+| SDK Preview | In progress | Source foundation in SDK.md: setup/build checks, linked profile queries, safe standalone Rust starter generation and offline build/run tests; shader import/reflection and broader tooling remain pending |
 | Future — Hardware drivers | Deferred | A selected target, viable driver interfaces, and demonstrated execution |
 
 Checked items mean implemented and verified behavior.
@@ -339,13 +339,29 @@ The final 128x64 PNG passes independent CRC/decompression and all-pixel checks
 and visual inspection. All 257 workspace tests and project checks pass.
 
 Core Preview 1 is complete within the declared bounded software profile. SDK
-Preview is the next milestone. Phase 4 remains incomplete.
+Preview is now in progress. Phase 4 remains incomplete.
 Mipmaps, storage images, multiple groups,
 dynamic bindings and broader shader profiles require separate contracts.
 
 Each feature needs a chosen EX contract, a working reference implementation,
 misuse validation, executable evidence, and updated documentation before its box
 is checked. Performance or hardware-conformance claims require separate evidence.
+
+## SDK Preview — source foundation working
+
+[SDK.md](SDK.md) defines the selected source workflow and remaining gates.
+The ex-sdk package builds the ex CLI: info queries the linked runtime; doctor
+reports tool versions and builds the core example offline; new creates a
+standalone Rust app with editable shaders, explicit rendering, checked PNG
+output and an independent lockfile. It refuses existing destinations and cleans
+up its own files on failure. Five real CLI tests cover misuse/cleanup/missing
+tools and generated-project format/build/run in paths with spaces, including a
+shader edit changing output. Independent checks match every starter PNG pixel.
+All 262 tests and project checks pass; library API counts and core semantics stay
+the same. No packages are published and no platform beyond this tested Windows
+environment is certified. Next: choose/implement shader import/build and reflection
+for the supported core subset. Reload, windowing, assets, capture and releases
+remain separate SDK gates.
 
 ## EX Witness — experimental track: not started
 

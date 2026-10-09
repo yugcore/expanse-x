@@ -88,10 +88,6 @@ impl Queue {
         commands
             .validate_dependencies()
             .map_err(|source| QueueSubmitError::DependencyFailed { source })?;
-        let _execution = device.lock_execution();
-        for (command_index, command) in commands.commands().iter().enumerate() {
-            crate::reference::execute(command_index, command)?;
-        }
-        Ok(())
+        device.execute_commands(commands)
     }
 }

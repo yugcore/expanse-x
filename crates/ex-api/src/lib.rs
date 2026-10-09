@@ -283,3 +283,5 @@ pub use expansex_core::{
     BufferTextureCopy, TextureBufferLayout, TextureCopy, TextureTransferEncodeError,
     TextureTransferExecutionError,
 };
+
+pub use expansex_core::{CoreLimits, CoreProfile};

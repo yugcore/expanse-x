@@ -309,6 +309,9 @@ in compute/vertex/fragment execution work under [BINDINGS.md](docs/BINDINGS.md).
 Device texture transfers, shared full-image render attachments, later-pass sampling,
 and padded readback work under [TEXTURE-FLOW.md](docs/TEXTURE-FLOW.md). Alias-aware
 validation preserves host permissions and rejects attachment feedback.
+The bounded CoreProfile::Preview1, shared validation limits, device-owned execution
+boundary and reusable adapter-parameterized checks work under
+[CORE-PROFILE.md](docs/CORE-PROFILE.md). Final integrated core proof remains pending.
 Explicit whole-resource declarations, access transitions, and checked execution/visibility
 dependencies now work under [DEPENDENCIES.md](docs/DEPENDENCIES.md). Managed planning,
 finer dependency precision, EX Witness, EX Proof, and hardware drivers remain planned, as defined by the roadmap, [submission contract](docs/SUBMISSION.md),

@@ -7,6 +7,8 @@ fragment resource bindings, plus retained depth attachments and pipeline tests.
 Colour blending, front/back stencil rules, and storage-buffer compute dispatch also work.
 Reusable bindings/uniforms, explicit dependencies, texture transfers and shared
 render-to-texture images work under their bounded contracts.
+Adapters and devices advertise Core Preview 1; real submissions use a selected
+private executor and reusable public profile checks.
 
 The [development roadmap](ROADMAP.md) tracks verified work, pending steps, and
 phase completion gates. This document describes architectural responsibilities.
@@ -43,10 +45,10 @@ not supply those capabilities. Hardware work is deferred.
 
 | Component | Implemented now | Next responsibility |
 | --- | --- | --- |
-| `ex-api`, library name `ex` | Resources, render scopes, submission/readback, shaders/pipelines/layouts, indexed/textured/blended/stencil drawing, compute entry points, and public examples | Explicit resource dependencies |
-| `expansex-core` | Ownership, allocation, recording, queue policy, shaders, validated pipelines, indices, sampled textures, depth attachments, immutable blend state, stencil storage/rules, and compute contracts | Explicit resource dependencies |
-| Validation | Resource identity/usages/ranges, layouts/stages, render state, finite shader arithmetic, clip w, storage poison, live index references, texture views/slots/devices, depth/stencil attachment/clear checks, compute slots/ranges/aliases/grid limits | Explicit hazards/dependencies |
-| Reference backend | reference.rs and reference/programmable.rs execute copies and fixed/programmed triangles, including indexed fetch, texture sampling, depth testing, blending, stencil updates, and staged attachment commits; compute.rs executes storage dispatch with staged outputs | Explicit execution/memory dependencies |
+| `ex-api`, library name `ex` | Resources, render scopes, submission/readback, shaders/pipelines/layouts, graphics, compute, explicit dependencies, profile queries, and public examples/tests | Maintained integrated core proof |
+| `expansex-core` | Ownership, allocation, recording, queue policy, shared profile bounds, and the private selected executor alongside resource/shader contracts | Final profile completion review |
+| Validation | Resource identity/usages/ranges, layouts/stages, render state, finite arithmetic, attachment checks, compute bounds, and alias-aware explicit-plan preflight | Broader profiles only with implemented behavior |
+| Reference backend | ReferenceBackend executes copies, image transfers, fixed/programmed triangles and compute using the existing staged algorithms, under the runtime's device gate | Future targets require real storage and execution integration |
 | Shader subsystem | shader.rs owns/validates EX instructions and evaluates standalone or allocation-free renderer invocations | Richer instructions and later external import |
 
 The public crate solves a packaging problem: callers have one `ex` import while
@@ -74,8 +76,9 @@ independent allocation identity, and share storage when cloned.
 Owned Framebuffer pixels and fixed-function RenderPass recorders now exist.
 Graphics pipelines and single-buffer vertex layouts also exist.
 Sampled 2D textures, rectangular views, and immutable samplers also exist, with
-eight paired fragment slots inferred from shader instructions. General resource
-layouts, surfaces, and presentation remain deferred. Compute pipelines now exist. Offscreen image
+eight paired fragment slots inferred from shader instructions. Reusable resource
+layouts/groups and uniforms work. Surfaces and presentation remain deferred.
+Compute pipelines now exist. Offscreen image
 output is sufficient for the first triangle; a window and swapchain are not
 required. Choose Rust ownership, enums, borrowing, and `Result` for actual
 contracts instead of reproducing every object from another graphics API.
@@ -243,5 +246,23 @@ without copying or allocating. transfer.rs owns validated row/rectangle copy
 interpretation; reference.rs dispatches those commands under queue policy's gate.
 Texture/image views and buffer layouts are immutable retained metadata. Dependency
 analysis recognizes cross-kind aliases; render recording rejects sampled attachment
-feedback. See [TEXTURE-FLOW.md](TEXTURE-FLOW.md). The executor/profile boundary and
-its reusable conformance checks remain the next core gate.
+feedback. See [TEXTURE-FLOW.md](TEXTURE-FLOW.md).
+
+## Selected execution and profile
+
+Adapter metadata identifies the implementation through BackendKind; CoreProfile
+identifies the supported behavior. Preview1's numeric bounds live in profile.rs
+and are used by validators. Adapter/device queries return metadata without
+execution; changing returned limit copies cannot configure a device.
+
+backend.rs defines a private ExecutionBackend trait and structured, unindexed
+execution errors. Each logical device owns a selected executor. Queue policy
+preflights work before the device acquires its gate; the device executes each
+command in order, adds error indices, and stops at the first failure. ReferenceBackend
+implements the interface with the existing software algorithms. Resource creation
+and CPU storage remain in their existing modules; this interface is not a complete
+hardware memory abstraction or public driver ABI.
+
+Nine public adapter-parameterized profile cases and an internal traced-executor
+test verify observable behavior and runtime policy. See [CORE-PROFILE.md](CORE-PROFILE.md).
+The final integrated workload and completion review remain the next core gate.

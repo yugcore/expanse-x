@@ -103,7 +103,8 @@ Fifteen [public tests](../crates/ex-api/tests/texture_flow.rs), two
 and executable alias documentation cover rows/rectangles, padding, overflow,
 permissions, device roles, live reuse, identity, feedback, alias barriers,
 preflight rejection, six poisoned-endpoint cases, retention, and render rollback
-across shared colour/depth/stencil storage. The workspace passes 245 tests.
+across shared colour/depth/stencil storage. This transfer checkpoint passed 245
+tests; the subsequent [profile/executor gate](CORE-PROFILE.md) passes 256.
 Allocation failure branches exist; tests do not exhaust host memory to induce OOM.
 
 The [public workload](../crates/ex-api/examples/texture_flow.rs) uses HostAccess::None
@@ -115,5 +116,6 @@ pixels and padding bytes after changing only upload data. Independent PNG CRC,
 dimension, decompression and pixel checks verify the final 640x320 image,
 including 131,072 panel pixels. The PNG was visually inspected. The right panel
 is vertically flipped using a vertex uniform; the first pass renders the image
-that both second-pass panels sample. This proves this gate, not the final
-supported-profile/backend completion gate or stable v1.
+that both second-pass panels sample. This proves the transfer gate; the
+profile/executor gate now also works. Final integrated core completion and
+stable v1 remain separate milestones.

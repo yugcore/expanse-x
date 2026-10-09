@@ -164,8 +164,9 @@ impl Device {
         if descriptor
             .workgroup_size
             .iter()
-            .any(|&axis| axis == 0 || axis > 1024)
-            || product(descriptor.workgroup_size).is_none_or(|count| count > 1024)
+            .any(|&axis| axis == 0 || axis > crate::profile::PREVIEW_LIMITS.max_workgroup_size)
+            || product(descriptor.workgroup_size)
+                .is_none_or(|count| count > crate::profile::PREVIEW_LIMITS.max_workgroup_size)
         {
             return Err(E::InvalidWorkgroupSize {
                 size: descriptor.workgroup_size,
@@ -179,7 +180,7 @@ impl Device {
         }
         let mut seen = 0_u8;
         for &binding in descriptor.output_bindings {
-            if binding >= 8 {
+            if binding >= crate::profile::PREVIEW_LIMITS.binding_slots {
                 return Err(E::InvalidOutputBinding { binding });
             }
             if seen & (1 << binding) != 0 {
@@ -480,7 +481,10 @@ impl CommandEncoder {
                 label: pipeline.label().to_owned(),
             });
         }
-        if workgroups.iter().any(|&count| count > 65535) {
+        if workgroups
+            .iter()
+            .any(|&count| count > crate::profile::PREVIEW_LIMITS.max_workgroup_count)
+        {
             return Err(E::InvalidWorkgroups { counts: workgroups });
         }
         let dimensions =
@@ -492,17 +496,16 @@ impl CommandEncoder {
         } else {
             product(dimensions)
         };
-        let invocation_count =
-            count
-                .filter(|&count| count <= 1_048_576)
-                .ok_or(E::TooManyInvocations {
-                    workgroups,
-                    workgroup_size: pipeline.workgroup_size(),
-                })?;
+        let invocation_count = count
+            .filter(|&count| count <= crate::profile::PREVIEW_LIMITS.max_compute_invocations)
+            .ok_or(E::TooManyInvocations {
+                workgroups,
+                workgroup_size: pipeline.workgroup_size(),
+            })?;
         let mut seen = 0_u8;
         for binding in bindings {
             let slot = binding.binding;
-            if slot >= 8 {
+            if slot >= crate::profile::PREVIEW_LIMITS.binding_slots {
                 return Err(E::InvalidBinding { binding: slot });
             }
             if seen & (1 << slot) != 0 {

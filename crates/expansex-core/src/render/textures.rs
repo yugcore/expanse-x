@@ -23,7 +23,7 @@ impl RenderPass<'_> {
         view: &TextureView,
         sampler: &Sampler,
     ) -> Result<(), RenderEncodeError> {
-        if binding >= 8 {
+        if binding >= crate::profile::PREVIEW_LIMITS.binding_slots {
             return Err(RenderEncodeError::InvalidTextureSlot { binding });
         }
         if !view.texture().belongs_to(&self.encoder.device) {

@@ -1,56 +1,49 @@
 //! Working CPU executor. Queue policy owns the device gate; this module owns
 //! byte-copy interpretation, vertex fetch, clipping, and pixel rasterization.
-use crate::{Command, CopyBufferRole, QueueSubmitError, RenderCommands, RenderExecutionError};
+use crate::backend::{ExecutionBackend, ExecutionError};
+use crate::{Command, CopyBufferRole, RenderCommands, RenderExecutionError};
 mod programmable;
 
-pub(crate) fn execute(command_index: usize, command: &Command) -> Result<(), QueueSubmitError> {
-    match command {
-        Command::CopyBufferToTexture(copy) | Command::CopyTextureToBuffer(copy) => {
-            crate::transfer::execute_buffer_texture(
-                copy,
-                matches!(command, Command::CopyBufferToTexture(_)),
-            )
-            .map_err(|source| QueueSubmitError::TextureTransferFailed {
-                command_index,
-                source,
-            })
-        }
-        Command::CopyTexture(copy) => crate::transfer::execute_texture(copy).map_err(|source| {
-            QueueSubmitError::TextureTransferFailed {
-                command_index,
-                source,
+#[derive(Debug)]
+pub(crate) struct ReferenceBackend;
+impl ExecutionBackend for ReferenceBackend {
+    fn core_profile(&self) -> crate::CoreProfile {
+        crate::CoreProfile::Preview1
+    }
+    fn execute(&self, command: &Command) -> Result<(), ExecutionError> {
+        match command {
+            Command::CopyBufferToTexture(copy) | Command::CopyTextureToBuffer(copy) => {
+                crate::transfer::execute_buffer_texture(
+                    copy,
+                    matches!(command, Command::CopyBufferToTexture(_)),
+                )
+                .map_err(ExecutionError::TextureTransfer)
             }
-        }),
-        // Synchronous ordered execution already fulfils this full dependency.
-        Command::ResourceTransitions(_) => Ok(()),
-        Command::CopyBuffer(copy) => copy
-            .source()
-            .copy_to(
-                copy.source_offset(),
-                copy.destination(),
-                copy.destination_offset(),
-                copy.size(),
-            )
-            .map_err(|role| QueueSubmitError::StoragePoisoned {
-                command_index,
-                role,
-                label: match role {
-                    CopyBufferRole::Source => copy.source().label(),
-                    CopyBufferRole::Destination => copy.destination().label(),
-                }
-                .to_owned(),
-            }),
-        Command::Dispatch(dispatch) => {
-            crate::compute::execute(dispatch).map_err(|source| QueueSubmitError::ComputeFailed {
-                command_index,
-                source,
-            })
-        }
-        Command::RenderPass(pass) => {
-            render(pass).map_err(|source| QueueSubmitError::RenderFailed {
-                command_index,
-                source,
-            })
+            Command::CopyTexture(copy) => {
+                crate::transfer::execute_texture(copy).map_err(ExecutionError::TextureTransfer)
+            }
+            // Synchronous ordered execution already fulfils this full dependency.
+            Command::ResourceTransitions(_) => Ok(()),
+            Command::CopyBuffer(copy) => copy
+                .source()
+                .copy_to(
+                    copy.source_offset(),
+                    copy.destination(),
+                    copy.destination_offset(),
+                    copy.size(),
+                )
+                .map_err(|role| ExecutionError::BufferCopyPoisoned {
+                    role,
+                    label: match role {
+                        CopyBufferRole::Source => copy.source().label(),
+                        CopyBufferRole::Destination => copy.destination().label(),
+                    }
+                    .to_owned(),
+                }),
+            Command::Dispatch(dispatch) => {
+                crate::compute::execute(dispatch).map_err(ExecutionError::Compute)
+            }
+            Command::RenderPass(pass) => render(pass).map_err(ExecutionError::Render),
         }
     }
 }

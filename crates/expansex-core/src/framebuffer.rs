@@ -4,7 +4,7 @@ use std::error::Error;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-const MAX_EXTENT: u32 = 16384;
+const MAX_EXTENT: u32 = crate::profile::PREVIEW_LIMITS.max_image_extent;
 
 /// Stored pixel representation. Only linear RGBA bytes are supported currently.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

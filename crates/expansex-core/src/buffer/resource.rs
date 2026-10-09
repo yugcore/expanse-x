@@ -132,7 +132,7 @@ impl Device {
             .map_err(BufferCreateError::InvalidDescriptor)?;
         let size = usize::try_from(descriptor.size)
             .ok()
-            .filter(|&size| size <= isize::MAX as usize)
+            .filter(|&size| size as u64 <= crate::profile::PREVIEW_LIMITS.max_buffer_size)
             .ok_or(BufferCreateError::SizeTooLarge {
                 size: descriptor.size,
             })?;

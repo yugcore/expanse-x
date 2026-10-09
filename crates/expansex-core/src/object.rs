@@ -66,6 +66,11 @@ pub struct Adapter {
 }
 
 impl Adapter {
+    /// Supported core contract, separate from this adapter's backend identity.
+    pub fn core_profile(&self) -> crate::CoreProfile {
+        crate::backend::core_profile(self.info.backend)
+    }
+
     /// Borrows target metadata for the lifetime of this handle.
     pub fn info(&self) -> &AdapterInfo {
         &self.info
@@ -80,6 +85,7 @@ impl Adapter {
             state: Arc::new(DeviceState {
                 adapter: self.clone(),
                 execution: Mutex::new(()),
+                backend: crate::backend::create(self.info.backend),
             }),
         }
     }
@@ -93,6 +99,7 @@ impl Adapter {
 struct DeviceState {
     adapter: Adapter,
     execution: Mutex<()>,
+    backend: Box<dyn crate::backend::ExecutionBackend>,
 }
 
 /// A logical EX device. Creates reference resources, shaders, pipelines, and
@@ -105,6 +112,26 @@ pub struct Device {
 }
 
 impl Device {
+    /// The supported contract of this device's selected executor.
+    pub fn core_profile(&self) -> crate::CoreProfile {
+        self.state.backend.core_profile()
+    }
+    // Queue policy has already checked device identity and explicit dependencies.
+    // The runtime owns ordering, gate lifetime, error indices, and early stop.
+    pub(crate) fn execute_commands(
+        &self,
+        commands: &crate::CommandBuffer,
+    ) -> Result<(), crate::QueueSubmitError> {
+        let _execution = self.lock_execution();
+        for (command_index, command) in commands.commands().iter().enumerate() {
+            self.state
+                .backend
+                .execute(command)
+                .map_err(|error| error.at_command(command_index))?;
+        }
+        Ok(())
+    }
+
     /// Returns an owned handle to this device's selected target.
     pub fn adapter(&self) -> Adapter {
         self.state.adapter.clone()
@@ -161,6 +188,118 @@ impl Queue {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn selected_executor_obeys_preflight_gate_order_and_failure_stop() {
+        use crate::backend::{ExecutionBackend, ExecutionError};
+        use crate::*;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Weak;
+        #[derive(Debug, Default)]
+        struct Trace {
+            calls: AtomicUsize,
+            gated_calls: AtomicUsize,
+        }
+        #[derive(Debug)]
+        struct TracedExecutor {
+            owner: Weak<DeviceState>,
+            trace: Arc<Trace>,
+        }
+        impl ExecutionBackend for TracedExecutor {
+            fn core_profile(&self) -> CoreProfile {
+                CoreProfile::Preview1
+            }
+            fn execute(&self, command: &Command) -> Result<(), ExecutionError> {
+                let owner = self.owner.upgrade().unwrap();
+                assert!(matches!(
+                    owner.execution.try_lock(),
+                    Err(std::sync::TryLockError::WouldBlock)
+                ));
+                self.trace.gated_calls.fetch_add(1, Ordering::SeqCst);
+                let index = self.trace.calls.fetch_add(1, Ordering::SeqCst);
+                if index == 1 {
+                    return Err(ExecutionError::BufferCopyPoisoned {
+                        role: CopyBufferRole::Destination,
+                        label: "trace".into(),
+                    });
+                }
+                crate::reference::ReferenceBackend.execute(command)
+            }
+        }
+        let trace = Arc::new(Trace::default());
+        let adapter = Instance::new().default_adapter();
+        let device = Device {
+            state: Arc::new_cyclic(|owner| DeviceState {
+                adapter: adapter.clone(),
+                execution: Mutex::new(()),
+                backend: Box::new(TracedExecutor {
+                    owner: owner.clone(),
+                    trace: trace.clone(),
+                }),
+            }),
+        };
+        assert_eq!(device.core_profile(), adapter.core_profile());
+        let make = || {
+            device
+                .create_buffer(BufferDescriptor {
+                    label: "trace",
+                    size: 4,
+                    usages: &[
+                        BufferUsage::TransferSource,
+                        BufferUsage::TransferDestination,
+                    ],
+                    host_access: HostAccess::ReadWrite,
+                })
+                .unwrap()
+        };
+        let source = make();
+        source.write(0, &[7; 4]).unwrap();
+        let prefix = make();
+        let failed = make();
+        let later = make();
+        let queue = device.default_queue();
+        let foreign = adapter.create_device().create_command_encoder().finish();
+        assert_eq!(
+            queue.submit(&foreign),
+            Err(QueueSubmitError::ForeignCommandBuffer)
+        );
+        let mut invalid =
+            device.create_command_encoder_with_synchronization(SynchronizationMode::Explicit);
+        invalid.copy_buffer(&source, 0, &prefix, 0, 4).unwrap();
+        assert!(matches!(
+            queue.submit(&invalid.finish()),
+            Err(QueueSubmitError::DependencyFailed { .. })
+        ));
+        assert_eq!(trace.calls.load(Ordering::SeqCst), 0);
+        let mut encoder = device.create_command_encoder();
+        for destination in [&prefix, &failed, &later] {
+            encoder.copy_buffer(&source, 0, destination, 0, 4).unwrap();
+        }
+        assert_eq!(
+            queue.clone().submit(&encoder.finish()),
+            Err(QueueSubmitError::StoragePoisoned {
+                command_index: 1,
+                role: CopyBufferRole::Destination,
+                label: "trace".into(),
+            })
+        );
+        assert_eq!(trace.calls.load(Ordering::SeqCst), 2);
+        assert_eq!(trace.gated_calls.load(Ordering::SeqCst), 2);
+        for (destination, expected) in [(&prefix, [7; 4]), (&failed, [0; 4]), (&later, [0; 4])] {
+            let mut result = [99; 4];
+            destination.read(0, &mut result).unwrap();
+            assert_eq!(result, expected);
+        }
+        let weak = Arc::downgrade(&device.state);
+        drop(foreign);
+        drop(source);
+        drop(prefix);
+        drop(failed);
+        drop(later);
+        drop(queue);
+        drop(device);
+        assert!(weak.upgrade().is_none()); // Weak fixture back-reference forms no ownership cycle.
+    }
 
     #[test]
     fn execution_gate_blocks_cpu_access_and_queue_clones_but_not_other_devices() {

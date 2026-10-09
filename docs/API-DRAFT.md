@@ -401,7 +401,7 @@ Twelve public compute tests, two internal poison/lifetime tests, and executable
 compute documentation verify grids, views, finite arithmetic, validation, retention,
 ordering, reuse, aliasing, zero/limit cases, output rollback, and generated vertices.
 Independent pixel calculations verify the compute tile example.
-The workspace runs 245 tests, including documentation tests.
+The workspace runs 256 tests, including documentation tests.
 Tests do not induce allocator OOM by exhausting host memory.
 
 ## Next contract
@@ -418,9 +418,10 @@ fragment resource slots, depth/stencil tests, blending, and compute pipelines/di
 also work. Explicit whole-resource transitions and dependencies now work under
 [DEPENDENCIES.md](DEPENDENCIES.md). Reusable shader/resource interfaces and parameter
 buffers now work under [BINDINGS.md](BINDINGS.md). Texture/resource flows now work
-under [TEXTURE-FLOW.md](TEXTURE-FLOW.md); backend/profile tests and final proof are next;
+under [TEXTURE-FLOW.md](TEXTURE-FLOW.md). The execution boundary and reusable profile
+checks work under [CORE-PROFILE.md](CORE-PROFILE.md); final integrated proof is next;
 language/format import remains future work.
-There is no implemented execution-backend ABI yet.
+The execution interface is private Rust code; no public driver/plugin ABI exists.
 
 ## Explicit synchronization contract
 
@@ -434,3 +435,15 @@ keep their existing completed-prefix and atomic failed-operation boundaries.
 See [DEPENDENCIES.md](DEPENDENCIES.md) for supported roles, validation precedence,
 whole-allocation conservatism, reuse, and limits. This does not add physical image
 layouts, asynchronous queues, range/stage precision, or managed planning.
+
+## Supported execution profile
+
+Adapter::core_profile and Device::core_profile expose CoreProfile::Preview1;
+CoreProfile::limits returns CoreLimits shared with current validation. BackendKind
+names the implementation; the profile defines supported operations, numeric bounds,
+lifetime, visibility and failure rules. A device owns its selected private executor;
+queue policy preflights, then the runtime holds the gate and executes commands in
+order, attaching indices to unindexed backend errors. Creation/host storage remains
+in existing resource modules. No alternate backend or hardware allocation interface
+is introduced. [CORE-PROFILE.md](CORE-PROFILE.md) defines the implementation and
+reusable adapter-parameterized contract corpus.

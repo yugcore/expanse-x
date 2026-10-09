@@ -2,7 +2,7 @@
 
 Updated: 2026-10-09. Scope: every currently exported EX type, inherent method,
 public field, enum variant, and explicit standard trait implementation.
-There are **119 public types and 226 inherent methods**. Phase 3 is complete;
+There are **121 public types and 229 inherent methods**. Phase 3 is complete;
 these remain provisional APIs, not a completed or stable v1 specification.
 The immediate milestone is [core completion](docs/CORE-MILESTONE.md); SDK
 development follows that gate. This catalog describes working APIs, not planned SDK commands.
@@ -26,6 +26,7 @@ currently exported.
 | Area | Exported types |
 | --- | --- |
 | Discovery and ownership | [Instance](#instance), [Adapter](#adapter), [AdapterInfo](#adapterinfo), [BackendKind](#backendkind), [Device](#device), [Queue](#queue) |
+| Supported profile | [CoreProfile](#coreprofile), [CoreLimits](#corelimits) |
 | Buffers | [BufferDescriptor](#bufferdescriptor), [BufferUsage](#bufferusage), [HostAccess](#hostaccess), [Buffer](#buffer) |
 | Texture flow | [TextureBufferLayout](#texturebufferlayout), [BufferTextureCopy](#buffertexturecopy), [TextureCopy](#texturecopy), [TextureTransferEncodeError](#texturetransferencodeerror), [TextureTransferExecutionError](#texturetransferexecutionerror) |
 | Copy recording | [CommandEncoder](#commandencoder), [CommandBuffer](#commandbuffer), [Command](#command), [BufferCopy](#buffercopy), [CopyBufferRole](#copybufferrole) |
@@ -75,6 +76,7 @@ not detect installed hardware. Its fields are private.
 
 | Method | Behavior |
 | --- | --- |
+| `Adapter::core_profile(&self) -> CoreProfile` | Inspect the coherent supported contract independently of backend identity. |
 | `Adapter::info(&self) -> &AdapterInfo` | Borrow target metadata. |
 | `Adapter::create_device(&self) -> Device` | Create a new logical ownership domain, even on the same adapter. |
 
@@ -113,6 +115,7 @@ implemented across [object.rs](crates/expansex-core/src/object.rs),
 
 | Method | Behavior |
 | --- | --- |
+| `Device::core_profile(&self) -> CoreProfile` | Inspect the supported contract of this device's selected executor. |
 | `Device::adapter(&self) -> Adapter` | Retain the selected adapter. |
 | `Device::default_queue(&self) -> Queue` | Retain the device's one default endpoint; starts no work. |
 | `Device::is_same(&self, other: &Self) -> bool` | Compare logical device identity. |
@@ -128,7 +131,10 @@ implemented across [object.rs](crates/expansex-core/src/object.rs),
 | `Device::create_graphics_pipeline(&self, descriptor: GraphicsPipelineDescriptor<'_>) -> Result<GraphicsPipeline, GraphicsPipelineCreateError>` | Validate shader devices/stages, vertex layout, and varying interface; own metadata and retain shaders. |
 | `Device::create_graphics_pipeline_with_bindings(&self, descriptor: GraphicsPipelineDescriptor<'_>, options: GraphicsPipelineOptions, stencil: Option<StencilState>, layout: &BindGroupLayout) -> Result<GraphicsPipeline, GraphicsPipelineCreateError>` | Validate both shader interfaces and retain the layout alongside immutable optional rendering state. |
 
-Cloning retains the same domain; `Adapter::create_device()` creates a new one.
+Cloning retains the same domain, selected executor and gate; `Adapter::create_device()`
+creates a new one. Runtime policy preflights submissions, then runs each command
+through that executor in order and assigns error indices. The private execution
+trait is not a public backend registration or driver ABI.
 Discovery/device/encoder constructors do not expose a recoverable allocation
 error path. Buffer creation has its documented fallible reservation path.
 
@@ -149,6 +155,50 @@ commands completed, changes nothing in the failed copy, and skips later work.
 Expected render failure leaves that scope's target unchanged. See
 [SUBMISSION.md](docs/SUBMISSION.md) and [RENDERING.md](docs/RENDERING.md).
 No asynchronous completion API exists.
+
+## Supported core profile
+
+Source: [profile.rs](crates/expansex-core/src/profile.rs).
+Contract: [CORE-PROFILE.md](docs/CORE-PROFILE.md). BackendKind identifies an
+implementation; CoreProfile describes supported behavior. The public contract
+corpus runs against every discovered adapter advertising Preview1. Detailed
+numeric/alias/poison tests and final integrated proof remain separate evidence.
+
+### CoreProfile
+
+Non-exhaustive enum. External exhaustive matches require a fallback.
+The sole variant is `CoreProfile::Preview1`: synchronous bounded float4 EX IR,
+owned buffers/images, programmable/indexed graphics, texture transfers/sampling,
+depth/blend/stencil, compute, reusable single-group bindings/uniforms, whole-resource
+explicit dependencies and the existing failure/completion/lifetime contracts.
+It does not establish hardware execution, asynchronous work or stable v1 status.
+
+| Method | Behavior |
+| --- | --- |
+| `CoreProfile::limits(&self) -> CoreLimits` | Return numeric valid-request bounds without allocation or execution. |
+
+### CoreLimits
+
+Non-exhaustive struct with public fields below; no inherent methods. Obtain a
+copy from CoreProfile::limits. Mutating that copy does not change a target's
+profile or validators. Large valid requests may still fail allocation.
+
+| Public field | Type | Preview1 requirement |
+| --- | --- | --- |
+| `max_buffer_size` | `u64` | Process contiguous-vector byte bound, isize::MAX; not available memory. |
+| `max_image_extent` | `u32` | 16384 per positive image axis. |
+| `max_shader_inputs` | `u32` | 16 float4 inputs; compute requires exactly four. |
+| `max_shader_instructions` | `u32` | 256 operations. |
+| `max_vertex_outputs` | `u32` | 17 vectors including clip position; fragment exactly one, compute 1..=8. |
+| `binding_slots` | `u32` | 8 sparse slots, numbered 0..8 in one retained group. |
+| `max_uniform_buffer_size` | `u64` | 4096 bytes, nonzero 16-aligned views; at most 256 float4 elements. |
+| `max_workgroup_size` | `u32` | 1024 for each positive local axis and their product. |
+| `max_workgroup_count` | `u32` | 65535 per dispatch group-count axis; zero is allowed. |
+| `max_compute_invocations` | `u32` | 1048576 per dispatch; zero axes dominate the product. |
+
+Limits are shared with the working validators. Other fixed profile choices,
+including formats, stages, sampling, index types and synchronization behavior,
+are specified by CORE-PROFILE.md and the linked topic contracts.
 
 ## Buffers
 
@@ -1889,7 +1939,7 @@ and are wrapped in QueueSubmitError::TextureTransferFailed with command index.
 ## Explicit standard trait support
 
 This lists implemented/derived traits, not Rust's blanket implementations or
-auto traits. They are separate from the 226 inherent methods above.
+auto traits. They are separate from the 229 inherent methods above.
 
 | Type | Traits |
 | --- | --- |
@@ -1897,6 +1947,8 @@ auto traits. They are separate from the 226 inherent methods above.
 | `Adapter` | `Debug`, `Clone` |
 | `AdapterInfo` | `Debug`, `Clone`, `PartialEq`, `Eq` |
 | `BackendKind` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `CoreProfile` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `CoreLimits` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
 | `Device` | `Debug`, `Clone` |
 | `Queue` | `Debug`, `Clone` |
 | `BufferDescriptor<'a>` | `Debug`, `Clone`, `Copy` |
@@ -2019,7 +2071,7 @@ Standard trait operations include:
 | --- | --- |
 | `Clone::clone(&self) -> Self` | Types marked `Clone` above. Device/queue/buffer/framebuffer/depth/stencil/shader/pipeline/texture/view/sampler/binding handles retain shared state; `AdapterInfo` clones its owned metadata. |
 | `Default::default() -> Self` | `Instance`, `CommandRecorder`: same as `new()`. GraphicsPipelineOptions: depth/blend None. RenderAttachments: all None. SynchronizationMode: Ordered. |
-| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 119 types; buffer/framebuffer/depth/stencil formatting exposes metadata rather than stored data. |
+| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 121 types; buffer/framebuffer/depth/stencil formatting exposes metadata rather than stored data. |
 | `PartialEq::eq(&self, other: &Self) -> bool` | Types marked `PartialEq`; handle identity instead uses explicit `is_same`/`belongs_to` methods. |
 | `Display::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | Thirty-four error types and `CopyBufferRole`. |
 | `Error::source(&self) -> Option<&(dyn std::error::Error + 'static)>` | All thirty-four error types. Buffer/framebuffer/depth/stencil/shader/texture creation retain descriptor/reservation sources, sampler creation retains reservation sources, pipeline creation/command/render recording and shader evaluation retain reservation sources, and submission RenderFailed/ComputeFailed retain RenderExecutionError/ComputeExecutionError. Compute creation/recording and DependencyEncodeError::AllocationFailed retain reservation sources; submission DependencyFailed retains DependencyValidationError; TextureTransferFailed retains TextureTransferExecutionError. TextureTransferEncodeError::AllocationFailed retains its reservation source. BindingCreateError retains validation/reservation sources; pipeline/recording Bindings variants retain BindingValidationError. Other current variants return None. |

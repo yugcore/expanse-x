@@ -29,7 +29,7 @@ Phase 4 feature roadmap without treating every future feature as a core-launch g
 | 2 — First software triangle | Complete | Public render scopes produce a verified PNG through EX's own clipped fixed-function rasterizer |
 | 3 — Programmability and pipeline milestone | Complete | Pipeline-controlled triangles, layouts, perspective interpolation, and validated u16/u32 indexed drawing |
 | 4 — Modern GPU concepts | In progress | Sampled RGBA8 textures/views, nearest/bilinear samplers, eight fragment resource slots, depth/stencil attachments/tests, blending, and storage-buffer compute dispatch, reusable bindings/uniforms, checked whole-resource dependencies, and multi-pass image flows |
-| Immediate milestone — Core Preview | In progress | Supported-profile gates in CORE-MILESTONE.md; dependencies, reusable shader interfaces and texture/resource flows work; execution/backend boundary, profile tests and final proof are next |
+| Immediate milestone — Core Preview | In progress | Supported-profile gates in CORE-MILESTONE.md; dependencies, reusable shader interfaces and texture/resource flows work; execution/backend boundary and reusable profile checks work; final integrated proof is next |
 | Following milestone — SDK Preview | Planned after core | Templates, shader/build integration, developer tools, onboarding, and packaging over the completed core |
 | Future — Hardware drivers | Deferred | A selected target, viable driver interfaces, and demonstrated execution |
 
@@ -318,8 +318,18 @@ Two unchanged-command submissions with different upload data verify every pixel
 and padding byte. Independent PNG checks match every final 640x320 pixel, including
 131,072 panel pixels; the image was visually inspected.
 
-Phase 4 and the Core Preview remain incomplete. Next: define the execution/backend
-boundary and reusable supported-profile tests, then complete the final integrated gate.
+The execution/profile gate now works under [CORE-PROFILE.md](CORE-PROFILE.md):
+CoreProfile::Preview1 and queryable limits shared by validators, a private device-owned
+ExecutionBackend, runtime-owned sequencing/gate/error indices, and nine reusable
+adapter-parameterized cases. The corpus checks observable profile behavior without
+private storage inspection, including eight-output compute IDs/late failure and
+multi-pass parameterized image rendering. An internal traced executor verifies
+preflight, gate ownership, selected execution, failure stop and cleanup. All 256
+workspace tests and project checks pass. The existing image-flow workload executes
+through this boundary and matches its independently verified image byte for byte.
+
+Phase 4 and the Core Preview remain incomplete. Next: the final maintained
+integrated workload and completion review against Preview1.
 Mipmaps, storage images, multiple groups,
 dynamic bindings and broader shader profiles require separate contracts.
 

@@ -56,8 +56,10 @@ must retain any parent context that its platform requires.
 | `instance.adapters()` | Borrow the discovered adapter slice; exactly one entry today |
 | `instance.default_adapter()` | Return an owned handle to that reference adapter |
 | `adapter.info()` | Borrow immutable name/backend metadata |
+| `adapter.core_profile()` | Inspect the selected target's supported core contract |
 | `adapter.create_device()` | Construct a new logical device, distinct from every prior creation |
 | `device.adapter()` | Return an owned handle to its selected adapter |
+| `device.core_profile()` | Inspect the selected executor's supported core contract |
 | `device.default_queue()` | Return a handle to the same default endpoint on every call |
 | `device.is_same(&other)` | Compare logical device identity, not adapter metadata |
 | `queue.device()` | Return a handle to the original owning device, without creating a new device |
@@ -66,13 +68,16 @@ must retain any parent context that its platform requires.
 `AdapterInfo` reports a name and `BackendKind::Reference`, whose documentation
 explicitly identifies CPU software execution as the target. It advertises no
 rendering capability, device limit, hardware vendor, or external API dependency.
+Capabilities and numeric limits are exposed separately through CoreProfile and
+CoreLimits under [CORE-PROFILE.md](CORE-PROFILE.md).
 `BackendKind` is non-exhaustive to permit future supported targets; none are
 implemented or listed as pretend hardware variants.
 
 ## Ownership, identity, and cleanup
 
 Adapters share immutable metadata through `Arc`. A private device-state
-allocation owns an adapter handle. Device and queue handles each hold an `Arc`
+allocation owns an adapter handle, a private selected executor, and the shared
+execution gate. Device and queue handles each hold an `Arc`
 to that same state. `Clone` adds shared ownership; it does not create a new
 logical device, default queue, context, or execution thread.
 

@@ -4,9 +4,9 @@ use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
 
-const MAX_INPUTS: u32 = 16;
-const MAX_INSTRUCTIONS: usize = 256;
-const MAX_VERTEX_OUTPUTS: usize = 17;
+const MAX_INPUTS: u32 = crate::profile::PREVIEW_LIMITS.max_shader_inputs;
+const MAX_INSTRUCTIONS: usize = crate::profile::PREVIEW_LIMITS.max_shader_instructions as usize;
+const MAX_VERTEX_OUTPUTS: usize = crate::profile::PREVIEW_LIMITS.max_vertex_outputs as usize;
 
 /// Stage interface meaning; evaluation itself returns raw vectors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -169,7 +169,8 @@ impl ShaderDescriptor<'_> {
         let valid_outputs = match self.stage {
             ShaderStage::Vertex => (1..=MAX_VERTEX_OUTPUTS).contains(&self.outputs.len()),
             ShaderStage::Fragment => self.outputs.len() == 1,
-            ShaderStage::Compute => (1..=8).contains(&self.outputs.len()),
+            ShaderStage::Compute => (1..=crate::profile::PREVIEW_LIMITS.binding_slots as usize)
+                .contains(&self.outputs.len()),
         };
         if !valid_outputs {
             return Err(ShaderValidationError::InvalidOutputCount {
@@ -190,7 +191,10 @@ impl ShaderDescriptor<'_> {
             };
             match *op {
                 ShaderInstruction::LoadUniform { binding, element } => {
-                    if binding >= 8 || element >= 256 {
+                    if binding >= crate::profile::PREVIEW_LIMITS.binding_slots
+                        || u64::from(element)
+                            >= crate::profile::PREVIEW_LIMITS.max_uniform_buffer_size / 16
+                    {
                         return Err(ShaderValidationError::InvalidUniformLoad {
                             instruction,
                             binding,
@@ -205,7 +209,7 @@ impl ShaderDescriptor<'_> {
                             stage: self.stage,
                         });
                     }
-                    if binding >= 8 {
+                    if binding >= crate::profile::PREVIEW_LIMITS.binding_slots {
                         return Err(ShaderValidationError::InvalidStorageBinding {
                             instruction,
                             binding,
@@ -222,7 +226,7 @@ impl ShaderDescriptor<'_> {
                             stage: self.stage,
                         });
                     }
-                    if binding >= 8 {
+                    if binding >= crate::profile::PREVIEW_LIMITS.binding_slots {
                         return Err(ShaderValidationError::InvalidTextureBinding {
                             instruction,
                             binding,

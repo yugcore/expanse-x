@@ -44,11 +44,13 @@ impl TextureDescriptor<'_> {
                 height: self.height,
             });
         }
-        if self.width > 16384 || self.height > 16384 {
+        if self.width > crate::profile::PREVIEW_LIMITS.max_image_extent
+            || self.height > crate::profile::PREVIEW_LIMITS.max_image_extent
+        {
             return Err(TextureDescriptorError::ExtentTooLarge {
                 width: self.width,
                 height: self.height,
-                maximum: 16384,
+                maximum: crate::profile::PREVIEW_LIMITS.max_image_extent,
             });
         }
         Ok(())

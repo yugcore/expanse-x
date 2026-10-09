@@ -10,6 +10,7 @@
 //! whole-resource roles and dependencies validated before submission.
 //! Prototype labels remain.
 
+mod backend;
 mod bindings;
 mod buffer;
 mod command;
@@ -19,6 +20,7 @@ mod depth;
 mod framebuffer;
 mod object;
 mod pipeline;
+mod profile;
 mod reference;
 mod render;
 mod shader;
@@ -95,3 +97,5 @@ pub use transfer::{
     BufferTextureCopy, TextureBufferLayout, TextureCopy, TextureTransferEncodeError,
     TextureTransferExecutionError,
 };
+
+pub use profile::{CoreLimits, CoreProfile};

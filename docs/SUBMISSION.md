@@ -130,9 +130,24 @@ images together, or preserves all on failure. Stencil fail/depth-fail updates ar
 part of that same scope boundary. Clears/empty scopes still check stencil poison.
 See [STENCIL.md](STENCIL.md). No GPU driver,
 asynchronous job, multiple queues, fence, semaphore,
-timeline, cancellation, or execution-backend ABI is implemented here. Explicit
+timeline, cancellation, or public execution-backend ABI is implemented here. Explicit
 whole-resource barriers are supported under [DEPENDENCIES.md](DEPENDENCIES.md).
 Completion covers the submitted command buffer, not future calls from other threads.
+
+## Selected executor
+
+The queue rejects foreign command buffers and preflights explicit dependencies
+before calling the owning device's execution path. The device holds its execution
+gate across the complete command loop and calls its private selected executor
+once per command. Backend errors carry operation details; the runtime supplies
+the command index and stops immediately. Completed commands remain visible, the
+failed command preserves its destinations, and later commands are skipped.
+
+The built-in ReferenceBackend implements this interface with existing software
+execution. Device/queue clones share the executor and gate. Creation and host
+access remain in the resource modules. [CORE-PROFILE.md](CORE-PROFILE.md) defines
+the profile, interface obligations and reusable checks; this private Rust boundary
+does not provide public backend registration or hardware integration.
 
 
 ## Explicit preflight

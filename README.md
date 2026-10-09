@@ -163,6 +163,23 @@ HostAccess::None; explicit image/buffer dependencies connect the operations.
 Texture/framebuffer aliases preserve allocation identity and host permissions.
 See the [contract](docs/TEXTURE-FLOW.md) for feedback rejection and failure rules.
 
+## Supported core profile
+
+Adapters and devices expose `core_profile()`; `CoreProfile::Preview1.limits()`
+reports the bounds used by resource, shader, binding and compute validation.
+[CORE-PROFILE.md](docs/CORE-PROFILE.md) defines supported behavior and the private
+execution boundary. The runtime validates and orders work through each device's
+selected executor, preserving synchronous completion and error boundaries.
+
+```text
+cargo test -p ex-api --test core_profile --locked --offline
+```
+
+The same [public contract cases](crates/ex-api/tests/core_profile/cases.rs) run
+against every discovered adapter advertising Preview1. They assert observable
+results and errors; no software adapter name or private lock inspection is
+required. This profile remains provisional; final integrated core proof is next.
+
 ## Repository map
 
 | Path | Responsibility |
@@ -183,9 +200,9 @@ owned resources, copies, fixed-function drawing, and synchronous readback now wo
 Phase 3 completes programmable pipelines, layouts, interpolation, and indexed
 drawing. Phase 4 now has sampled textures, views, samplers, and eight fragment
 resource slots, depth/stencil attachments/tests, blending, and compute pipelines/dispatch.
-The workspace passes 245 tests, including documentation tests.
+The workspace passes 256 tests, including documentation tests.
 The immediate target is [core completion](docs/CORE-MILESTONE.md), followed by the
-SDK; a complete/stable v1 API remains a later goal. Next: the execution/backend boundary and reusable supported-profile tests. The core milestone defines a
+SDK; a complete/stable v1 API remains a later goal. Next: the final integrated Core Preview workload and completion review. The core milestone defines a
 bounded supported reference profile and its completion gates. Other modern GPU
 features and hardware drivers follow demonstrated workloads, one capability at a time.
 

@@ -336,7 +336,7 @@ impl Device {
         use BindingValidationError as E;
         let mut seen = 0u8;
         for entry in descriptor.entries {
-            if entry.binding >= 8 {
+            if entry.binding >= crate::profile::PREVIEW_LIMITS.binding_slots {
                 return Err(E::InvalidBinding {
                     binding: entry.binding,
                 }
@@ -350,7 +350,10 @@ impl Device {
             }
             seen |= 1 << entry.binding;
             if let BindingType::UniformBuffer { min_size } = entry.ty {
-                if !(16..=4096).contains(&min_size) || !min_size.is_multiple_of(16) {
+                if !(16..=crate::profile::PREVIEW_LIMITS.max_uniform_buffer_size)
+                    .contains(&min_size)
+                    || !min_size.is_multiple_of(16)
+                {
                     return Err(E::InvalidMinimum {
                         binding: entry.binding,
                         size: min_size,
@@ -384,7 +387,7 @@ impl Device {
         let mut seen = 0u8;
         for entry in descriptor.entries {
             let slot = entry.binding;
-            if slot >= 8 {
+            if slot >= crate::profile::PREVIEW_LIMITS.binding_slots {
                 return Err(E::InvalidBinding { binding: slot }.into());
             }
             if seen & (1 << slot) != 0 {
@@ -449,7 +452,7 @@ impl Device {
                     || v.offset
                         .checked_add(v.size)
                         .is_none_or(|end| end > v.buffer.size())
-                    || (uniform && v.size > 4096)
+                    || (uniform && v.size > crate::profile::PREVIEW_LIMITS.max_uniform_buffer_size)
                 {
                     return Err(E::InvalidRange {
                         binding: slot,

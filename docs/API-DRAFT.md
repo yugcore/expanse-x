@@ -251,7 +251,7 @@ successful shading updates depth only when enabled. Preflight still runs.
 
 Both colour/depth stage and commit together under the device gate and distinct
 storage locks. Expected errors preserve both failed-scope attachments. Eight
-comparisons include exact equality and Greater for reverse-Z; stencil,
+comparisons include exact equality and Greater for reverse-Z;
 shader-written depth, bias, and multisampling remain future work. See [DEPTH.md](DEPTH.md).
 
 ```text
@@ -282,6 +282,33 @@ See [BLENDING.md](BLENDING.md).
 
 ```text
 cargo run -p ex-api --example blended_triangles --locked --offline
+```
+
+## Stencil masks and optional attachments
+
+StencilBuffer owns separate zeroed S8 storage, with extent validation and synchronized
+readback. StencilState has independent front/back comparisons and fail/depth-fail/pass
+updates plus shared u8 reference/read/write masks. Operations act on the full old
+byte before masking; comparisons use masked reference against masked storage.
+Replace and equality presets support marking then restricting a region.
+
+create_graphics_pipeline_with_stencil(descriptor, options, stencil) uses the same
+validation/retention path while preserving existing descriptor/options literals.
+Prior creators disable stencil. begin_render_pass_with_attachments accepts borrowed
+RenderAttachments for optional depth/stencil handles and clears; recording retains
+handles. Clears require storage and ignore masks. Old begin methods keep working.
+
+Stencil executes before depth: fail updates stencil and skips later fragment work;
+depth-fail uses its separate operation; successful shading applies pass updates.
+Faces use the clipped triangle's quantized signed screen area before normalization.
+Positive area is front; degenerates update nothing. Every optional attachment stages
+and commits together under the device gate and distinct locks. Any expected failure
+preserves all failed-scope targets, including earlier stencil fail updates.
+No dynamic reference/state, shader-written stencil, packed storage, or attachment
+sampling exists. See [STENCIL.md](STENCIL.md).
+
+```text
+cargo run -p ex-api --example stencil_mask --locked --offline
 ```
 
 ## Standalone prototype labels
@@ -343,7 +370,10 @@ Independent overlap-image calculations verify visibility and order independence.
 Twelve public blending tests and an executable depth/blend example verify factors,
 operations, masks, presets, numeric behavior, ordering, integration, compatibility,
 and failure. Independent calculations verify every comparison-example pixel.
-The workspace runs 163 tests, including documentation tests.
+Twelve public stencil tests, two internal poison/lifetime tests, and combined public
+documentation verify storage, masks, facing, operations, rejected fragments, integration,
+and atomic three-attachment rollback. Independent pixel calculations verify the mask example.
+The workspace runs 177 tests, including documentation tests.
 Tests do not induce allocator OOM by exhausting host memory.
 
 ## Next contract
@@ -352,6 +382,6 @@ Phases 1–3 are complete: copies and fixed-function triangles execute through
 EX and produce observable bytes/pixels. Shader representation, stage interfaces,
 and programmable execution now work through pipeline validation, vertex layouts,
 interpolation, and indexed drawing. Sampled textures, views, samplers, and eight
-fragment resource slots, depth testing, and colour blending also work. Stencil is next;
+fragment resource slots, depth testing, and colour blending and stencil also work. Compute pipelines/dispatch are next;
 language/format import remains future work.
 There is no implemented execution-backend ABI yet.

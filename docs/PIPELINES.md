@@ -47,8 +47,8 @@ EX uses its own small contract and CPU executor, with safe Rust retained handles
   and interpolates projected depth linearly in screen space before fragment shading.
 - Screen barycentric weights use quantized vertex/sample positions. For each
   varying, interpolate `(value / w)` and `(1 / w)` and divide their sums. Result
-  vectors feed one fragment invocation per covered sample passing depth testing
-  (or with depth disabled). RGBA output clamps
+  vectors feed one fragment invocation per covered sample passing enabled stencil
+  and depth tests. RGBA output clamps
   each finite lane to [0,1], multiplies by 255, and rounds to nearest byte.
   Later draws overwrite unless optional [blending](BLENDING.md) combines source
   and destination with separate RGB/alpha equations and channel masks. No gamma
@@ -62,6 +62,11 @@ EX uses its own small contract and CPU executor, with safe Rust retained handles
   sequential storage lock ordering remain unchanged.
 - No per-fragment heap allocation: internal shader evaluation fills fixed local
   output arrays. Public `Shader::evaluate` continues returning an owned Vec.
+- Optional [stencil state](STENCIL.md) selects front/back rules before winding
+  normalization. Stencil rejection/update occurs before depth; passing fragments
+  use pass updates after successful shading. Optional S8 storage stages and commits
+  with colour/depth. `create_graphics_pipeline_with_stencil` preserves existing
+  options/descriptor literals and reuses the same validation/ownership path.
 
 ## Shader language decision
 

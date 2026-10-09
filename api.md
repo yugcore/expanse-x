@@ -2,7 +2,7 @@
 
 Updated: 2026-10-09. Scope: every currently exported EX type, inherent method,
 public field, enum variant, and explicit standard trait implementation.
-There are **75 public types and 145 inherent methods**. Phase 3 is complete;
+There are **84 public types and 162 inherent methods**. Phase 3 is complete;
 these remain provisional APIs, not a completed or stable v1 specification.
 
 Applications depend on package `ex-api` and import its library as `ex`:
@@ -32,6 +32,7 @@ currently exported.
 | Texture errors | [TextureDescriptorError](#texturedescriptorerror), [TextureCreateError](#texturecreateerror), [TextureAccessError](#textureaccesserror), [SamplerCreateError](#samplercreateerror), [TextureSampleError](#texturesampleerror) |
 | Depth | [DepthBuffer](#depthbuffer), [DepthBufferDescriptor](#depthbufferdescriptor), [DepthBufferDescriptorError](#depthbufferdescriptorerror), [DepthBufferCreateError](#depthbuffercreateerror), [DepthBufferAccessError](#depthbufferaccesserror), [DepthState](#depthstate), [CompareFunction](#comparefunction) |
 | Blending | [GraphicsPipelineOptions](#graphicspipelineoptions), [BlendState](#blendstate), [BlendComponent](#blendcomponent), [BlendFactor](#blendfactor), [BlendOperation](#blendoperation) |
+| Stencil | [StencilBuffer](#stencilbuffer), [StencilBufferDescriptor](#stencilbufferdescriptor), [StencilBufferDescriptorError](#stencilbufferdescriptorerror), [StencilBufferCreateError](#stencilbuffercreateerror), [StencilBufferAccessError](#stencilbufferaccesserror), [StencilOperation](#stenciloperation), [StencilFaceState](#stencilfacestate), [StencilState](#stencilstate), [RenderAttachments](#renderattachments) |
 | Shaders | [Shader](#shader), [ShaderDescriptor](#shaderdescriptor), [ShaderStage](#shaderstage), [ShaderInstruction](#shaderinstruction) |
 | Pipelines and layouts | [GraphicsPipeline](#graphicspipeline), [GraphicsPipelineDescriptor](#graphicspipelinedescriptor), [VertexBufferLayout](#vertexbufferlayout), [VertexAttribute](#vertexattribute), [VertexFormat](#vertexformat), [GraphicsPipelineCreateError](#graphicspipelinecreateerror) |
 | Prototype labels | [CommandRecorder](#commandrecorder), [DebugMarkerBuffer](#debugmarkerbuffer) |
@@ -523,7 +524,7 @@ mapping. Varyings interpolate with perspective correction at pixel centres on
 the 1/256-pixel grid. Without blending, fragment output clamps to [0,1], scales by
 255, and rounds to bytes. Optional blending combines clamped output with staged
 destination bytes. Indexed fetch and sampled fragment textures are implemented.
-Depth testing and blending use optional immutable pipeline state. Stencil and instancing remain unsupported.
+Depth, stencil, and blending use optional immutable pipeline state. Instancing remains unsupported.
 Every scope shades into a temporary image and commits only after all draws succeed.
 
 ### VertexFormat
@@ -729,10 +730,13 @@ Source: [render.rs](crates/expansex-core/src/render.rs).
 | Variant and public payload | Meaning |
 | --- | --- |
 | `RenderEncodeError::ForeignFramebuffer { label: String }` | Target belongs to another device. |
+| `RenderEncodeError::ForeignStencilBuffer { label: String }` | Stencil attachment belongs to another device. |
+| `RenderEncodeError::StencilExtentMismatch { colour_width: u32, colour_height: u32, stencil_width: u32, stencil_height: u32 }` | Stencil and colour extents differ. |
+| `RenderEncodeError::MissingStencilBuffer` | Stencil-enabled programmable draw or clear requires an attachment, including empty draws. |
 | `RenderEncodeError::ForeignDepthBuffer { label: String }` | Depth attachment belongs to another device. |
 | `RenderEncodeError::DepthExtentMismatch { colour_width: u32, colour_height: u32, depth_width: u32, depth_height: u32 }` | Colour and depth dimensions differ. |
 | `RenderEncodeError::InvalidDepthClear` | Depth clear is nonfinite or outside [0,1]. |
-| `RenderEncodeError::MissingDepthBuffer` | Depth-enabled programmable draw requires an attachment, including empty draws. |
+| `RenderEncodeError::MissingDepthBuffer` | Depth-enabled programmable draw or clear requires an attachment, including empty draws. |
 | `RenderEncodeError::InvalidTextureSlot { binding: u32 }` | Texture binding slot is outside 0..8. |
 | `RenderEncodeError::ForeignTexture { label: String }` | Bound view's texture belongs to another device. |
 | `RenderEncodeError::ForeignSampler { label: String }` | Bound sampler belongs to another device. |
@@ -767,6 +771,8 @@ Source: [render.rs](crates/expansex-core/src/render.rs).
 | Variant and public payload | Meaning |
 | --- | --- |
 | `RenderExecutionError::VertexStoragePoisoned { label: String }` | Nonempty draw's vertex source is untrusted. |
+| `RenderExecutionError::StencilStoragePoisoned { label: String }` | Attached stencil storage is untrusted, including empty scopes. |
+| `RenderExecutionError::MissingStencilBuffer` | Internal invariant failure; validated public recording prevents ordinary misuse from reaching it. |
 | `RenderExecutionError::DepthStoragePoisoned { label: String }` | Scope depth storage is untrusted, including empty/clear-only scopes. |
 | `RenderExecutionError::MissingDepthBuffer` | Internal depth context is absent; validated public recording prevents ordinary misuse from reaching this. |
 | `RenderExecutionError::TextureStoragePoisoned { label: String }` | Nonempty draw's sampled texture source is untrusted. |
@@ -1061,7 +1067,7 @@ Borrowed metadata; creation owns its label and storage.
 ### DepthBuffer
 
 Private fields; clones retain one allocation/device. Top-left row-major f32
-values start at 1 and remain in [0,1]. No CPU upload, stencil, or sampled view exists.
+values start at 1 and remain in [0,1]. No CPU upload, packed stencil component, or sampled view exists.
 
 | Method | Behavior |
 | --- | --- |
@@ -1103,7 +1109,7 @@ Clip position uses -w <= z <= w. Convert to z/w*0.5+0.5 and interpolate linearly
 with screen barycentric weights on the quantized coverage grid, clamp rounding
 drift to [0,1], then convert to f32. Failed tests skip fragment shading and all
 writes. Vertex/resource preflight still executes. Greater with clear 0 supports
-reverse-Z. Shader-written depth, stencil, bias, and multisampling are absent.
+reverse-Z. Shader-written depth, bias, and multisampling are absent.
 Optional blending combines passing fragments with staged colour; zero alpha and
 disabled colour writes do not suppress depth writes.
 
@@ -1225,13 +1231,157 @@ Subsequent fragments read the quantized staged bytes. Depth rejection skips
 shading/blending; successful scopes publish colour/depth together. Alpha zero does
 not discard. Transparent applications typically disable depth writes and sort back
 to front themselves. No sRGB conversion, automatic premultiplication, sorting,
-blend constants, dual-source factors, logic operations, multiple targets, stencil,
+blend constants, dual-source factors, logic operations, multiple targets,
 or floating colour targets exist.
+
+## Stencil and optional render attachments
+
+Sources: [resource](crates/expansex-core/src/stencil.rs),
+[state](crates/expansex-core/src/pipeline/stencil.rs), [recording](crates/expansex-core/src/render.rs).
+Contract: [STENCIL.md](docs/STENCIL.md). All existing descriptors/options remain
+compatible; original pipeline creators disable stencil. Depth and stencil are separate storage.
+
+| Method | Behavior |
+| --- | --- |
+| `Device::create_stencil_buffer(&self, descriptor: StencilBufferDescriptor<'_>) -> Result<StencilBuffer, StencilBufferCreateError>` | Validate extent, own label, allocate zeroed S8 values. |
+| `Device::create_graphics_pipeline_with_stencil(&self, descriptor: GraphicsPipelineDescriptor<'_>, options: GraphicsPipelineOptions, stencil: StencilState) -> Result<GraphicsPipeline, GraphicsPipelineCreateError>` | Same shader/layout validation and ownership, plus copied stencil and optional depth/blend. |
+| `GraphicsPipeline::stencil_state(&self) -> Option<StencilState>` | Copy optional immutable rules. |
+| `CommandEncoder::begin_render_pass_with_attachments(&mut self, target: &Framebuffer, clear: Option<[u8; 4]>, attachments: RenderAttachments<'_>) -> Result<RenderPass<'_>, RenderEncodeError>` | Check colour then depth then stencil ownership/extent/clears; retain optional resources. |
+| `RenderCommands::stencil_buffer(&self) -> Option<&StencilBuffer>` | Borrow retained optional stencil attachment. |
+| `RenderCommands::clear_stencil(&self) -> Option<u8>` | Optional clear performed at execution. |
+
+### RenderAttachments
+
+No inherent methods. Borrowed same-device/same-extent storage; recording retains
+cloned handles and copied clears. Default has all None. Missing storage with a
+requested clear is an error. Clears ignore pipeline masks; None preserves live values.
+Old begin methods delegate with no stencil. All attached images commit together.
+
+| Public field | Type | Meaning |
+| --- | --- | --- |
+| `depth` | `Option<&'a DepthBuffer>` | Optional retained depth image. |
+| `clear_depth` | `Option<f32>` | Optional finite [0,1] clear. |
+| `stencil` | `Option<&'a StencilBuffer>` | Optional retained stencil image. |
+| `clear_stencil` | `Option<u8>` | Optional stencil clear; every u8 is valid. |
+
+### StencilBufferDescriptor
+
+Creation owns the borrowed label and new storage.
+
+| Public field | Type | Meaning |
+| --- | --- | --- |
+| `label` | `&'a str` | Debug label; empty allowed. |
+| `width` | `u32` | Columns, 1..=16384. |
+| `height` | `u32` | Rows, 1..=16384. |
+
+| Method | Behavior |
+| --- | --- |
+| `StencilBufferDescriptor::validate(&self) -> Result<(), StencilBufferDescriptorError>` | Check positive then maximum extent, without allocation. |
+
+### StencilBuffer
+
+Private fields. One row-major, top-left u8 per pixel, initially zero. Clones share
+allocation/device. No public upload or sampled view.
+
+| Method | Behavior |
+| --- | --- |
+| `StencilBuffer::label(&self) -> &str` | Borrow owned label. |
+| `StencilBuffer::width(&self) -> u32` | Columns. |
+| `StencilBuffer::height(&self) -> u32` | Rows. |
+| `StencilBuffer::device(&self) -> Device` | Retain creating device. |
+| `StencilBuffer::belongs_to(&self, device: &Device) -> bool` | Compare device identity. |
+| `StencilBuffer::is_same(&self, other: &Self) -> bool` | Compare storage identity. |
+| `StencilBuffer::read_stencils(&self, destination: &mut [u8]) -> Result<(), StencilBufferAccessError>` | Exact width*height readback under gate/storage lock; error preserves destination. |
+| `StencilBuffer::stencil(&self, x: u32, y: u32) -> Result<u8, StencilBufferAccessError>` | Check coordinates, then synchronized single-value readback. |
+
+### StencilState
+
+Private storage is not involved: these are copied immutable pipeline rules.
+
+| Public field | Type | Meaning |
+| --- | --- | --- |
+| `front` | `StencilFaceState` | Positive quantized screen-area triangle rules. |
+| `back` | `StencilFaceState` | Negative area rules, selected before winding normalization. |
+| `reference` | `u8` | Shared comparison/replacement reference. |
+| `read_mask` | `u8` | AND both reference and stored byte before comparison. |
+| `write_mask` | `u8` | Select updated bits after the full-byte operation. |
+
+| Method | Behavior |
+| --- | --- |
+| `StencilState::replace(reference: u8) -> Self` | Both faces Always, fail/depth-fail Keep, pass Replace; full masks. |
+| `StencilState::test_equal(reference: u8) -> Self` | Both faces Equal/all Keep, full read mask, zero write mask. |
+
+Compare masked reference against masked stored value using CompareFunction's
+eight comparisons, in that order. Front is clockwise in top-left screen coordinates
+(counterclockwise clip x/y). Clipped fan pieces use their quantized area; degenerates
+update nothing. No configurable facing/culling. State-disabled and legacy draws
+bypass stencil. Empty stencil-enabled programmable draws still require an attachment.
+
+### StencilFaceState
+
+No inherent methods; every combination is valid.
+
+| Public field | Type | Meaning |
+| --- | --- | --- |
+| `compare` | `CompareFunction` | Reference-versus-stored comparison after masking. |
+| `fail_op` | `StencilOperation` | Stencil failure: update, then skip depth/shading/colour. |
+| `depth_fail_op` | `StencilOperation` | Stencil passes, depth fails: update, skip shading/colour. |
+| `pass_op` | `StencilOperation` | Both pass (or depth disabled): update after successful shading. |
+
+### StencilOperation
+
+Exhaustive enum; no public inherent methods. Generate new from the complete old
+byte, then write `(old & !write_mask) | (new & write_mask)`. A zero write mask
+preserves storage without disabling comparison, shaders, or depth policy.
+
+| Variant | Generated value |
+| --- | --- |
+| `StencilOperation::Keep` | old |
+| `StencilOperation::Zero` | 0 |
+| `StencilOperation::Replace` | unmasked reference |
+| `StencilOperation::IncrementClamp` | min(old+1,255) |
+| `StencilOperation::DecrementClamp` | max(old-1,0) |
+| `StencilOperation::Invert` | bitwise !old |
+| `StencilOperation::IncrementWrap` | old+1 modulo 256 |
+| `StencilOperation::DecrementWrap` | old-1 modulo 256 |
+
+All updates are staged. A late expected failure discards colour/depth/stencil
+clears and draws in that scope; completed prefix commands remain, later ones skip.
+Colour write masks and alpha zero do not disable stencil operations. There is no
+dynamic reference, shader stencil output, packed depth/stencil, or attachment sampling.
+
+### StencilBufferDescriptorError
+
+No inherent methods or source.
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `StencilBufferDescriptorError::ZeroExtent { width: u32, height: u32 }` | Either axis is zero. |
+| `StencilBufferDescriptorError::ExtentTooLarge { width: u32, height: u32, maximum: u32 }` | Either axis exceeds 16384. |
+
+### StencilBufferCreateError
+
+No inherent methods; both variants retain their source.
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `StencilBufferCreateError::InvalidDescriptor(StencilBufferDescriptorError)` | Extent validation failed. |
+| `StencilBufferCreateError::AllocationFailed { source: TryReserveError }` | Values/label reservation failed. |
+
+### StencilBufferAccessError
+
+No inherent methods or source.
+
+| Variant and public payload | Meaning |
+| --- | --- |
+| `StencilBufferAccessError::WrongPixelCount { expected: usize, actual: usize }` | Readback length differs from width*height. |
+| `StencilBufferAccessError::OutOfBounds { x: u32, y: u32, width: u32, height: u32 }` | Coordinates are outside storage. |
+| `StencilBufferAccessError::StoragePoisoned { label: String }` | Storage is untrusted after an interrupted operation. |
 
 ## Explicit standard trait support
 
 This lists implemented/derived traits, not Rust's blanket implementations or
-auto traits. They are separate from the 145 inherent methods above.
+auto traits. They are separate from the 162 inherent methods above.
 
 | Type | Traits |
 | --- | --- |
@@ -1310,17 +1460,26 @@ auto traits. They are separate from the 145 inherent methods above.
 | `BlendComponent` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
 | `BlendFactor` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
 | `BlendOperation` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `StencilBuffer` | `Debug`, `Clone` |
+| `StencilBufferDescriptor<'a>` | `Debug`, `Clone`, `Copy` |
+| `StencilBufferDescriptorError` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`, `Display`, `Error` |
+| `StencilBufferCreateError` | `Debug`, `Display`, `Error` |
+| `StencilBufferAccessError` | `Debug`, `Clone`, `PartialEq`, `Eq`, `Display`, `Error` |
+| `StencilState` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `StencilFaceState` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `StencilOperation` | `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq` |
+| `RenderAttachments<'a>` | `Debug`, `Clone`, `Copy`, `Default` |
 
 Standard trait operations include:
 
 | Operation | Implementing types / behavior |
 | --- | --- |
-| `Clone::clone(&self) -> Self` | Types marked `Clone` above. Device/queue/buffer/framebuffer/depth/shader/pipeline/texture/view/sampler/binding handles retain shared state; `AdapterInfo` clones its owned metadata. |
-| `Default::default() -> Self` | `Instance`, `CommandRecorder`: same as `new()`. GraphicsPipelineOptions: depth/blend None. |
-| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 75 types; buffer/framebuffer/depth formatting exposes metadata rather than stored data. |
+| `Clone::clone(&self) -> Self` | Types marked `Clone` above. Device/queue/buffer/framebuffer/depth/stencil/shader/pipeline/texture/view/sampler/binding handles retain shared state; `AdapterInfo` clones its owned metadata. |
+| `Default::default() -> Self` | `Instance`, `CommandRecorder`: same as `new()`. GraphicsPipelineOptions: depth/blend None. RenderAttachments: all None. |
+| `Debug::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | All 84 types; buffer/framebuffer/depth/stencil formatting exposes metadata rather than stored data. |
 | `PartialEq::eq(&self, other: &Self) -> bool` | Types marked `PartialEq`; handle identity instead uses explicit `is_same`/`belongs_to` methods. |
-| `Display::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | Twenty-two error types and `CopyBufferRole`. |
-| `Error::source(&self) -> Option<&(dyn std::error::Error + 'static)>` | All twenty-two error types. Buffer/framebuffer/depth/shader/texture creation retain descriptor/reservation sources, sampler creation retains reservation sources, pipeline creation/command/render recording and shader evaluation retain reservation sources, and submission RenderFailed retains RenderExecutionError. Other current variants return None. |
+| `Display::fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result` | Twenty-five error types and `CopyBufferRole`. |
+| `Error::source(&self) -> Option<&(dyn std::error::Error + 'static)>` | All twenty-five error types. Buffer/framebuffer/depth/stencil/shader/texture creation retain descriptor/reservation sources, sampler creation retains reservation sources, pipeline creation/command/render recording and shader evaluation retain reservation sources, and submission RenderFailed retains RenderExecutionError. Other current variants return None. |
 
 Other inherited standard trait methods, such as `clone_from` and `ne`, follow
 their standard-library contracts. Error trait objects also support standard

@@ -49,7 +49,7 @@ it does not delegate rendering to another API or claim hardware conformance.
   staging and atomic colour/depth commit guarantees apply without new allocations
   or storage locks per fragment. Failure discards all scope clears/blended writes.
 - No blend constants, dual-source factors, logic operations, multiple render
-  targets, floating/sRGB targets, multisampling, stencil, or GPU execution yet.
+  targets, floating/sRGB targets, multisampling, or GPU execution yet.
 
 The [public tests](../crates/ex-api/tests/blending.rs) cover every factor/operation,
 all 16 masks, presets, clamping/quantization, ordering, depth/masks/zero alpha,
@@ -64,6 +64,6 @@ depth writes disabled. Readback assertions verify full depth preservation, opaqu
 alpha, and selected composited pixels. Independent PNG checksums, coverage, and
 rational blending calculations verify all 294,912 pixels, with 42,677 covered per
 panel (128,031 total); the image was also visually inspected.
-All 163 workspace tests pass, including twelve blending tests and the new public
+The blending checkpoint passed 163 workspace tests, including twelve blending tests and the new public
 depth/blend documentation example. Formatting, build, lint, and documentation
 checks also pass. Existing depth and texture tests remain passing.

@@ -93,12 +93,14 @@ fn render(pass: &RenderCommands) -> Result<(), RenderExecutionError> {
         .with_pixels_mut(|pixels| {
             if let Some(depth) = pass.depth_buffer() {
                 depth
-                    .with_depths_mut(|depths| render_staged(pass, prepared, pixels, Some(depths)))
+                    .with_depths_mut(|depths| {
+                        render_with_stencil(pass, prepared, pixels, Some(depths))
+                    })
                     .map_err(|_| RenderExecutionError::DepthStoragePoisoned {
                         label: depth.label().to_owned(),
                     })?
             } else {
-                render_staged(pass, prepared, pixels, None)
+                render_with_stencil(pass, prepared, pixels, None)
             }
         })
         .map_err(|_| RenderExecutionError::FramebufferStoragePoisoned {
@@ -106,11 +108,29 @@ fn render(pass: &RenderCommands) -> Result<(), RenderExecutionError> {
         })?
 }
 
+fn render_with_stencil(
+    pass: &RenderCommands,
+    prepared: Vec<PreparedDraw>,
+    pixels: &mut [[u8; 4]],
+    depths: Option<&mut [f32]>,
+) -> Result<(), RenderExecutionError> {
+    if let Some(stencil) = pass.stencil_buffer() {
+        stencil
+            .with_stencils_mut(|values| render_staged(pass, prepared, pixels, depths, Some(values)))
+            .map_err(|_| RenderExecutionError::StencilStoragePoisoned {
+                label: stencil.label().to_owned(),
+            })?
+    } else {
+        render_staged(pass, prepared, pixels, depths, None)
+    }
+}
+
 fn render_staged(
     pass: &RenderCommands,
     prepared: Vec<PreparedDraw>,
     pixels: &mut [[u8; 4]],
     mut depths: Option<&mut [f32]>,
+    mut stencils: Option<&mut [u8]>,
 ) -> Result<(), RenderExecutionError> {
     let mut staged = Vec::new();
     staged
@@ -131,6 +151,16 @@ fn render_staged(
         }
     }
     let target = pass.target();
+    let mut staged_stencil = Vec::new();
+    if let Some(source) = stencils.as_ref() {
+        staged_stencil
+            .try_reserve_exact(source.len())
+            .map_err(|_| RenderExecutionError::AllocationFailed)?;
+        staged_stencil.extend_from_slice(source);
+        if let Some(clear) = pass.clear_stencil() {
+            staged_stencil.fill(clear);
+        }
+    }
     for draw in prepared {
         match draw {
             PreparedDraw::Programmable(draw) => programmable::render(
@@ -140,6 +170,11 @@ fn render_staged(
                 &draw,
                 if depths.is_some() {
                     Some(&mut staged_depth)
+                } else {
+                    None
+                },
+                if stencils.is_some() {
+                    Some(&mut staged_stencil)
                 } else {
                     None
                 },
@@ -157,10 +192,13 @@ fn render_staged(
             }
         }
     }
-    // Both guards and the device gate remain held through these infallible commits.
+    // All attached storage guards and the device gate remain held through commits.
     pixels.copy_from_slice(&staged);
     if let Some(target) = depths.as_mut() {
         target.copy_from_slice(&staged_depth);
+    }
+    if let Some(target) = stencils.as_mut() {
+        target.copy_from_slice(&staged_stencil);
     }
     Ok(())
 }

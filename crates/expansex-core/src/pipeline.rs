@@ -6,6 +6,8 @@ use std::sync::Arc;
 
 mod blend;
 pub use blend::{BlendComponent, BlendFactor, BlendOperation, BlendState};
+mod stencil;
+pub use stencil::{StencilFaceState, StencilOperation, StencilState};
 
 /// Optional immutable rendering state. Default preserves overwrite without depth testing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -139,6 +141,7 @@ struct PipelineState {
     colour_format: FramebufferFormat,
     depth: Option<DepthState>,
     blend: Option<BlendState>,
+    stencil: Option<StencilState>,
 }
 
 /// An immutable validated graphics pipeline, shared by clones and recorded draws.
@@ -174,6 +177,23 @@ impl Device {
         &self,
         descriptor: GraphicsPipelineDescriptor<'_>,
         options: GraphicsPipelineOptions,
+    ) -> Result<GraphicsPipeline, GraphicsPipelineCreateError> {
+        self.create_pipeline(descriptor, options, None)
+    }
+    /// Add immutable stencil rules while preserving existing option literals.
+    pub fn create_graphics_pipeline_with_stencil(
+        &self,
+        descriptor: GraphicsPipelineDescriptor<'_>,
+        options: GraphicsPipelineOptions,
+        stencil: StencilState,
+    ) -> Result<GraphicsPipeline, GraphicsPipelineCreateError> {
+        self.create_pipeline(descriptor, options, Some(stencil))
+    }
+    fn create_pipeline(
+        &self,
+        descriptor: GraphicsPipelineDescriptor<'_>,
+        options: GraphicsPipelineOptions,
+        stencil: Option<StencilState>,
     ) -> Result<GraphicsPipeline, GraphicsPipelineCreateError> {
         for (shader, expected) in [
             (descriptor.vertex_shader, ShaderStage::Vertex),
@@ -267,11 +287,15 @@ impl Device {
                 colour_format: descriptor.colour_format,
                 depth: options.depth,
                 blend: options.blend,
+                stencil,
             }),
         })
     }
 }
 impl GraphicsPipeline {
+    pub fn stencil_state(&self) -> Option<StencilState> {
+        self.state.stencil
+    }
     pub fn blend_state(&self) -> Option<BlendState> {
         self.state.blend
     }
@@ -360,7 +384,7 @@ mod tests {
     }
 }
 
-/// Exact comparison of incoming and stored f32 depth after viewport mapping.
+/// Exact comparison for projected depth and masked stencil reference/storage values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompareFunction {
     Never,

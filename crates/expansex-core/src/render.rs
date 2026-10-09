@@ -14,6 +14,16 @@ pub use textures::TextureBinding;
 /// Recording misuse leaves previous work and the current binding unchanged.
 #[derive(Debug)]
 pub enum RenderEncodeError {
+    ForeignStencilBuffer {
+        label: String,
+    },
+    StencilExtentMismatch {
+        colour_width: u32,
+        colour_height: u32,
+        stencil_width: u32,
+        stencil_height: u32,
+    },
+    MissingStencilBuffer,
     ForeignDepthBuffer {
         label: String,
     },
@@ -112,6 +122,9 @@ pub enum RenderEncodeError {
 impl fmt::Display for RenderEncodeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::ForeignStencilBuffer { label } => write!(f, "stencil buffer {label:?} belongs to another device"),
+            Self::StencilExtentMismatch { colour_width, colour_height, stencil_width, stencil_height } => write!(f, "stencil extent {stencil_width}x{stencil_height} must equal colour extent {colour_width}x{colour_height}"),
+            Self::MissingStencilBuffer => f.write_str("stencil drawing or clearing requires a stencil attachment"),
             Self::ForeignDepthBuffer { label } => write!(f, "depth buffer {label:?} belongs to another device"),
             Self::DepthExtentMismatch { colour_width, colour_height, depth_width, depth_height } => write!(f, "depth extent {depth_width}x{depth_height} must equal colour extent {colour_width}x{colour_height}"),
             Self::InvalidDepthClear => f.write_str("depth clear must be finite and in [0,1]"),
@@ -199,9 +212,17 @@ pub struct RenderCommands {
     draws: Vec<DrawTriangles>,
     depth: Option<crate::DepthBuffer>,
     clear_depth: Option<f32>,
+    stencil: Option<crate::StencilBuffer>,
+    clear_stencil: Option<u8>,
 }
 
 impl RenderCommands {
+    pub fn stencil_buffer(&self) -> Option<&crate::StencilBuffer> {
+        self.stencil.as_ref()
+    }
+    pub fn clear_stencil(&self) -> Option<u8> {
+        self.clear_stencil
+    }
     pub fn depth_buffer(&self) -> Option<&crate::DepthBuffer> {
         self.depth.as_ref()
     }
@@ -217,6 +238,15 @@ impl RenderCommands {
     pub fn draws(&self) -> &[DrawTriangles] {
         &self.draws
     }
+}
+
+/// Borrowed attachments; recording retains their handles, not these references.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RenderAttachments<'a> {
+    pub depth: Option<&'a crate::DepthBuffer>,
+    pub clear_depth: Option<f32>,
+    pub stencil: Option<&'a crate::StencilBuffer>,
+    pub clear_stencil: Option<u8>,
 }
 
 /// Exclusively borrows an encoder. Finish commits; dropping discards this pass.
@@ -240,31 +270,84 @@ impl CommandEncoder {
         depth: &crate::DepthBuffer,
         clear_depth: Option<f32>,
     ) -> Result<RenderPass<'_>, RenderEncodeError> {
+        self.begin_render_pass_with_attachments(
+            target,
+            clear,
+            RenderAttachments {
+                depth: Some(depth),
+                clear_depth,
+                ..RenderAttachments::default()
+            },
+        )
+    }
+    /// Retain optional same-device, same-extent depth/stencil storage and clears.
+    pub fn begin_render_pass_with_attachments(
+        &mut self,
+        target: &Framebuffer,
+        clear: Option<[u8; 4]>,
+        attachments: RenderAttachments<'_>,
+    ) -> Result<RenderPass<'_>, RenderEncodeError> {
         if !target.belongs_to(&self.device) {
             return Err(RenderEncodeError::ForeignFramebuffer {
                 label: target.label().to_owned(),
             });
         }
-        if !depth.belongs_to(&self.device) {
-            return Err(RenderEncodeError::ForeignDepthBuffer {
-                label: depth.label().to_owned(),
-            });
+        if let Some(depth) = attachments.depth {
+            if !depth.belongs_to(&self.device) {
+                return Err(RenderEncodeError::ForeignDepthBuffer {
+                    label: depth.label().to_owned(),
+                });
+            }
+            if target.width() != depth.width() || target.height() != depth.height() {
+                return Err(RenderEncodeError::DepthExtentMismatch {
+                    colour_width: target.width(),
+                    colour_height: target.height(),
+                    depth_width: depth.width(),
+                    depth_height: depth.height(),
+                });
+            }
+            if attachments
+                .clear_depth
+                .is_some_and(|v| !v.is_finite() || !(0.0..=1.0).contains(&v))
+            {
+                return Err(RenderEncodeError::InvalidDepthClear);
+            }
+        } else if attachments.clear_depth.is_some() {
+            return Err(RenderEncodeError::MissingDepthBuffer);
         }
-        if target.width() != depth.width() || target.height() != depth.height() {
-            return Err(RenderEncodeError::DepthExtentMismatch {
-                colour_width: target.width(),
-                colour_height: target.height(),
-                depth_width: depth.width(),
-                depth_height: depth.height(),
-            });
+        if let Some(stencil) = attachments.stencil {
+            if !stencil.belongs_to(&self.device) {
+                return Err(RenderEncodeError::ForeignStencilBuffer {
+                    label: stencil.label().to_owned(),
+                });
+            }
+            if target.width() != stencil.width() || target.height() != stencil.height() {
+                return Err(RenderEncodeError::StencilExtentMismatch {
+                    colour_width: target.width(),
+                    colour_height: target.height(),
+                    stencil_width: stencil.width(),
+                    stencil_height: stencil.height(),
+                });
+            }
+        } else if attachments.clear_stencil.is_some() {
+            return Err(RenderEncodeError::MissingStencilBuffer);
         }
-        if clear_depth.is_some_and(|v| !v.is_finite() || !(0.0..=1.0).contains(&v)) {
-            return Err(RenderEncodeError::InvalidDepthClear);
-        }
-        let mut pass = self.begin_render_pass(target, clear)?;
-        pass.commands.depth = Some(depth.clone());
-        pass.commands.clear_depth = clear_depth;
-        Ok(pass)
+        Ok(RenderPass {
+            encoder: self,
+            commands: RenderCommands {
+                target: target.clone(),
+                clear,
+                draws: Vec::new(),
+                depth: attachments.depth.cloned(),
+                clear_depth: attachments.clear_depth,
+                stencil: attachments.stencil.cloned(),
+                clear_stencil: attachments.clear_stencil,
+            },
+            binding: None,
+            pipeline: None,
+            index_binding: None,
+            textures: std::array::from_fn(|_| None),
+        })
     }
     /// Opens an offscreen render recorder. Pixels change only on submission.
     ///
@@ -284,25 +367,7 @@ impl CommandEncoder {
         target: &Framebuffer,
         clear: Option<[u8; 4]>,
     ) -> Result<RenderPass<'_>, RenderEncodeError> {
-        if !target.belongs_to(&self.device) {
-            return Err(RenderEncodeError::ForeignFramebuffer {
-                label: target.label().to_owned(),
-            });
-        }
-        Ok(RenderPass {
-            encoder: self,
-            commands: RenderCommands {
-                target: target.clone(),
-                clear,
-                draws: Vec::new(),
-                depth: None,
-                clear_depth: None,
-            },
-            binding: None,
-            pipeline: None,
-            index_binding: None,
-            textures: std::array::from_fn(|_| None),
-        })
+        self.begin_render_pass_with_attachments(target, clear, RenderAttachments::default())
     }
 }
 
@@ -453,6 +518,10 @@ impl RenderPass<'_> {
 /// Expected reference render failures occur before any target pixels change.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RenderExecutionError {
+    MissingStencilBuffer,
+    StencilStoragePoisoned {
+        label: String,
+    },
     MissingDepthBuffer,
     DepthStoragePoisoned {
         label: String,
@@ -512,6 +581,8 @@ pub enum RenderExecutionError {
 impl fmt::Display for RenderExecutionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::MissingStencilBuffer => f.write_str("stencil-enabled drawing requires a stencil attachment"),
+            Self::StencilStoragePoisoned { label } => write!(f, "stencil buffer {label:?} storage is poisoned"),
             Self::MissingDepthBuffer => f.write_str("depth-enabled drawing requires a depth attachment"),
             Self::DepthStoragePoisoned { label } => write!(f, "depth buffer {label:?} storage is poisoned"),
             Self::TextureStoragePoisoned { label } => write!(f, "texture {label:?} storage is poisoned"),

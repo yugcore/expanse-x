@@ -7,7 +7,7 @@ colour output. EX retains a separate depth attachment and immutable pipeline sta
 
 - DepthBuffer stores one f32 in [0,1] per pixel, initially 1, with top-left
   row-major layout, extents 1..=16384, device identity, and synchronized readback.
-  It is fixed D32 float storage; no stencil, CPU upload, or texture sampling.
+  It is fixed D32 float storage; no packed stencil component, CPU upload, or texture sampling.
 - DepthState selects one of eight comparisons and whether passing samples write
   depth. `create_graphics_pipeline_with_depth(descriptor, state)` adds state while
   existing pipeline descriptor literals and creation remain compatible.
@@ -30,7 +30,7 @@ colour output. EX retains a separate depth attachment and immutable pipeline sta
   preserves both attachments, including clears/prior draws in the failed scope.
   Earlier commands remain complete and later commands skip. Readback/submissions
   serialize on the same gate. Empty/clear-only scopes still check attachment poison.
-- No stencil, depth bias/clamp options, shader-written depth, alternate
+- No depth bias/clamp options, shader-written depth, alternate
   viewport depth range, multisampling, attachments as textures, or hardware claims.
   Temporary depth storage adds four bytes per target pixel to staged colour/vertices/
   texture snapshots. Large reservations are fallible, without universal OOM recovery.

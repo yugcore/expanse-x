@@ -108,7 +108,12 @@ before readers can enter; any expected failure preserves both. Empty scopes stil
 check attachment poison. See [DEPTH.md](DEPTH.md).
 Blending reads/writes staged colour in draw order after shading, without additional
 storage locks or per-fragment allocations. Late shader errors discard blended
-writes and depth together. See [BLENDING.md](BLENDING.md). No GPU driver,
+writes and depth together. See [BLENDING.md](BLENDING.md).
+Stencil scopes retain an optional S8 attachment. Colour, depth, and stencil locks
+are distinct and acquired under the shared gate; staging commits all attached
+images together, or preserves all on failure. Stencil fail/depth-fail updates are
+part of that same scope boundary. Clears/empty scopes still check stencil poison.
+See [STENCIL.md](STENCIL.md). No GPU driver,
 asynchronous job, multiple queues, fence, semaphore,
 barrier, timeline, cancellation, or execution-backend ABI is implemented here.
 Completion covers the submitted command buffer, not future calls from other threads.

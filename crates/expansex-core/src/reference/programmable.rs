@@ -234,38 +234,61 @@ fn shade(
         })
 }
 
+struct RasterTarget<'a> {
+    pixels: &'a mut [[u8; 4]],
+    depths: Option<&'a mut [f32]>,
+    stencils: Option<&'a mut [u8]>,
+    width: u32,
+    height: u32,
+}
+impl RasterTarget<'_> {
+    fn update_stencil(
+        &mut self,
+        state: crate::StencilState,
+        operation: crate::StencilOperation,
+        index: usize,
+    ) -> Result<(), RenderExecutionError> {
+        let values = self
+            .stencils
+            .as_deref_mut()
+            .ok_or(RenderExecutionError::MissingStencilBuffer)?;
+        values[index] = state.update(operation, values[index]);
+        Ok(())
+    }
+}
+
 pub(super) fn render(
     pixels: &mut [[u8; 4]],
     width: u32,
     height: u32,
     draw: &PreparedDraw,
-    mut depths: Option<&mut [f32]>,
+    depths: Option<&mut [f32]>,
+    stencils: Option<&mut [u8]>,
 ) -> Result<(), RenderExecutionError> {
     if draw.pipeline.depth_state().is_some() && depths.is_none() {
         return Err(RenderExecutionError::MissingDepthBuffer);
     }
+    if draw.pipeline.stencil_state().is_some() && stencils.is_none() {
+        return Err(RenderExecutionError::MissingStencilBuffer);
+    }
+    let mut target = RasterTarget {
+        pixels,
+        depths,
+        stencils,
+        width,
+        height,
+    };
     for &triangle in draw.vertices.as_chunks::<3>().0 {
-        clipped_triangle(
-            pixels,
-            width,
-            height,
-            triangle,
-            &draw.pipeline,
-            &draw.textures,
-            depths.as_deref_mut(),
-        )?;
+        clipped_triangle(&mut target, triangle, &draw.pipeline, &draw.textures)?;
     }
     Ok(())
 }
 
 fn clipped_triangle(
-    pixels: &mut [[u8; 4]],
-    width: u32,
-    height: u32,
+    target: &mut RasterTarget<'_>,
     triangle: [Vertex; 3],
     pipeline: &GraphicsPipeline,
     textures: &[Option<SampledTexture>],
-    mut depths: Option<&mut [f32]>,
 ) -> Result<(), RenderExecutionError> {
     // Six planes can add at most six vertices to a clipped convex triangle.
     let mut polygon = [Vertex::default(); 12];
@@ -324,27 +347,22 @@ fn clipped_triangle(
     }
     for index in 1..count - 1 {
         rasterize(
-            pixels,
-            width,
-            height,
+            target,
             [polygon[0], polygon[index], polygon[index + 1]],
             pipeline,
             textures,
-            depths.as_deref_mut(),
         )?;
     }
     Ok(())
 }
 
 fn rasterize(
-    pixels: &mut [[u8; 4]],
-    width: u32,
-    height: u32,
+    target: &mut RasterTarget<'_>,
     mut triangle: [Vertex; 3],
     pipeline: &GraphicsPipeline,
     textures: &[Option<SampledTexture>],
-    mut depths: Option<&mut [f32]>,
 ) -> Result<(), RenderExecutionError> {
+    let (width, height) = (target.width, target.height);
     let screen = |vertex: Vertex| {
         let x = (vertex.clip[0] / vertex.clip[3]).clamp(-1.0, 1.0);
         let y = (vertex.clip[1] / vertex.clip[3]).clamp(-1.0, 1.0);
@@ -358,6 +376,9 @@ fn rasterize(
     if area == 0 {
         return Ok(());
     }
+    let stencil = pipeline
+        .stencil_state()
+        .map(|state| (state, if area > 0 { state.front } else { state.back }));
     if area < 0 {
         points.swap(1, 2);
         triangle.swap(1, 2);
@@ -388,6 +409,16 @@ fn rasterize(
                 continue;
             }
             let pixel_index = y as usize * width as usize + x as usize;
+            if let Some((state, face)) = stencil {
+                let stored = target
+                    .stencils
+                    .as_ref()
+                    .ok_or(RenderExecutionError::MissingStencilBuffer)?[pixel_index];
+                if !state.passes(face, stored) {
+                    target.update_stencil(state, face.fail_op, pixel_index)?;
+                    continue;
+                }
+            }
             let incoming = pipeline.depth_state().map(|state| {
                 let z: f64 = values
                     .iter()
@@ -399,10 +430,14 @@ fn rasterize(
                 (state, z.clamp(0.0, 1.0) as f32)
             });
             if let Some((state, z)) = incoming {
-                let stored = depths
+                let stored = target
+                    .depths
                     .as_ref()
                     .ok_or(RenderExecutionError::MissingDepthBuffer)?[pixel_index];
                 if !state.compare.test(z, stored) {
+                    if let Some((state, face)) = stencil {
+                        target.update_stencil(state, face.depth_fail_op, pixel_index)?;
+                    }
                     continue;
                 }
             }
@@ -435,13 +470,17 @@ fn rasterize(
                 &mut output,
                 Some(textures),
             )?;
+            if let Some((state, face)) = stencil {
+                target.update_stencil(state, face.pass_op, pixel_index)?;
+            }
             if let Some((_, z)) = incoming.filter(|(state, _)| state.write_enabled) {
-                depths
+                target
+                    .depths
                     .as_deref_mut()
                     .ok_or(RenderExecutionError::MissingDepthBuffer)?[pixel_index] = z;
             }
-            pixels[pixel_index] = if let Some(blend) = pipeline.blend_state() {
-                blend.apply(output[0], pixels[pixel_index])
+            target.pixels[pixel_index] = if let Some(blend) = pipeline.blend_state() {
+                blend.apply(output[0], target.pixels[pixel_index])
             } else {
                 output[0].map(|lane| (lane.clamp(0.0, 1.0) * 255.0).round() as u8)
             };

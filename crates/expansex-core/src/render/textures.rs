@@ -51,6 +51,11 @@ impl RenderPass<'_> {
         {
             return Err(RenderEncodeError::MissingDepthBuffer);
         }
+        if pipeline.is_some_and(|p| p.stencil_state().is_some())
+            && self.commands.stencil_buffer().is_none()
+        {
+            return Err(RenderEncodeError::MissingStencilBuffer);
+        }
         let mask = pipeline.map_or(0, |p| p.fragment_shader().required_textures());
         let mut retained = std::array::from_fn(|_| None);
         for (slot, target) in retained.iter_mut().enumerate() {

@@ -275,6 +275,9 @@ market uniqueness or a sound, complete verifier is established by this document.
 ## Implementation order and current reality
 
 Build the explicit core first and prove its rules with small working operations.
+The accepted development sequence is core completion followed by the SDK. The
+immediate release target is a bounded Core Preview, rather than a complete/stable
+v1 API; [the core milestone](docs/CORE-MILESTONE.md) defines the completion gates.
 Then add managed conveniences over those proven contracts when a real example
 justifies them. Do not create two API trees, empty backend crates, or a complete
 theoretical scheduler before work can execute.

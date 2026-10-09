@@ -404,6 +404,10 @@ Tests do not induce allocator OOM by exhausting host memory.
 
 ## Next contract
 
+The immediate milestone is [core completion](CORE-MILESTONE.md), followed by SDK
+development. A complete/stable v1 API remains later work. The supported-profile
+gates keep the first core milestone bounded; the Phase 4 list remains the wider backlog.
+
 Phases 1–3 are complete: copies and fixed-function triangles execute through
 EX and produce observable bytes/pixels. Shader representation, stage interfaces,
 and programmable execution now work through pipeline validation, vertex layouts,

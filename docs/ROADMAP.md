@@ -15,6 +15,11 @@ and verify the explicit core first. Add managed planning over those contracts
 when a working workload justifies it; this is a future capability, not a second
 renderer or a reason to postpone the programmable rendering milestone.
 
+The immediate milestone is [core completion](CORE-MILESTONE.md), followed by the
+SDK. A complete/stable v1 API is a later goal. Finish and verify a bounded explicit
+reference core before building new SDK tooling around it; retain the broader
+Phase 4 feature roadmap without treating every future feature as a core-launch gate.
+
 ## Status at a glance
 
 | Phase | Status | Completion evidence |
@@ -24,6 +29,8 @@ renderer or a reason to postpone the programmable rendering milestone.
 | 2 — First software triangle | Complete | Public render scopes produce a verified PNG through EX's own clipped fixed-function rasterizer |
 | 3 — Programmability and pipeline milestone | Complete | Pipeline-controlled triangles, layouts, perspective interpolation, and validated u16/u32 indexed drawing |
 | 4 — Modern GPU concepts | In progress | Sampled RGBA8 textures/views, nearest/bilinear samplers, eight fragment resource slots, depth/stencil attachments/tests, blending, and storage-buffer compute dispatch; dependencies next |
+| Immediate milestone — Core Preview | In progress | Supported-profile gates in CORE-MILESTONE.md; explicit resource dependencies are next |
+| Following milestone — SDK Preview | Planned after core | Templates, shader/build integration, developer tools, onboarding, and packaging over the completed core |
 | Future — Hardware drivers | Deferred | A selected target, viable driver interfaces, and demonstrated execution |
 
 Checked items mean implemented and verified behavior.
@@ -216,6 +223,8 @@ compiler, external shader-format dependency, or real GPU is not required.
 
 Add one capability at a time after the earlier contracts work. Select the order
 by an actual example's needs rather than implementing every object immediately.
+The [core milestone](CORE-MILESTONE.md) defines the immediate completion boundary;
+the checklist below is the wider feature backlog. SDK development follows core completion.
 
 - [x] Sampled 2D RGBA8 textures, rectangular views, nearest/bilinear samplers, and eight fragment texture/sampler slots.
 - [x] Depth/stencil and blending - separate attachments, comparisons/updates, channel masks, and atomic commits.

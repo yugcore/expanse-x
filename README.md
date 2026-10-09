@@ -168,8 +168,11 @@ Phase 3 completes programmable pipelines, layouts, interpolation, and indexed
 drawing. Phase 4 now has sampled textures, views, samplers, and eight fragment
 resource slots, depth/stencil attachments/tests, blending, and compute pipelines/dispatch.
 The workspace passes 192 tests, including documentation tests.
-Next: explicit resource transitions and execution/memory dependencies. Other modern GPU features
-and hardware drivers follow working reference semantics, one capability at a time.
+The immediate target is [core completion](docs/CORE-MILESTONE.md), followed by the
+SDK; a complete/stable v1 API remains a later goal. Next: explicit resource
+transitions and execution/memory dependencies. The core milestone defines a
+bounded supported reference profile and its completion gates. Other modern GPU
+features and hardware drivers follow demonstrated workloads, one capability at a time.
 
 Read the [starting assessment](docs/ASSESSMENT.md),
 [architecture](docs/ARCHITECTURE.md), [public API catalog](api.md),

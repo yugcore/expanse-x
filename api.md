@@ -4,6 +4,8 @@ Updated: 2026-10-09. Scope: every currently exported EX type, inherent method,
 public field, enum variant, and explicit standard trait implementation.
 There are **92 public types and 179 inherent methods**. Phase 3 is complete;
 these remain provisional APIs, not a completed or stable v1 specification.
+The immediate milestone is [core completion](docs/CORE-MILESTONE.md); SDK
+development follows that gate. This catalog describes working APIs, not planned SDK commands.
 
 Applications depend on package `ex-api` and import its library as `ex`:
 

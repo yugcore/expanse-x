@@ -129,8 +129,11 @@ checks pass. The graphics library remains 121 types, 229 methods and 34 error ty
 | Broader source import and independent artifact cache | Future extensions |
 | Safe reload and optional asset helpers | Planned; next selected workflow is safe shader reload |
 | Window/engine integrations and diagnostic/capture tooling | Planned |
-| Contributor onboarding and packaged release policy | Planned; no publication or license selection |
+| Preview package distribution | v0.1.0 Windows archive workflow in [RELEASING.md](RELEASING.md); source plus binary, checksums and provenance |
+| Contributor onboarding, license and broader releases | Planned; no project license selected |
 
-SDK Preview is not complete. Distributable releases still need tested platform/
-toolchain/dependency versions and licensing policy. This step adds no hardware,
+SDK Preview is not complete. The first v0.1.0 preview package records its tested
+Windows target and actual toolchain/dependency versions; its [release notes](releases/v0.1.0.md)
+state the bounded capability and unselected project license. Broader platforms,
+release pinning and licensing policy remain later work. This adds no hardware,
 window presentation or managed API claim.

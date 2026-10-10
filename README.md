@@ -197,6 +197,19 @@ change live colours/parameters; missing-barrier and late-compute-failure checks
 verify rejection, rollback and repaired reuse. It writes `target/core-preview.png`.
 The test runs with normal workspace checks and verifies every pixel/attachment.
 
+## SDK v0.1.0 Preview download
+
+The first Windows x86_64 SDK archive is distributed through
+[GitHub Releases](https://github.com/yugcore/expanse-x/releases/tag/v0.1.0).
+It includes bin/ex.exe, matching source dependencies, setup instructions and
+BUILD-INFO.json provenance. Download the ZIP and SHA256SUMS.txt, verify its checksum,
+and extract into a permanent directory. Install Rust/MSVC linking prerequisites
+and the separate GLSL/SPIR-V tools before running bin/ex.exe doctor.
+[RELEASING.md](docs/RELEASING.md) defines packaging and extracted-project verification;
+[release notes](docs/releases/v0.1.0.md) list commands, prerequisites and limits.
+This is an experimental SDK preview with CPU software rendering. No project
+license has been selected, and Cargo registry publication remains disabled.
+
 ## Source SDK and shader tools
 
 ```text
@@ -227,7 +240,7 @@ shader subset, reflection/build commands and remaining reload/window/tooling gat
 | `crates/ex-sdk/` | Source SDK CLI, shader commands and standalone GLSL/Rust starter templates |
 | `crates/ex-shader/` | Build-time native-tool invocation, bounded SPIR-V lowering, reflection and Rust generation |
 | `docs/` | Current EX contracts, architecture, assessment, and conventions |
-| `scripts/` | Repeatable production checks |
+| `scripts/` | Repeatable production checks and committed-source SDK packaging |
 
 ## Next milestones
 

@@ -366,9 +366,16 @@ colour frames and every varying gradient pixel, plus malformed/unsupported input
 and lowering limits. All 272 tests and required checks pass; graphics API counts
 remain unchanged. No release or additional platform certification is claimed.
 
+The first v0.1.0 SDK Preview release packages a tested Windows x86_64 executable
+with the matching source snapshot, provenance and ZIP checksum under
+[RELEASING.md](RELEASING.md). It uses GitHub Releases, with Cargo registry publishing
+still disabled and no project license selected. Extracted SDK setup and an
+independent generated application must pass the same rendering checks.
+
 Next: safe shader reload with last-good-state preservation and explicit interface
 compatibility checks. Broader imports/independent artifact cache, windowing,
-assets, capture, onboarding and packaged releases remain separate SDK gates.
+assets, capture, onboarding, license policy and broader platform releases remain
+separate SDK gates.
 
 ## EX Witness — experimental track: not started
 

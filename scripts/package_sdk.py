@@ -80,8 +80,8 @@ def package(output: Path, version: str) -> Path:
     }
     guide = f"""# Expanse-X SDK v{version} (Preview)
 
-This package contains bin/ex.exe and its exact source checkout at commit {commit}.
-Extract into a permanent directory. No installer or global PATH change is needed.
+This package contains bin/ex.exe and its source at commit {commit}.
+Extract it into a directory you can keep in place, then run bin/ex.exe directly.
 
 Install stable Rust with rustfmt/Clippy and Windows MSVC build/link prerequisites.
 Install glslangValidator and spirv-val separately, or select executable paths with

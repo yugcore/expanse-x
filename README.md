@@ -68,8 +68,8 @@ Then run `cargo run --locked --offline` from `target/my-ex-app`.
 
 [Core Preview 1](docs/CORE-PROFILE.md) defines the supported limits. There is one
 synchronous queue per device. Richer formats, mipmaps, asynchronous completion,
-multiple queues and hardware drivers are future work. There is no selected
-project license yet; Cargo registry publication is disabled.
+multiple queues and hardware drivers are future work. EX is licensed under the
+[MIT license](LICENSE). Cargo registry publication is disabled.
 
 ## Examples
 

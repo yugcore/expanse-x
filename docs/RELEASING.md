@@ -11,7 +11,7 @@ archives ([documentation](https://docs.github.com/en/repositories/releasing-proj
 GitHub Packages' supported registries do not include Cargo
 ([supported formats](https://docs.github.com/en/packages/learn-github-packages/introduction-to-github-packages#support-for-package-registries)).
 The workspace keeps `publish = false`; this workflow does not publish to crates.io.
-A project license is still pending.
+EX uses the [MIT license](../LICENSE); include it in SDK archives.
 
 Distribute a Windows x86_64 MSVC archive containing the release-built ex.exe,
 the exact tracked source snapshot and documentation needed by the source SDK,
@@ -77,7 +77,6 @@ GLSL files under my-ex-app/shaders/. The source SDK's [SDK.md](SDK.md) and
 [SHADER-IMPORT.md](SHADER-IMPORT.md) define the bounded supported operations.
 
 The channel stable is moving; provenance records the tested compiler/tool
-versions without promising every later version. A project license remains
-unselected, so this release does not claim an OSI-approved open-source license.
+versions without promising every later version. EX is licensed under MIT.
 Safe reload, window/engine integration, broader source import, independent asset
 cache and other platform packaging remain later SDK gates.

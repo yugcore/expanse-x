@@ -80,7 +80,7 @@ the supported shader subset.
 - [ ] Broader imports and an independent shader artifact cache.
 - [ ] Asset helpers and window/engine examples.
 - [ ] Diagnostic and capture tools.
-- [ ] License and contribution terms.
+- [x] MIT license and contribution terms.
 - [ ] Additional platform packages and a release toolchain policy.
 
 The workspace has 272 tests, including SDK CLI tests, importer tests and executable

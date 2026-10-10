@@ -76,7 +76,8 @@ def package(output: Path, version: str) -> Path:
         "shader_tools": native,
         "binary": "bin/ex.exe",
         "binary_sha256": hashlib.sha256(binary).hexdigest(),
-        "project_license_selected": False,
+        "project_license_selected": True,
+        "license": "MIT",
     }
     guide = f"""# Expanse-X SDK v{version} (Preview)
 
@@ -106,7 +107,7 @@ local; the installed Rust/native tools are required before offline builds.
 docs/SDK.md and docs/SHADER-IMPORT.md define current commands and the bounded
 EX-GLSL-1 shader subset. docs/releases/v0.1.0.md describes this release. Rendering
 is CPU software, without hardware drivers or window presentation. The API remains
-provisional. No project license is selected; Cargo registry publishing is disabled.
+provisional. EX uses the MIT license in LICENSE; Cargo registry publishing is disabled.
 BUILD-INFO.json records the tested build environment and binary checksum.
 """
     created: list[Path] = []

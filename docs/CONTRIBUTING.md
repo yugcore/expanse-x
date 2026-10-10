@@ -39,5 +39,5 @@ Review the diff before committing. Keep commits focused on one change and use a
 short description of what changed. Commit source, tests, examples, build settings
 and project documentation; keep temporary output and local experiments out of Git.
 
-The project has not selected a license yet. License and contribution terms are
-listed as pending work in the roadmap.
+EX uses the [MIT license](../LICENSE). Contributions submitted for inclusion in
+EX are provided under the same license.

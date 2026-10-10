@@ -2,6 +2,7 @@
 name = "ex-sdk"
 version = "0.1.0"
 edition.workspace = true
+license.workspace = true
 publish.workspace = true
 description = "Source SDK tools for the bounded Expanse-X software core"
 

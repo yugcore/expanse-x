@@ -35,4 +35,3 @@ api.md, docs/CORE-PROFILE.md and docs/SDK.md for current contracts.
 
 The generated Cargo.lock is for this app; keep it with your project. The stable
 toolchain channel follows releases rather than pinning one compiler version.
-The release build is a local executable, not a published SDK distribution.

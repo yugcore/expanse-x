@@ -1,17 +1,12 @@
 # EX architecture
 
-Status: Phases 0–3 complete. Owned resources, validated recording, synchronous
-copies, shaders, graphics pipelines, vertex layouts, interpolation, and indexed
-software triangles work. Phase 4 now adds sampled textures/views, samplers, and
-fragment resource bindings, plus retained depth attachments and pipeline tests.
-Colour blending, front/back stencil rules, and storage-buffer compute dispatch also work.
-Reusable bindings/uniforms, explicit dependencies, texture transfers and shared
-render-to-texture images work under their bounded contracts.
-Adapters and devices advertise Core Preview 1; real submissions use a selected
-private executor and reusable public profile checks.
+EX implements Core Preview 1 through a synchronous CPU backend. The core owns
+resources, validates commands, interprets shaders and renders offscreen images.
+The SDK adds project generation and bounded GLSL/SPIR-V import at build time.
+Adapters and devices report the supported profile and limits.
 
-The [development roadmap](ROADMAP.md) tracks verified work, pending steps, and
-phase completion gates. This document describes architectural responsibilities.
+The [roadmap](ROADMAP.md) tracks completed and pending work. This document
+describes module responsibilities and execution rules.
 
 ## Philosophy and boundaries
 
@@ -36,10 +31,9 @@ Application / game engine
   -> EX reference GPU, later supported hardware targets
 ```
 
-This is the intended architecture, not an implemented execution chain. Driver
-integration needs operating-system interfaces, hardware command formats, memory
-management, and shader instruction support. Adding a crate or vendor name does
-not supply those capabilities. Hardware work is deferred.
+Managed planning and hardware drivers are future layers. Hardware integration
+needs operating-system interfaces, command formats, memory management and shader
+instruction support. The current executor is the CPU reference backend.
 
 ## Current module boundaries
 
@@ -142,22 +136,20 @@ readback; it does not establish asynchronous hardware synchronization.
 
 ## Shader strategy and rendering
 
-Phase 2 renders vertex positions with constant colour. Phase 3 now supplies a
-small EX-owned representation of vertex and fragment operations with independent
+Fixed-function draws render positions with a constant colour. Programmable draws use
+an EX-owned representation of vertex and fragment operations with independent
 evaluation and recorded programmable rendering. See [SHADERS.md](SHADERS.md) for bounded vector interfaces,
 acyclic registers, operations, ownership, finite arithmetic, and errors. This
 representation participates in recorded rendering; [PIPELINES.md](PIPELINES.md) defines
 layout/stage validation, homogeneous clipping, perspective interpolation, and
-fragment conversion. No shader frontend, external importer, or compiler exists.
-The accepted source-language direction supports established toolchains later
-while EX retains execution. Arbitrary Rust closures are not
-assumed to be portable GPU shaders.
+fragment conversion. The SDK now compiles a limited GLSL subset with glslang,
+validates SPIR-V and lowers it to EX instructions; see [SHADER-IMPORT.md](SHADER-IMPORT.md).
+Native tools run at build time. EX retains shader execution.
 
-Longer term: established shader source -> existing compiler -> external format
-import -> EX IR -> target compiler or software execution. IR means intermediate
-representation; ISA means instruction set architecture. Expand instruction
-coverage and define supported input semantics before adding an importer.
-A custom EX source language remains a later decision.
+The current path is GLSL -> glslang -> SPIR-V -> EX IR -> software execution.
+IR means intermediate representation. Broader source import and a hardware
+shader compiler need their own supported profiles. A custom source language
+remains a later decision.
 
 The private reference module now implements vertex fetch, triangle assembly,
 four-plane 2D clipping, full-target viewport mapping, 1/256-pixel rasterization,
@@ -205,15 +197,11 @@ attachment state, and resource hazard errors as those features appear. Report th
 resource label/identity, operation, and expected condition.
 Only introduce error variants when an operation can actually produce them.
 
-## Decision and verification discipline
+## Adding features
 
-Describe the behavior, ownership, validation and failure rules of a
-major abstraction before implementation. Keep its EX contract with the code.
-
-Implement one piece, exercise it through the public API, test its failure cases,
-review the diff, and commit a coherent change. The triangle milestone is complete
-only when the EX public API records/submits work and EX's own software pipeline
-produces an image. The Phase 0 example does not meet that criterion.
+Describe resource ownership, execution, validation and failure behavior before
+adding a major abstraction. Exercise it through the public API and test relevant
+misuse. Keep the feature contract and API catalog consistent with the implementation.
 
 
 ## Dependency boundary

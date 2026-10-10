@@ -1,7 +1,7 @@
 # EX discovery and device ownership
 
-Status: first Phase 1 step. Public names remain provisional. This contract covers
-software-target discovery and logical object ownership, not execution.
+Instances discover software adapters. Adapters create logical devices, which own
+resources and queues. Public names remain provisional.
 
 ## Design
 

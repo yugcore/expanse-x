@@ -1,6 +1,6 @@
 # Stencil testing
 
-mark pixel regions and condition later draws on
+Stencil tests mark pixel regions and condition later draws on
 those marks. Unlike depth's distance comparison, stencil is an unsigned bit mask
 for clipping, nested masks, and counters. Existing APIs provide [stencil comparisons
 and fail/depth-fail/pass operations](https://docs.vulkan.org/spec/latest/chapters/fragops.html#fragops-stencil).

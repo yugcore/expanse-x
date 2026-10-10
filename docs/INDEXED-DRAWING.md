@@ -6,7 +6,7 @@ features. Vulkan also separates index-buffer binding, index count/start, and a
 signed vertex offset ([indexed draw](https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdDrawIndexed.html)).
 EX defines its own retained command and synchronous reference execution.
 
-## Selected contract
+## Behavior
 
 - `IndexFormat::Uint16` and `Uint32` store unsigned little-endian indices (2/4
   bytes). All values are ordinary indices; there is no primitive restart.
@@ -59,11 +59,10 @@ cover both formats, a shared-vertex quad, offsets/base, live copies/reuse, alias
 buffers, retained resources, invalid state/ranges/references, mixed draw order,
 and scope failure effects. Two [internal tests](../crates/expansex-core/src/buffer/resource.rs)
 cover poison/empty behavior and final allocation release. The public crate
-documentation exercises indexed drawing too. The indexed milestone passed 122
-workspace tests; the later texture milestone passed 137 and depth milestone 150.
+documentation exercises indexed drawing too. The indexed-drawing checkpoint passed 122 workspace tests.
 
 The [quad example](../crates/ex-api/examples/indexed_quad.rs) stores 80 vertex bytes
 and 12 index bytes, instead of 120 bytes for six expanded records in this layout.
 Its 512x384 PNG has 110,592 covered pixels and 80,237 foreground colours. Independent
 PNG decoding checks CRCs and every pixel against separately calculated coverage/
-interpolation; visual inspection also confirms the output. Phase 3 is complete.
+interpolation. The image was also inspected visually.

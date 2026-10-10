@@ -2,8 +2,7 @@
 
 Updated: 2026-10-10. Scope: every currently exported EX type, inherent method,
 public field, enum variant, and explicit standard trait implementation.
-There are **121 public types and 229 inherent methods**. Phase 3 is complete;
-these remain provisional APIs, not a completed or stable v1 specification.
+There are **121 public types and 229 inherent methods**. The API is provisional.
 The bounded [Core Preview milestone](docs/CORE-MILESTONE.md) is complete under
 [the integrated proof](docs/CORE-PROOF.md). The [source SDK CLI](docs/SDK.md)
 now provides info, doctor, GLSL/Rust project creation and shader build/import/
@@ -2099,7 +2098,7 @@ EX Witness, or EX Proof. Resource branching is an unaccepted discussion idea,
 not an implemented or locked API.
 
 See the [roadmap](docs/ROADMAP.md) for planned capabilities and
-[DOCUMENTATION.md](DOCUMENTATION.md) for the project design and experimental
+[DOCUMENTATION.md](DOCUMENTATION.md) for the design commitments and experimental
 directions. Future methods must not be mixed into the implemented tables.
 
 ## SDK shader tooling

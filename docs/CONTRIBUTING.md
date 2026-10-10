@@ -1,40 +1,43 @@
-# EX coding conventions
+# Contributing to EX
 
-- Follow the [project design](../DOCUMENTATION.md). Routine API and
-  implementation choices can evolve within it. Changes to guiding commitments
-  require an explicit design revision recorded in that document.
+The API is still changing. For a substantial feature, describe the intended
+behavior and a workload that needs it before writing the implementation. Changes
+to the shared managed/explicit model or safety guarantees need a design discussion;
+the agreed direction is in [DOCUMENTATION.md](../DOCUMENTATION.md).
 
-- Keep production code, examples, tests and EX contracts tracked.
-  Keep temporary output and local experiments out of Git.
+## Code
 
-- Use Rust and the standard library where practical. Introduce dependencies for
-  a demonstrated requirement. No rendering dependency on another graphics API.
+- Prefer safe Rust and the standard library. Add dependencies when they solve a
+  specific problem. EX rendering uses its own execution backend.
+- Use `snake_case` for functions and modules, and `PascalCase` for types. Make
+  units, ownership and completion behavior clear in public descriptors and methods.
+- Return `Result` for expected misuse. Reserve assertions for tests and internal
+  invariants; avoid `unwrap` and `expect` in production code.
+- The workspace denies unsafe code. Any future platform boundary that needs it
+  must document its safety requirements and expose a safe interface.
+- Keep features small enough to review. Add working behavior and tests together,
+  rather than placeholders for objects that have no use yet.
 
-- Keep API changes small and functional. Do not add empty modules for future
-  objects. Preserve existing working contracts until a justified change replaces
-  them; clearly distinguish implemented behavior from plans in documentation.
+## Tests and documentation
 
-- Use snake_case for functions/modules, PascalCase for types, and explicit units
-  in fields and documentation. Public descriptors should describe what they
-  borrow; real handles must document storage ownership and completion rules.
+Exercise new behavior through the public API, including relevant failure cases.
+Examples should run against the implementation; distinguish proposed designs
+from available features. Update [api.md](../api.md) when exports or signatures
+change, and keep the relevant feature contract and roadmap current.
 
-- Prefer safe code, enums, ownership, RAII, and `Result`. Expected misuse belongs
-  in descriptive errors rather than panics. Production source must avoid
-  convenience `unwrap`/`expect`; assertions are appropriate in tests.
+Run the checks from the repository root:
 
-- The workspace denies unsafe code by default. If a genuine platform boundary
-  needs it, isolate the code, locally allow the lint only at that boundary,
-  document safety invariants, and expose a safe interface. Existing code is safe.
+```powershell
+pwsh -NoProfile -File scripts/check.ps1
+```
 
-- Document a major abstraction's capability, need, comparison, chosen contract,
-  and limitations before implementing it. Unit-test meaningful behavior and
-  misuse; use public API examples/integration checks across subsystem boundaries.
-  Documentation examples must agree with executable behavior.
+The script checks formatting, builds all targets, runs Clippy with warnings denied,
+runs tests and builds Rustdoc. Rust and the shader tools must already be installed;
+see the [README](../README.md) for prerequisites. Keep `Cargo.lock` tracked.
 
-- Keep the root [API catalog](../api.md) current when public exports, signatures,
-  fields, variants, traits, or implemented status change. List planned APIs
-  separately from the implemented inventory and keep topic contracts consistent.
+Review the diff before committing. Keep commits focused on one change and use a
+short description of what changed. Commit source, tests, examples, build settings
+and project documentation; keep temporary output and local experiments out of Git.
 
-- Review the staged diff, stage explicit paths, and make a local commit for each
-  coherent change. Use short messages such as `get command recording working`.
-  Preserve history; publishing or hardware support is not implied by a commit.
+The project has not selected a license yet. License and contribution terms are
+listed as pending work in the roadmap.

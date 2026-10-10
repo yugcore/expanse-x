@@ -1,6 +1,6 @@
 # EX current API contract
 
-Status: Phases 0-3 complete; Phase 4 graphics/compute, reusable bindings, explicit dependencies and image flow work. Names and behavior are provisional.
+This document covers the current software API. Names and behavior are provisional.
 Applications depend on package `ex-api` and import its library as `ex`. The
 implementation remains in `expansex-core`; the public crate re-exports its types.
 This contract describes implemented behavior only. See [architecture](ARCHITECTURE.md)
@@ -401,14 +401,14 @@ Twelve public compute tests, two internal poison/lifetime tests, and executable
 compute documentation verify grids, views, finite arithmetic, validation, retention,
 ordering, reuse, aliasing, zero/limit cases, output rollback, and generated vertices.
 Independent pixel calculations verify the compute tile example.
-The workspace runs 257 tests, including documentation tests.
+The workspace runs 272 tests, including documentation tests.
 Tests do not induce allocator OOM by exhausting host memory.
 
 ## Next contract
 
-The bounded [Core Preview milestone](CORE-MILESTONE.md) is complete; SDK
-development is next. A complete/stable v1 API remains later work. The supported-profile
-gates keep the first core milestone bounded; the Phase 4 list remains the wider backlog.
+The [Core Preview milestone](CORE-MILESTONE.md) is complete. The SDK's setup,
+project generation and bounded shader import work; safe reload is next.
+A stable v1 API remains later work. See the [roadmap](ROADMAP.md) for the backlog.
 
 Phases 1–3 are complete: copies and fixed-function triangles execute through
 EX and produce observable bytes/pixels. Shader representation, stage interfaces,
@@ -421,7 +421,8 @@ buffers now work under [BINDINGS.md](BINDINGS.md). Texture/resource flows now wo
 under [TEXTURE-FLOW.md](TEXTURE-FLOW.md). The execution boundary and reusable profile
 checks work under [CORE-PROFILE.md](CORE-PROFILE.md). The integrated workload and
 review meet the bounded Core Preview milestone under [CORE-PROOF.md](CORE-PROOF.md).
-SDK Preview is next; language/format import remains future work.
+The SDK imports EX-GLSL-1 and builds shaders; safe reload and broader import remain
+future work.
 The execution interface is private Rust code; no public driver/plugin ABI exists.
 
 ## Explicit synchronization contract

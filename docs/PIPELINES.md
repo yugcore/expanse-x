@@ -1,6 +1,6 @@
 # Graphics pipelines and programmable triangles
 
-This step connects owned EX shaders to recorded draws. A pipeline retains a
+Graphics pipelines connect EX shaders to recorded draws. A pipeline retains a
 vertex shader, fragment shader, explicit single-buffer vertex layout, and target
 format. The existing fixed-function `draw(range, colour)` remains available;
 `set_pipeline` plus `draw_programmable(range)` selects programmable execution.

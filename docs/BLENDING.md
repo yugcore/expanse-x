@@ -1,6 +1,6 @@
 # Colour blending
 
-combine a passing fragment's colour with the current
+Blending combines a passing fragment's colour with the current
 pixel, enabling transparency and additive effects in EX's own renderer. Existing
 APIs offer [separate RGB/alpha factors and operations](https://docs.vulkan.org/spec/latest/chapters/framebuffer.html#framebuffer-blending).
 EX uses that arithmetic concept with immutable Rust values and one RGBA8 target;

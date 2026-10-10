@@ -1,10 +1,10 @@
 # SDK shader import contract
 
-This SDK step lets established
-GLSL shader files drive the existing EX software pipeline. It does not introduce
-a language, change core execution, or claim general GLSL/SPIR-V compatibility.
+The SDK imports a limited GLSL subset into the software pipeline. Supported input
+and lowering rules are listed below; general GLSL/SPIR-V compatibility is outside
+this profile.
 
-## Chosen boundary
+## Supported input
 
 Use the installed Khronos glslangValidator to compile GLSL to SPIR-V 1.0, with
 Vulkan 1.0 source semantics and optimization disabled. Validate the exact binary
@@ -71,16 +71,16 @@ the same private snapshot that spirv-val validates. Preserve compiler diagnostic
 unsupported lowering reports SPIR-V opcode and word offset. Temporary directories
 are exclusively created; cleanup removes only the attempt's known files.
 
-## Evidence required
+## Verification
 
 Compile/import real shaders; reflect stage locations and uniform byte sizes;
 evaluate arithmetic/swizzles/uniforms through EX; reject standard-valid unsupported
 features, malformed binaries and bad source. Exercise CLI refusal/diagnostics and
 generated starter build/render. Edit GLSL and verify rendered pixels change,
 then verify an invalid shader makes the build fail instead of using old output.
-Run the workspace checks and update the API catalog.
+Run the workspace checks and update the API catalog when exports change.
 
-## Tests and examples (2026-10-10)
+## Implemented evidence (2026-10-10)
 
 The [ex-shader library](../crates/ex-shader/src/lib.rs) implements native tool
 invocation, private snapshots, strict lowering, owned reflection and generated

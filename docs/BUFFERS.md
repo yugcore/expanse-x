@@ -1,15 +1,14 @@
 # EX allocated reference buffers
 
-Status: Phase 1 buffer storage. Names and contracts remain provisional. Buffers
-allocate and copy actual bytes on the reference target; queues now execute copies
-under [SUBMISSION.md](SUBMISSION.md).
+Buffers own byte storage on the software backend. CPU access follows explicit
+permissions; recorded copies execute through [queue submission](SUBMISSION.md).
 
 ## Design
 
 A descriptor is a borrowed request, not storage. EX needs an owned resource that
 retains its creating device, has a fixed byte size and permitted roles, and can
-survive the metadata passed to creation. Future command buffers must be able to
-retain that storage independently of the application's original handle.
+survive the metadata passed to creation. Command buffers retain that storage
+independently of the application's original handle.
 
 `Device::create_buffer(BufferDescriptor)` validates the request, allocates
 zero-initialized reference storage, copies label/usage metadata, and returns an
@@ -22,7 +21,6 @@ of device-side `BufferUsage`. Existing APIs distinguish memory placement/access
 through Vulkan memory properties, Direct3D heap types, and Metal storage modes.
 EX expresses only the required CPU-copy permission in this step, leaving heap
 placement, mapping, residency, and device-local uploads for later contracts.
-
 
 ## Descriptor and creation
 

@@ -1,8 +1,8 @@
 # EX recorded buffer copies
 
-Status: implemented Phase 1 recording contract. Synchronous execution now exists
-under [SUBMISSION.md](SUBMISSION.md); recording still does not execute a copy. Public names
-remain provisional.
+Encoders record validated copies without executing them. Finishing an encoder
+produces a device-bound command buffer; [queue submission](SUBMISSION.md)
+executes its work synchronously.
 
 ## Design
 

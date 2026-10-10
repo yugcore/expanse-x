@@ -35,7 +35,7 @@ Non-Unicode manifest paths are rejected; TOML quoting preserves spaces/backslash
 
 ## Shader build boundary
 
-[SHADER-IMPORT.md](SHADER-IMPORT.md) records the contract chosen before implementation.
+[SHADER-IMPORT.md](SHADER-IMPORT.md) defines the supported shader subset.
 The installed glslangValidator compiles GLSL to SPIR-V 1.0; spirv-val checks the
 same private snapshot that EX imports. EX-GLSL-1 supports vertex/fragment main,
 straight-line float/vec4 arithmetic, constants, local values, swizzles, dot,
@@ -102,7 +102,7 @@ cargo run -p ex-sdk --locked --offline -- shader reflect target/my-ex-app/shader
 cargo run -p ex-sdk --locked --offline -- shader build target/my-ex-app/shaders/triangle.frag --stage fragment --output target/fragment.rs
 ```
 
-## Evidence and remaining gates
+## Tests and remaining work
 
 [CLI tests](../crates/ex-sdk/tests/cli.rs) exercise arguments, file preservation,
 cleanup, missing tools, build/import/reflection and standalone format/build/run

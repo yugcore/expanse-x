@@ -1,10 +1,10 @@
 # Texture transfers and render-to-texture
 
-Selected core contract (2026-10-09). This gate connects upload, rendering,
-sampling in a later pass, and readback using real shared image storage. Implementation
-evidence for this bounded gate is recorded below.
+Texture transfers connect upload, rendering, sampling and readback through
+shared image storage. Textures and full-image framebuffer views can refer to the
+same allocation.
 
-## Purpose and selected profile
+## Supported behavior
 
 CPU texture writes alone cannot express a device-side upload or readback chain.
 An offscreen image must also be usable as an attachment and as a later shader

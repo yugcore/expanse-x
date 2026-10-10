@@ -1,349 +1,162 @@
-# Expanse-X: project philosophy
+# Expanse-X design
 
-Design adopted on 2026-10-08.
-
-This document describes EX's purpose and guiding design commitments. The [roadmap](docs/ROADMAP.md) tracks implementation progress;
-[architecture](docs/ARCHITECTURE.md) and topic contracts describe how the current
-implementation works. Accepting a philosophy does not make its planned features
-implemented.
+Design adopted on 2026-10-08. The [roadmap](docs/ROADMAP.md) tracks progress;
+[architecture](docs/ARCHITECTURE.md) describes the implementation.
 
 ## Purpose
 
-EX aims to provide explicit graphics control with Rust-based ownership and
-validated execution. Applications can let EX manage execution or supply their
-own plan, using the same resources and core semantics.
+EX aims to give applications explicit graphics control with Rust ownership and
+runtime validation. Applications should be able to choose how much execution
+planning they handle while using the same resources and core rules.
 
-The long-term ambition is Vulkan-level control over meaningful application
-decisions: resource allocation and reuse, memory placement, command recording,
-queue selection, dependencies, and submission. This is a design target, not a
-claim of current feature parity, performance, or control over every internal GPU
-scheduling decision. EX defines its own contracts rather than copying Vulkan's
-API.
-
-EX should make common state, lifetime, and synchronization mistakes harder to
-express, detect invalid work where static proof is impractical, and explain what
-valid execution requires. It does not promise to eliminate all programming
-errors or infer every shader's data-dependent memory access.
+The long-term target is Vulkan-level control over allocation, memory placement,
+recording, queues, dependencies and submission. Today's software profile covers
+only part of that scope. Rust types can prevent some state and lifetime mistakes;
+dynamic ranges, resource ownership and dependencies still need runtime checks.
 
 ## One core, two control levels
 
 ```text
-                     Application / game engine
-                                |
-                               EX
-                                |
-                    +-----------+-----------+
-                    |                       |
-              Managed level           Explicit level
-                    |                       |
-                    +-----------+-----------+
-                                |
-                             EX Core
-                                |
-                           EX Runtime
-                                |
-                         EX Driver Layer
-                                |
-                   EX reference GPU / future GPU
+                   Application
+                        |
+                       EX
+                 /            \
+          Managed API      Explicit API
+                 \            /
+                     EX Core
+                        |
+                    EX Runtime
+                        |
+                Execution backend
+                        |
+             CPU today / GPU later
 ```
 
-This is the intended logical architecture. It does not mandate a separate crate
-for every box or imply that execution and hardware drivers exist today.
+**Managed: "Just get it rendered."** The application supplies work and resource
+uses. EX derives dependencies and chooses a valid execution plan within the
+application's requirements. The chosen plan and its costs should be inspectable.
 
-**Managed: "Describe what I want rendered."** The application supplies work and
-resource-use information. EX derives necessary dependencies and chooses a valid
-execution plan within the application's requirements. Managed defaults should
-make ordinary work straightforward; their execution decisions and costs should
-be inspectable.
+**Explicit: "Give me control over how it gets rendered."** The application supplies
+the plan and dependencies. EX checks them against its execution rules and reports
+invalid work. It must not silently repair a missing dependency by choosing a
+different schedule.
 
-**Explicit: "Let me decide how that work executes."** The application supplies
-the plan and dependencies for the controls EX exposes. EX validates that plan
-against the execution contract. Invalid plans produce understandable errors;
-EX must not silently repair missing dependencies by substituting a different
-schedule. Correctness-required behavior documented in the contract is distinct
-from a hidden repair.
+Both levels share resource identity, device ownership, command meaning, shader
+and pipeline behavior, and completion rules. Moving a workload between them
+should not require replacing its resources. Mixed workloads must describe their
+resource uses, dependencies and completion at the boundary.
 
-Both levels must share resource identity, device ownership, command meaning,
-shader and pipeline contracts, and completion semantics. Applications should be
-able to move individual workloads between levels without replacing their
-resources. Mixing levels requires explicit, documented boundary information:
-resource uses, dependencies, and completion. Interoperability is a commitment;
-the exact public methods and boundary representation remain future design work.
+The managed layer will build on the explicit core. Its public API and the mixed
+workload interface are still to be designed. The explicit software core is
+implemented; managed planning is future work.
 
-The managed level is built on the same explicit core and execution rules. It
-must not become a separate renderer with different resource or safety semantics.
-Explicit control means choosing a valid plan, not disabling safety checks.
+## Safety and failure
 
-## Safety responsibilities
+| Mechanism | Responsibility |
+| --- | --- |
+| Rust types and ownership | Express valid states and prevent use of consumed values, such as a finished encoder |
+| Runtime validation | Check device ownership, ranges, usages, compatible state and declared dependencies |
+| Resource retention | Keep recorded/submitted resources alive and coordinate CPU access with execution |
 
-| Mechanism | Intended responsibility | Boundary |
-| --- | --- | --- |
-| Rust types and ownership | Express legal states and prevent misuse such as using a consumed encoder | The compiler does not automatically model GPU execution or prove all resource dependencies |
-| Runtime validation | Check dynamic device ownership, ranges, usages, state compatibility, and declared dependencies | Validation needs sufficient resource-use information; unavailable information must have a defined contract |
-| Execution lifetime management | Retain resources used by recorded/submitted work and coordinate CPU access with pending execution | Keeping storage alive does not establish ordering, visibility, or completion |
+Retention alone does not establish ordering or completion. Rust ownership alone
+does not prove shader memory access or GPU synchronization. Each feature needs
+a contract for the information validation requires and the accesses it supports.
 
-The safe public interface must uphold its documented safety guarantees in both
-levels and in all build profiles. Optional expensive diagnostics may have a
-separate policy, but turning them off must not remove mechanisms required for
-safe execution. Any future unsafe platform or interoperability boundary must be
-isolated, justified, and document the obligations it transfers to the caller.
+The safe interface must uphold its guarantees in both control levels and all
+build profiles. Optional diagnostics may be expensive, but disabling them must
+not remove checks needed for safe execution. Any future unsafe interoperability
+boundary must document the caller's obligations.
 
-Failures should identify the operation, relevant resource, violated requirement,
-and useful next action, with machine-readable errors where appropriate. EX must
-define failure effects, including whether earlier work may have executed. Safety
-does not imply correct application logic, an intended image, deadlock freedom,
-or identical pixels on every future hardware target.
+Errors should identify the operation, resource, failed requirement and a useful
+next action. Failure behavior must state whether earlier commands ran and what
+state remains available. Safety checks cannot determine whether an image matches
+the application's intent.
 
-## Example: upload followed by drawing
+For example, an upload writes a vertex buffer and a later draw reads it. A managed
+planner would derive the dependency; an explicit application declares it. Both
+must keep the buffer alive and make the upload visible before the read.
 
-This example describes the intended design, not available API methods.
+## Execution
 
-1. An upload writes a vertex buffer.
-2. A draw reads that buffer.
-3. The draw requires the upload's writes to be visible before it reads them.
+EX owns its resource model, commands, shader execution and rendering backend.
+The first backend runs on the CPU. Other graphics APIs are references for design,
+not execution dependencies. Hardware work follows a tested reference profile and
+a viable target driver interface.
 
-At the managed level, EX uses declared resource accesses to establish this
-dependency and exposes the resulting plan for inspection. At the explicit level,
-the application supplies the dependency and EX checks it. Both must retain the
-buffer for the work's lifetime and follow the same visibility rules.
-
-The distinction is who chooses the plan. Neither level makes an invalid
-read/write conflict acceptable. Shader-internal synchronization and arbitrary
-memory access require their own contracts as programmability grows.
-
-## Independent execution and useful differentiation
-
-EX is an independent Rust graphics API with its own runtime, commands, resource
-semantics, shader direction, and execution backend. Vulkan, Direct3D, Metal,
-OpenGL, and wgpu may be studied as references; they do not perform EX rendering.
-The first execution target is EX's own CPU software/reference GPU. Direct
-hardware-driver work remains deferred until reference semantics are useful and
-testable, with a viable target and operating-system interfaces.
-
-EX's proposed value is a coherent combination of explicit control, managed
-convenience, understandable diagnostics, and inspectable reference execution.
-Rust, automatic dependency handling, and two control levels alone are not claims
-of a feature unique to EX. Performance and usability benefits require examples
-and measurements rather than assertions.
+Core Preview 1 is complete for synchronous software execution. The first SDK
+preview adds project generation, bounded GLSL/SPIR-V import and shader builds.
+See [CORE-PROFILE.md](docs/CORE-PROFILE.md) for current limits and
+[SDK.md](docs/SDK.md) for the developer workflow. A stable v1 API remains a later
+goal. New core features should follow workloads that need them.
 
 ## EX Witness: experimental differentiation
 
-Status: accepted for exploration on 2026-10-08; not implemented. EX Witness is a
-working name for turning a selected graphics failure into an explanation, a
-replay, and a smaller runnable test. Its usefulness must be demonstrated before
-it becomes a promised capability.
+Witness is a proposed debugging workflow: select a failure, explain the relevant
+work, replay it and export a smaller runnable reproduction. It is not implemented.
 
-The intended workflow is:
+Start with a buffer-copy error or an application-provided readback assertion:
 
-1. Select a validation error, unexpected buffer value, or pixel with an explicit
-   condition describing the failure to preserve.
-2. Explain the relevant commands, resource accesses, and available intermediate
-   results. Report observed facts; application intent remains the developer's
-   responsibility.
-3. Capture the work, resource descriptions, starting contents, dependencies, and
-   other inputs needed to replay the supported case through EX's reference backend.
-4. Attempt to remove unrelated commands and data while keeping the selected
-   failure reproducible. Revalidate each candidate and distinguish the target
-   failure from unrelated errors introduced by reduction.
-5. Export a runnable reproduction with its required EX version and environment
-   information. After a fix, the developer can turn it into a regression test.
+1. Define the condition the reproduction must preserve.
+2. Capture commands, resource descriptions, initial contents and dependencies.
+3. Replay the case through the reference backend without the original application.
+4. Remove unrelated work, revalidating each candidate against the same condition.
+5. Export the reproduction with its EX version and environment requirements.
 
-For example, a future pixel explanation could show that a character fragment
-reached a pixel but failed its depth test against a value written by a background
-draw. A reproduction could retain those draws and their relevant resources.
-Depth testing is implemented; pixel-explanation support is still planned, so
-this example remains illustrative. It does not establish that the background
-draw was logically wrong.
+A repaired reproduction should become a regression test. Later experiments could
+explain a pixel's depth-test result or trace shader values. A wrong-looking image
+alone cannot tell EX what the developer intended, and reduction cannot guarantee
+the smallest possible case.
 
-Witness must use the same EX command and execution contracts for managed and
-explicit work. It is optional debugging machinery, not a third control level or
-a second renderer. Capturing a rejected operation must reproduce the validation
-failure without executing unsafe or invalid work. Detailed tracing and repeated
-replay have memory and execution costs and should be explicitly enabled.
+Capture must reproduce validation failures without executing rejected work.
+Tracing and repeated replay have memory and execution costs, so developers enable
+them explicitly. Hardware timing bugs may not reproduce on the software backend.
+Managed and explicit work use the same capture and execution rules.
 
-The smallest useful experiment comes after recorded copies and submission work:
-capture a supported buffer-copy failure and the resource state/operation inputs
-needed to reproduce it, then export a standalone reference test. A failure may
-be a rejected copy request or an application-provided readback assertion. First
-prove capture and replay; then attempt reduction. Pixel explanations, shader
-tracing, and frame reduction follow the corresponding execution features.
-
-Limits and success criteria:
-
-- Reduction requires an observable failure condition. A wrong-looking image
-  alone does not tell EX what the application intended.
-- Aim for a smaller reproduction, not a guarantee of the absolute smallest case.
-- Replay covers only supported operations and captured inputs. Hardware-specific
-  faults and timing behavior may not reproduce in the reference backend.
-- A standalone case should need EX and its stated build/runtime requirements,
-  rather than the original engine or asset pipeline. Portability must be tested
-  for the supported scope; arbitrary-machine or bit-identical GPU replay is not
-  promised.
-- The first experiment succeeds when an exported copy case reproduces the
-  selected failure independently of its originating application. A reduced case
-  must preserve that condition, and the fixed case must support a passing test.
-
-Pixel history, shader debugging, and capture exports already exist in tools such
-as [RenderDoc](https://github.com/baldurk/renderdoc/blob/v1.x/docs/how/how_inspect_pixel.rst)
-and [Nsight](https://docs.nvidia.com/nsight-graphics/UserGuide/frame-debugger-overview.html).
-The proposed distinction is integrating explanation, reduction, and executable
-tests into EX's own execution model, not claiming those individual ideas are new.
+[RenderDoc](https://github.com/baldurk/renderdoc/blob/v1.x/docs/how/how_inspect_pixel.rst)
+and [Nsight](https://docs.nvidia.com/nsight-graphics/UserGuide/frame-debugger-overview.html)
+already provide pixel history and shader debugging. The EX experiment is to
+connect explanations, reduction and runnable tests within its own execution model.
 
 ## EX Proof: experimental execution certificates
 
-Status: accepted for exploration on 2026-10-08; not implemented. EX Proof is a
-working name for proof-carrying execution: a plan is accompanied by a
-machine-checkable certificate explaining why specified resource-access
-obligations hold under a defined EX model. It does not certify an entire frame
-as correct without stating what was checked and assumed.
+Proof is a proposed certificate for specific resource-access obligations in an
+execution plan. It is not implemented.
 
-The intended workflow is:
+Start with buffer copies and their ranges and dependencies. A certificate would
+record the model version, checked properties, assumptions, exact plan and relevant
+resource parameters. A small separate checker would verify it without executing
+copies or trusting the planner's verdict.
 
-1. Define the supported command/access model and the properties being checked.
-   Begin with buffer copies and their ranges and dependencies; expand only when
-   the corresponding execution rules exist.
-2. Describe the plan, relevant resource relationships, access ranges, and
-   execution/visibility dependencies.
-3. Generate a certificate with the evidence for supported obligations. Managed
-   work produces a plan and certificate; explicit work supplies a plan that EX
-   attempts to certify without silently changing it.
-4. Verify the certificate using a small, separate checker that does not render
-   the work or simply trust the planner's verdict. Record the model version,
-   coverage, assumptions, and binding to the exact plan and resource parameters.
-5. Return structured results explaining satisfied obligations, missing
-   requirements, invalid certificates, or unsupported scope. Unsupported work
-   must not be labelled proven or automatically treated as an invalid plan.
+For example, when copy A writes bytes that copy B reads, the certificate could
+identify the dependency that orders those accesses. Managed work would generate
+a plan and certificate; explicit work would be checked without changing its plan.
 
-For example, if copy A writes a temporary buffer and copy B reads those bytes,
-the report can identify the dependency that orders those accesses and makes A's
-writes visible to B. A separate copy with disjoint modeled resource accesses
-may need no additional dependency. This is an illustrative report, not an
-implemented API or a claim about today's queue handles.
+The first experiment must reject missing dependencies, corrupted certificates
+and certificates reused against changed plans or resources. Unsupported scope
+must have its own result. Output should be structured data, with console reports
+or editor views available on request. Normal rendering should remain quiet.
 
-The proposed benefit is making synchronization reasoning inspectable and
-exchangeable. Automated checks could verify supported plan properties without
-the target GPU, and developers could recheck changes to dependencies, queue
-assignments, or memory reuse. A dependency unnecessary for the modeled resource
-accesses is not automatically a performance problem; actual speed needs measurement.
+A certificate covers only the stated model and assumptions. Shader-dependent
+accesses, aliasing, CPU concurrency and external inputs need to be modeled or
+excluded. The checker is trusted code; runtime execution must still obey the
+checked plan. Changes to relevant inputs require rechecking. This does not prove
+hardware correctness, intended pixels or optimal performance.
 
-### Results and presentation
-
-The result is structured data, not mandatory console printing. Optional views
-can include a readable console report, editor/debugger links to commands and
-resources, automated-test results, and an exported certificate for an independent
-checker. Developers explicitly request reports or enable diagnostics; normal
-rendering remains quiet. Reporting policy does not disable required safety checks.
-No console format, editor integration, certificate format, or public method is
-implemented or frozen by this decision.
-
-### Scope, trust, and relation to Witness
-
-A certificate proves only the stated properties within its model and assumptions.
-Possible later obligations include resource retention, valid ranges, access
-compatibility, and execution/memory dependencies. Rust ownership alone does not
-prove those GPU properties. Shader-dependent accesses, aliasing, CPU concurrency,
-and external inputs must be modeled or explicitly excluded from the certified
-scope; the current implementation provides no such certificates.
-
-The checker and its rules remain part of the trusted implementation. Execution
-must obey the checked plan, and actual resource parameters must satisfy the
-certificate's assumptions. Changing relevant commands, parameters, resources,
-or assumptions requires rechecking. A certificate does not replace runtime
-enforcement, prove driver/hardware correctness, guarantee the intended image,
-or establish identical output or optimal performance across GPUs.
-
-EX Proof explains why a supported plan satisfies specified obligations. EX
-Witness captures and reduces selected failures. A future failed proof check
-could supply a condition for Witness, but neither experimental feature depends
-on the other being fully implemented. Both use the same managed/explicit core
-contracts and introduce no third control level.
-
-The smallest experiment follows the copy/submission foundation: define a narrow
-buffer-copy model, generate a certificate for a valid plan, and independently
-check it without executing copies. Verify that the checker rejects a missing
-required dependency, a corrupted certificate, and a certificate reused against
-an altered plan or resource parameters. Report unsupported inputs distinctly.
-Full shader proofs and hardware synchronization are later research, not pilot scope.
-
-Formal GPU synchronization verification and synthesis already exist, including
-[NVIDIA's WEFT research](https://research.nvidia.com/publication/2015-06_verification-producer-consumer-synchronization-gpu-programs)
-and [AutoSync](https://cseweb.ucsd.edu/~npolikarpova/publications/fmcad18.pdf).
-EX's proposed distinction is independently checkable execution certificates
-integrated with readable explanations and Witness reproductions. No claim of
-market uniqueness or a sound, complete verifier is established by this document.
-
-## Implementation order and current reality
-
-Build the explicit core first and prove its rules with small working operations.
-The accepted development sequence is core completion followed by the SDK. The
-immediate release target is a bounded Core Preview, rather than a complete/stable
-v1 API; [the core milestone](docs/CORE-MILESTONE.md) defines the completion gates.
-Then add managed conveniences over those proven contracts when a real example
-justifies them. Do not create two API trees, empty backend crates, or a complete
-theoretical scheduler before work can execute.
-
-Today EX implements software discovery, logical device/queue ownership, owned
-buffers, checked synchronous CPU access, and device-bound buffer-copy recording
-with transfer/device/range/overlap validation and resource retention. Standalone
-prototype labels remain separate. Synchronous reference submission now executes
-copies in order, samples live bytes, serializes CPU access, and reports partial
-failure. The minimum runtime phase and first software triangle phase are complete.
-Owned RGBA framebuffers, render scopes, fixed-layout vertices, clipped triangle
-rasterization, and PNG example output now work. Owned vertex/fragment shader
-programs, graphics pipelines, vertex layouts, perspective interpolation, and
-programmable rendering also work; see [shaders](docs/SHADERS.md) and
-[pipelines](docs/PIPELINES.md). [Indexed drawing](docs/INDEXED-DRAWING.md) now works
-with u16/u32 formats, shared vertices, and live-reference validation. Phase 3 is
-complete. [Textures, views, samplers, and fragment bindings](docs/TEXTURES.md)
-now work as the first Phase 4 capability. [Depth testing](docs/DEPTH.md) also works,
-with colour/depth scope atomicity. [Colour blending](docs/BLENDING.md) now supports
-separate RGB/alpha equations and channel masks. [Stencil testing](docs/STENCIL.md)
-now supports region masks, front/back rules, and atomic commits for all attachments.
-[Compute pipelines and dispatch](docs/COMPUTE.md) now transform float4 storage
-arrays, expose invocation/workgroup IDs, and generate vertices for subsequent
-drawing with atomic output commits. Established shader
-languages/toolchains are the accepted future ingestion direction; a custom EX
-source language is deferred. Current examples use EX instructions directly.
-Reusable single-group layouts, stage/type/size-checked bindings, and uniform parameters
-in compute/vertex/fragment execution work under [BINDINGS.md](docs/BINDINGS.md).
-Device texture transfers, shared full-image render attachments, later-pass sampling,
-and padded readback work under [TEXTURE-FLOW.md](docs/TEXTURE-FLOW.md). Alias-aware
-validation preserves host permissions and rejects attachment feedback.
-The bounded CoreProfile::Preview1, shared validation limits, device-owned execution
-boundary and reusable adapter-parameterized checks work under
-[CORE-PROFILE.md](docs/CORE-PROFILE.md). The maintained integrated workload and
-completion review now meet Core Preview 1 under [CORE-PROOF.md](docs/CORE-PROOF.md).
-SDK development follows this bounded explicit software core milestone.
-Source SDK setup checks, capability reporting and standalone Rust project creation
-now work under [SDK.md](docs/SDK.md). Bounded GLSL/SPIR-V shader build/import,
-reflection and Cargo incremental rebuilds work under
-[SHADER-IMPORT.md](docs/SHADER-IMPORT.md); broader shader/tool integrations remain planned.
-Explicit whole-resource declarations, access transitions, and checked execution/visibility
-dependencies now work under [DEPENDENCIES.md](docs/DEPENDENCIES.md). Managed planning,
-finer dependency precision, EX Witness, EX Proof, and hardware drivers remain planned, as defined by the roadmap, [submission contract](docs/SUBMISSION.md),
-and [rendering contract](docs/RENDERING.md).
+[WEFT](https://research.nvidia.com/publication/2015-06_verification-producer-consumer-synchronization-gpu-programs)
+and [AutoSync](https://cseweb.ucsd.edu/~npolikarpova/publications/fmcad18.pdf)
+provide prior work on GPU synchronization verification and synthesis. EX's
+experiment would combine checkable certificates with readable explanations.
+A failed check could later supply a failure condition for Witness; the two
+experiments can be developed separately.
 
 ## Design commitments
 
-Future designs and roadmap changes must conform to these commitments. Replacing
-the independent execution model, splitting the levels into incompatible systems,
-or weakening the safe-interface guarantees requires an explicit design
-revision of this document, with the reason recorded here and related documents
-updated together.
+The independent execution model, shared managed/explicit core, explicit
+application control and safe-interface guarantees are the project's agreed
+direction. Changes to them require an explicit design revision. Public names,
+formats, crate boundaries and implementation details may evolve within those
+commitments.
 
-Public names, data structures, module boundaries, and individual algorithms can
-evolve through normal implementation work within these commitments. "Locked"
-means a stable design direction, not a frozen API or a claim of completeness.
-
-Decision record: 2026-10-08 — accepted one core with managed and explicit control
-levels, Rust-based ownership, validated execution, explicit core first, and EX's
-own reference execution before hardware drivers.
-
-Decision record: 2026-10-08 — addition of EX Witness as an
-experimental direction. Start with supported buffer-copy failures after the
-execution foundation; retain the locked core philosophy and existing phase gates.
-
-Decision record: 2026-10-08 — addition of EX Proof as an experimental
-direction, with structured results and optional console/tool presentation. Start
-with independently checked buffer-copy certificates after the execution
-foundation; retain the locked core philosophy and existing phase gates.
+Witness and Proof were added as experiments on 2026-10-08. Their names do not
+freeze an API or promise a release. Usability, performance and differentiation
+need working examples and measurements.

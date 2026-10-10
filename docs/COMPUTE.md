@@ -59,7 +59,7 @@ Vulkan shader ingestion, hardware conformance, or a parallel execution promise.
   CPU permissions remain independent from Storage usage; HostAccess::None can
   execute compute and transfer its result into a readback buffer.
 
-## Limits and evidence
+## Limits and tests
 
 Execution is sequential CPU reference execution. Local groups currently provide
 identity, not cooperating threads. No performance or hardware parallelism claim

@@ -106,8 +106,8 @@ evaluation still returns an owned Vec and does not itself render.
 
 ## Source-language direction: accepted
 
-Use established shader languages/toolchains when external shader ingestion is
-added; reconsider a custom EX source language only for a demonstrated benefit.
+EX uses established shader languages and tools. A custom source language would
+need a concrete benefit before replacing that workflow.
 The first implemented route is GLSL -> SPIR-V -> validated EX IR -> EX execution.
 [DXC](https://github.com/microsoft/DirectXShaderCompiler) supports HLSL-to-SPIR-V;
 [glslang](https://github.com/KhronosGroup/glslang) supports GLSL-to-SPIR-V. The

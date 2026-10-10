@@ -1,8 +1,8 @@
-# EX Phase 2 reference rendering
+# Fixed-function reference rendering
 
-Status: implemented Phase 2 contract. Names are provisional. The software_triangle
-example exports the first EX triangle. The working programmable path is documented
-separately in [PIPELINES.md](PIPELINES.md); this document defines the legacy path.
+The `software_triangle` example renders positions with a constant fragment colour.
+This document describes that fixed-function path. For programmable drawing,
+see [PIPELINES.md](PIPELINES.md).
 
 ## Capability and choices
 
@@ -102,16 +102,14 @@ texture, depth/stencil, blend, scissor, configurable viewport, swapchain, or
 hardware driver is implied. Clipping uses floating
 arithmetic, so no bit-for-bit hardware-conformance claim is made.
 
-## Completion gate
+## Tests and example
 
-The public software_triangle example must export a real offscreen image, assert
-representative foreground/background pixels, and demonstrate record/submit/readback.
-Tests must cover extents, format/initialization, ownership, colour/clear, range and
+The `software_triangle` example exports an offscreen image and checks
+foreground/background pixels after record/submit/readback. Tests cover extents, format/initialization, ownership, colour/clear, range and
 binding misuse, winding, shared edges, clipping, degenerates, live vertices,
 copy-before-draw ordering, retention, poisoned storage, and failure effects.
-Update the roadmap, API catalog and architecture.
 
-This gate is met by [software_triangle](../crates/ex-api/examples/software_triangle.rs)
+The implementation is exercised by [software_triangle](../crates/ex-api/examples/software_triangle.rs)
 and [public tests](../crates/ex-api/tests/reference_rendering.rs), plus private poison/
 lifetime checks and compile-fail/executable documentation. Its PNG contains 48,556
 triangle pixels in a 512x384 image and was independently decoded and visually checked.

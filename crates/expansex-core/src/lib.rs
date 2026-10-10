@@ -1,14 +1,10 @@
-//! Shared Expanse-X discovery, ownership, and initial recording contracts.
+//! Expanse-X resources, validation and software execution.
 //!
-//! Discovers the software target, creates logical devices and queue handles,
-//! allocates reference buffers with explicit CPU access, and records validated
-//! buffer-copy descriptions independently of execution. Queues execute recorded
-//! copies and fixed/programmed triangles synchronously on the CPU. Owned shaders,
-//! pipelines, layouts, perspective interpolation, sampled textures, depth tests,
-//! colour blending, stencil tests/updates, and storage-buffer compute dispatch work.
-//! Ordered encoders preserve synchronous visibility; Explicit encoders declare
-//! whole-resource roles and dependencies validated before submission.
-//! Prototype labels remain.
+//! This crate implements the public types re-exported by `ex-api`, including
+//! command recording, synchronous submission, shader interpretation and CPU
+//! rasterization. Devices retain their resources; recorded work retains the handles
+//! it uses. Explicit encoders declare whole-resource accesses and dependencies,
+//! which are validated before submission.
 
 mod backend;
 mod bindings;

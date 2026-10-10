@@ -1,6 +1,6 @@
 # Depth testing
 
-determine visible surfaces by depth rather than draw
+Depth tests determine visible surfaces by depth rather than draw
 order, through EX's own software pipeline. Existing APIs likewise separate
 [depth testing](https://docs.vulkan.org/spec/latest/chapters/fragops.html) from
 colour output. EX retains a separate depth attachment and immutable pipeline state.

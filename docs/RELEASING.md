@@ -1,9 +1,8 @@
 # SDK Preview release distribution
 
-Publish the
-current source SDK as v0.1.0 in GitHub Releases, marked as a prerelease because
-the wider SDK Preview and stable v1 graphics API remain incomplete. This release
-does not add or certify hardware rendering, presentation or other platforms.
+The v0.1.0 SDK is distributed through GitHub Releases as a Windows x64 preview.
+The package includes an executable, source dependencies, setup instructions,
+build provenance and a checksum. The SDK and public API are still evolving.
 
 ## Distribution boundary
 
@@ -11,8 +10,8 @@ GitHub Releases associates notes/downloads with a Git tag and supplies source
 archives ([documentation](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases)).
 GitHub Packages' supported registries do not include Cargo
 ([supported formats](https://docs.github.com/en/packages/learn-github-packages/introduction-to-github-packages#support-for-package-registries)).
-The workspace keeps publish=false. No crates.io package publication is part of
-this workflow, and no project license is selected automatically.
+The workspace keeps `publish = false`; this workflow does not publish to crates.io.
+A project license is still pending.
 
 Distribute a Windows x86_64 MSVC archive containing the release-built ex.exe,
 the exact tracked source snapshot and documentation needed by the source SDK,

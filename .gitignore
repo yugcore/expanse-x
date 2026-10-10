@@ -12,8 +12,8 @@ target/
 Thumbs.db
 .DS_Store
 
-# Personal Rust and graphics learning guides
+# Local notes
 userRef/
 
-# Local research, exercises, experiments, and archived design studies
+# Local experiments and research
 /createrChoir/

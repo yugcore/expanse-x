@@ -1,11 +1,11 @@
 # Core Preview 1 and the execution boundary
 
-Selected contract (2026-10-09). This gate defines the supported core profile,
-routes real submissions through a device-owned executor, and provides a reusable
-public contract corpus. Implemented evidence is recorded below.
-The separate [integrated proof](CORE-PROOF.md) now meets the Core Preview completion gate.
+Core Preview 1 defines the supported software behavior and numeric limits.
+Submissions run through a device-owned executor. Reusable public tests check
+the profile against each discovered adapter; [CORE-PROOF.md](CORE-PROOF.md)
+describes the integrated workload.
 
-## Purpose and scope
+## Scope
 
 BackendKind identifies an implementation; a profile specifies what applications
 can rely on. A target's name alone cannot establish shader, resource, or execution
@@ -123,7 +123,5 @@ an error; it does not implement an alternate target.
 
 The profile checkpoint passed all 256 workspace tests and required project checks. The existing
 texture_flow workload runs through the selected backend and its 640x320 image
-matches the previously independently verified bytes exactly. This gate is met;
-the final maintained integrated workload/profile review now passes under
-[CORE-PROOF.md](CORE-PROOF.md), with 257 workspace tests and full checks. Core
-Preview 1 is complete within this bounded profile; SDK development follows.
+matches the previously verified bytes. The [integrated workload](CORE-PROOF.md)
+then completed Core Preview 1. Current SDK work is tracked in [ROADMAP.md](ROADMAP.md).

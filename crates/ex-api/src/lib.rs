@@ -1,11 +1,9 @@
 //! Public entry point for Expanse-X (EX).
 //!
-//! Phase 1 begins with software discovery, logical devices, and queue ownership,
-//! alongside owned reference buffers with explicit host access and validated
-//! buffer-copy recording, fixed-function triangles, and synchronous submission.
-//! This crate has no dependency on another graphics API.
-//! Vertex and fragment shader programs can be evaluated independently or bound
-//! through graphics pipelines to render interpolated programmable triangles.
+//! Devices own resources and queues. Encoders record copies, graphics and compute
+//! work; queues execute it synchronously through EX's CPU backend.
+//! The public API supports programmable and indexed drawing, textures, depth/stencil,
+//! blending, compute, reusable bindings and explicit whole-resource dependencies.
 //!
 //! ```
 //! use ex::{Instance, ShaderDescriptor, ShaderInstruction as Op, ShaderStage};

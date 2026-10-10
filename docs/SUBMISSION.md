@@ -1,7 +1,7 @@
 # EX synchronous reference submission
 
-Status: implemented Phase 1 contract, extended with render scopes and compute dispatch;
-public names remain provisional. This is CPU execution, not hardware support.
+Queue submission executes copies, render scopes and compute dispatches in order
+on the CPU. A successful return means that work has completed.
 
 ## Design
 

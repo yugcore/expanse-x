@@ -1,8 +1,8 @@
 # Shader bindings and parameter buffers
 
-Status: implemented and verified. This extends the bounded EX
-vector shader profile with reusable resource interfaces shared by graphics and
-compute. Existing descriptors, texture setters and storage dispatch remain valid.
+Binding layouts and groups describe reusable resource interfaces shared by
+graphics and compute in the EX vector shader profile. Existing descriptors,
+texture setters and storage dispatch remain valid.
 
 ## Design
 

@@ -1,143 +1,112 @@
-# Expanse-X (EX)
+# Expanse-X
 
-An independent low-level graphics API written in Rust. EX will define its own
-public API, runtime, command model, and execution backend. The first backend will
-be a software/reference GPU; rendering will not use Vulkan, Direct3D, Metal,
-OpenGL, or wgpu.
+Expanse-X (EX) is a graphics API written in Rust, with its own command model,
+shader interpreter and CPU rasterizer. The current backend renders offscreen
+images and executes compute work synchronously.
 
-The [project design](DOCUMENTATION.md) defines one core with managed
-and explicit control levels, Rust-based ownership, and validated execution.
-Build the explicit core first; managed planning is a future layer over the same
-resources and execution rules.
+The explicit core is working. GPU acceleration, window presentation and a managed
+API are planned. The API is provisional; see the [roadmap](docs/ROADMAP.md) for
+what is implemented and what comes next.
 
-## Current status: programmable graphics and compute through EX
+## Try the SDK
 
-EX now discovers its built-in software adapter, creates independent logical
-devices, and returns default queue handles with shared ownership. The workspace
-also allocates owned reference buffers with explicit CPU upload/readback
-permissions, bounds checks, and shared storage. Device-bound encoders now record
-validated buffer copies and retain their resources without executing them.
-Queue submission executes finished copies, compute dispatches, and render scopes
-synchronously in order on the CPU,
-with whole-submission serialization against CPU access and defined partial failure.
-EX now owns RGBA framebuffers and records clear/vertex-binding/triangle-list scopes.
-Its own CPU rasterizer clips 2D geometry, samples pixel centres, and writes constant
-fragment colours. Applications import the `ex-api` package as `ex`. EX vertex and
-fragment programs now have owned validated instructions, graphics pipelines,
-explicit vertex layouts, and perspective-correct interpolation. Vertex shaders
-control clip positions; fragment shaders control stored pixel colours. Indexed
-drawing shares vertex records using u16/u32 indices and a signed base vertex.
-RGBA8 textures, rectangular views, nearest/bilinear samplers, and fragment texture
-bindings, depth/stencil attachments/tests, and colour blending now work. Phase 4 is in
-progress; device texture transfers and shared render-to-texture images work under
-[TEXTURE-FLOW.md](docs/TEXTURE-FLOW.md), and [explicit whole-resource dependencies](docs/DEPENDENCIES.md) now work. Hardware drivers remain deferred.
+Download the Windows x64 ZIP and `SHA256SUMS.txt` from the
+[v0.1.0 Preview release](https://github.com/yugcore/expanse-x/releases/tag/v0.1.0).
+Check the ZIP's SHA-256 against the checksum file, then extract it into a directory
+you can keep in place. The archive includes `ex.exe` and its source dependencies.
 
-```text
-cargo run -p ex-api --example software_triangle --locked --offline
+You will need:
+
+- Stable Rust, with rustfmt and Clippy.
+- The Windows MSVC build and linking tools.
+- `glslangValidator` and `spirv-val` on PATH. You can also set `EX_GLSLANG` and
+  `EX_SPIRV_VAL` to their executable paths.
+
+From the extracted SDK directory in PowerShell:
+
+```powershell
+.\bin\ex.exe doctor
+.\bin\ex.exe new my-ex-app --name my-ex-app
+Set-Location my-ex-app
+cargo run --locked --offline
 ```
 
-The example uploads vertices through a recorded copy, renders into a 512x384
-framebuffer, checks foreground/background pixels, and writes `target/phase2-triangle.png`.
-Pass an output path after `--` to choose another location. PNG serialization is
-example code; EX produces the pixels. `submit_copy` demonstrates ordered copy/readback.
-`record_copy` separately verifies that recording/finishing never execute work.
-`buffer_roundtrip` demonstrates CPU access and denied writes; `discover` shows
-device/queue ownership; `api_draft` retains the standalone label-only prototype.
+The app writes `target/ex-starter.png`. Edit `shaders/triangle.vert` or
+`shaders/triangle.frag` to change its shaders, or `src/renderer.rs` to change the
+resources and draw commands. Generated manifests use absolute paths to the SDK;
+update both runtime and build dependencies if you move it.
+
+The shader importer accepts a [limited GLSL subset](docs/SHADER-IMPORT.md):
+straight-line vertex and fragment programs using float/vec4 values, varyings and
+uniform blocks. Native tools compile and validate SPIR-V at build time; EX
+interprets the resulting EX instructions when rendering. Core builds do not
+require the shader tools.
+
+For the same workflow from a source checkout:
 
 ```text
-cargo run -p ex-api --example shader_evaluation --locked --offline
+cargo run -p ex-sdk --locked --offline -- doctor
+cargo run -p ex-sdk --locked --offline -- new target/my-ex-app --name my-ex-app
 ```
 
-This example translates a vertex position and transforms a fragment colour
-through EX's interpreter. It evaluates individual invocations; it does not yet
-record a draw. See [the shader contract](docs/SHADERS.md).
+Then run `cargo run --locked --offline` from `target/my-ex-app`.
+[SDK.md](docs/SDK.md) covers the CLI, setup and error handling.
+
+## What works
+
+- Device discovery, owned buffers and images, CPU access permissions and transfers.
+- Command recording, synchronous submission, retained resources and explicit
+  whole-resource dependencies.
+- Vertex and fragment programs, vertex layouts, perspective interpolation and
+  u16/u32 indexed drawing.
+- RGBA8 textures, rectangular views, nearest/bilinear sampling, depth/stencil
+  attachments and colour blending.
+- Compute dispatches, storage buffers, uniform parameters and reusable binding
+  layouts/groups.
+- SDK project generation, shader import/build/reflection and Cargo incremental
+  shader rebuilds.
+
+[Core Preview 1](docs/CORE-PROFILE.md) defines the supported limits. There is one
+synchronous queue per device. Richer formats, mipmaps, asynchronous completion,
+multiple queues and hardware drivers are future work. There is no selected
+project license yet; Cargo registry publication is disabled.
+
+## Examples
+
+Run an example with:
 
 ```text
-cargo run -p ex-api --example programmable_triangle --locked --offline
+cargo run -p ex-api --example core_preview --locked --offline
 ```
 
-This example uploads position/colour attributes, records pipeline-controlled
-drawing, and writes `target/phase3-programmable-triangle.png`. EX's vertex shader
-scales/translates the triangle and its fragment shader tints interpolated colours.
-The verified image contains 47,794 shaded pixels and 36,374 distinct foreground
-colours. See [the pipeline contract](docs/PIPELINES.md).
-The SDK now imports a bounded GLSL/SPIR-V graphics subset; these core examples
-still use EX instructions directly. See [shader import](docs/SHADER-IMPORT.md).
-HLSL source compilation and broader language features remain future work.
+`core_preview` uploads an image, computes indexed geometry, renders two passes
+with depth/stencil and blending, then checks readback and failure handling.
+It writes `target/core-preview.png`. The integration test uses the same workload.
 
-```text
-cargo run -p ex-api --example indexed_quad --locked --offline
-```
+| Example | What it demonstrates |
+| --- | --- |
+| `discover` | Device and queue ownership |
+| `buffer_roundtrip` | CPU upload/readback and access permissions |
+| `record_copy`, `submit_copy` | Recording versus execution, copy ordering and readback |
+| `software_triangle` | Fixed-function triangle rendering |
+| `shader_evaluation` | Individual shader invocations |
+| `programmable_triangle`, `indexed_quad` | Vertex/fragment shaders, interpolation and indices |
+| `textured_quad` | Nearest and bilinear sampling |
+| `depth_overlap`, `blended_triangles`, `stencil_mask` | Attachment tests and colour blending |
+| `compute_tiles` | Compute-generated geometry |
+| `explicit_dependencies` | Transitions between copy, compute and vertex reads |
+| `shared_parameters` | One binding group shared across shader stages |
+| `texture_flow` | Upload, render-to-texture, sampling and padded readback |
+| `api_draft` | Original descriptor and label-recording prototype |
 
-The indexed quad uploads four vertices and six u16 indices, renders two triangles,
-and writes `target/phase3-indexed-quad.png`. Geometry uses 80 vertex bytes plus
-12 index bytes, compared with 120 bytes for six expanded vertices in this layout.
-The independently verified image contains 110,592 shaded pixels and 80,237 distinct
-foreground colours. See [indexed drawing](docs/INDEXED-DRAWING.md).
-
-```text
-cargo run -p ex-api --example textured_quad --locked --offline
-```
-
-The example uploads an 8x8 checkerboard and renders two indexed quads with the
-same texture: nearest repeat sampling on the left and bilinear repeat on the
-right. It writes `target/phase4-textured-quad.png`; independent calculations verify
-every pixel, including 119,808 covered samples. See [textures](docs/TEXTURES.md).
-This example uses explicit CPU uploads. Recorded texture transfers now work in
-[texture_flow](docs/TEXTURE-FLOW.md); mipmaps remain future work.
-
-```text
-cargo run -p ex-api --example depth_overlap --locked --offline
-```
-
-Three overlapping triangles render identically in both draw orders, with nearer
-surfaces winning. Colour and depth readback are verified, and every PNG pixel
-matches independent coverage/visibility calculations. The example writes
-`target/phase4-depth-overlap.png` with 85,434 covered pixels.
-See [depth testing](docs/DEPTH.md).
-
-```text
-cargo run -p ex-api --example blended_triangles --locked --offline
-```
-
-The same triangles demonstrate RGB replacement (left), alpha source-over (middle),
-and additive blending (right), with depth tests and disabled depth writes. The
-example writes `target/phase4-blended-triangles.png`; independent coverage and
-blend calculations verify every pixel of the 768x384 image. See [blending](docs/BLENDING.md).
-
-```text
-cargo run -p ex-api --example stencil_mask --locked --offline
-```
-
-A diamond stencil restricts a blended repeating checkerboard to 66,560 pixels.
-Colour, depth, and stencil readback are verified. Independent PNG, coverage,
-sampling, and blend calculations check every pixel of `target/phase4-stencil-mask.png`.
-See [stencil testing](docs/STENCIL.md).
-
-## Compute-generated geometry
-
-```text
-cargo run -p ex-api --example compute_tiles --locked --offline
-```
-
-The example runs 288 compute invocations in 48 workgroups to generate a grid of
-48 squares, then draws the computed vertices in the same submission. The vertices
-use HostAccess::None; recorded copies upload and read back the data. All 288
-computed vertices and 48 tile centres are checked. Independent PNG checksums,
-float32 geometry, and coverage calculations match all 196,608 image pixels,
-including 101,568 covered pixels. Output: `target/phase4-compute-tiles.png`.
-See [the compute contract](docs/COMPUTE.md) for storage slots, IDs, validation,
-in-place updates, atomic dispatch failure, and current limits.
+Rendering examples write PNG files under `target/`; pass another output path
+after `--` where supported. PNG encoding belongs to the examples, while EX
+produces the pixels.
 
 ## Build and check
 
-Install Rust through rustup. `rust-toolchain.toml` selects stable Rust with
-rustfmt, Clippy, and Rust source; no extra platform target is required. Current
-packages use only the Rust standard library and local workspace dependencies.
-After the Rust toolchain and native shader tools (glslangValidator/spirv-val) are
-installed, these commands work without network access. Native tools are required
-by SDK integration tests and generated shader builds; core-only builds/tests do
-not invoke them. Set EX_GLSLANG/EX_SPIRV_VAL to executable paths if needed:
+The workspace uses the Rust standard library and local crates. Once Rust and
+the native shader tools are installed, the checks run offline:
 
 ```text
 cargo fmt --all -- --check
@@ -147,153 +116,27 @@ cargo test --workspace --locked --offline
 cargo doc --workspace --no-deps --locked --offline
 ```
 
-`scripts/check.ps1` runs these checks in order and fails on the first error. Run
-`pwsh -NoProfile -File scripts/check.ps1` from any directory, or use the direct
-commands from the project root in CI. Tests include executable and compile-fail
-documentation examples. Keep the workspace lockfile committed. The stable
-toolchain follows stable releases; it is not a pinned compiler-version guarantee.
+`scripts/check.ps1` runs these in order. The workspace currently has 272 tests,
+including executable and compile-fail documentation. SDK integration tests
+invoke the native shader tools; core-only tests do not.
 
-## Multi-pass image flow
+## Project layout
 
-```text
-cargo run -p ex-api --example texture_flow --locked --offline
-```
-
-The [example](crates/ex-api/examples/texture_flow.rs) uploads padded checkerboard
-rows, copies an atlas rectangle, computes quad geometry, renders to a shared
-texture attachment, samples it in a later pass, and reads back padded buffer
-rows. It checks every pixel and padding byte across two submissions with changed
-upload data, then writes `target/core-texture-flow.png`. All device images use
-HostAccess::None; explicit image/buffer dependencies connect the operations.
-Texture/framebuffer aliases preserve allocation identity and host permissions.
-See the [contract](docs/TEXTURE-FLOW.md) for feedback rejection and failure rules.
-
-## Supported core profile
-
-Adapters and devices expose `core_profile()`; `CoreProfile::Preview1.limits()`
-reports the bounds used by resource, shader, binding and compute validation.
-[CORE-PROFILE.md](docs/CORE-PROFILE.md) defines supported behavior and the private
-execution boundary. The runtime validates and orders work through each device's
-selected executor, preserving synchronous completion and error boundaries.
-
-```text
-cargo test -p ex-api --test core_profile --locked --offline
-```
-
-The same [public contract cases](crates/ex-api/tests/core_profile/cases.rs) run
-against every discovered adapter advertising Preview1. They assert observable
-results and errors; no software adapter name or private lock inspection is
-required. This profile remains provisional; the bounded Core Preview milestone
-is complete under [the integrated proof](docs/CORE-PROOF.md).
-
-```text
-cargo run -p ex-api --example core_preview --locked --offline
-```
-
-The [maintained example](crates/ex-api/examples/core_preview.rs) and integration
-test execute the same workload: padded upload, compute-generated indexed geometry,
-depth/stencil checks, blended two-pass rendering and padded readback. Two frames
-change live colours/parameters; missing-barrier and late-compute-failure checks
-verify rejection, rollback and repaired reuse. It writes `target/core-preview.png`.
-The test runs with normal workspace checks and verifies every pixel/attachment.
-
-## SDK v0.1.0 Preview download
-
-The first Windows x86_64 SDK archive is distributed through
-[GitHub Releases](https://github.com/yugcore/expanse-x/releases/tag/v0.1.0).
-It includes bin/ex.exe, matching source dependencies, setup instructions and
-BUILD-INFO.json provenance. Download the ZIP and SHA256SUMS.txt, verify its checksum,
-and extract into a permanent directory. Install Rust/MSVC linking prerequisites
-and the separate GLSL/SPIR-V tools before running bin/ex.exe doctor.
-[RELEASING.md](docs/RELEASING.md) defines packaging and extracted-project verification;
-[release notes](docs/releases/v0.1.0.md) list commands, prerequisites and limits.
-This is an experimental SDK preview with CPU software rendering. No project
-license has been selected, and Cargo registry publication remains disabled.
-
-## Source SDK and shader tools
-
-```text
-cargo run -p ex-sdk --locked --offline -- doctor
-cargo run -p ex-sdk --locked --offline -- info
-cargo run -p ex-sdk --locked --offline -- new target/my-ex-app --name my-ex-app
-```
-
-The source SDK checks installed tools and an offline executable build, reports
-the supported profile/limits, and creates an independent Rust application. From
-the generated directory, run `cargo run --locked --offline` to render a checked
-triangle to `target/ex-starter.png`. Edit `shaders/triangle.vert` or
-`shaders/triangle.frag`; its build script compiles GLSL to validated EX instructions.
-Install glslangValidator and spirv-val first, or select their executable paths with
-EX_GLSLANG/EX_SPIRV_VAL. Edit `src/renderer.rs` for explicit resource/draw flow.
-Existing destinations are refused.
-See [SDK.md](docs/SDK.md) for checkout selection, path handling, errors and the
-shader subset, reflection/build commands and remaining reload/window/tooling gates. SDK Preview is in progress.
-
-## Repository map
-
-| Path | Responsibility |
+| Path | Contents |
 | --- | --- |
-| `DOCUMENTATION.md` | Project design and commitments |
-| `api.md` | Complete catalog of currently exposed public APIs |
-| `crates/ex-api/` | Public Rust entry point, imported as `ex`; runnable example |
-| `crates/expansex-core/` | Ownership, resources, recording/submission, shader interpreter, and private reference rasterizer |
-| `crates/ex-sdk/` | Source SDK CLI, shader commands and standalone GLSL/Rust starter templates |
-| `crates/ex-shader/` | Build-time native-tool invocation, bounded SPIR-V lowering, reflection and Rust generation |
-| `docs/` | Current EX contracts, architecture, assessment, and conventions |
-| `scripts/` | Repeatable production checks and committed-source SDK packaging |
+| `crates/ex-api/` | Public crate, imported as `ex`, with examples and integration tests |
+| `crates/expansex-core/` | Resources, validation, execution and the software renderer |
+| `crates/ex-sdk/` | CLI and application templates |
+| `crates/ex-shader/` | Native shader tools, SPIR-V lowering and reflection |
+| `api.md` | Public API catalog |
+| `docs/` | Feature contracts, architecture, SDK instructions and roadmap |
+| `scripts/` | Checks and SDK packaging |
 
-## Next milestones
+EX's [design](DOCUMENTATION.md) calls for two control levels over the same core:
+explicit commands and dependencies for applications that need control, and a
+managed layer that derives execution plans. Only the explicit core is implemented
+today. Both are intended to share resources and execution rules.
 
-The [development roadmap](docs/ROADMAP.md) is the current progress tracker and
-defines completion checks for each phase. Phases 0–3 are complete. Discovery,
-owned resources, copies, fixed-function drawing, and synchronous readback now work.
-
-Phase 3 completes programmable pipelines, layouts, interpolation, and indexed
-drawing. Phase 4 now has sampled textures, views, samplers, and eight fragment
-resource slots, depth/stencil attachments/tests, blending, and compute pipelines/dispatch.
-The workspace passes 272 tests, including documentation tests.
-[Core Preview 1](docs/CORE-MILESTONE.md) is complete for the bounded explicit
-software profile. SDK Preview is in progress: setup checks, capability reporting
-and standalone GLSL/Rust project generation work. Bounded shader import/build,
-reflection and Cargo incremental rebuilds work; safe shader reload is next.
-A complete/stable v1 API remains a later goal. Other modern GPU
-features and hardware drivers follow demonstrated workloads, one capability at a time.
-
-Read the [starting assessment](docs/ASSESSMENT.md),
-[architecture](docs/ARCHITECTURE.md), [public API catalog](api.md),
-[current API contract](docs/API-DRAFT.md),
-[object ownership contract](docs/OBJECT-MODEL.md), and
-[buffer contract](docs/BUFFERS.md), [copy-recording contract](docs/COMMANDS.md), and
-[submission contract](docs/SUBMISSION.md) and [rendering contract](docs/RENDERING.md).
-The [shader contract](docs/SHADERS.md) describes the working interpreter and its limits.
-The [pipeline contract](docs/PIPELINES.md) describes programmable execution.
-See [coding conventions](docs/CONTRIBUTING.md)
-for implementation and commit policy.
-
-## Explicit dependency example
-
-```powershell
-cargo run -p ex-api --example explicit_dependencies --locked --offline
-```
-
-This workload declares access roles, transitions copy output into compute storage,
-then into vertex reads and transfer readback. It inspects seven actual resource uses,
-validates the plan before execution, and verifies generated geometry and pixels.
-Output: `target/phase4-explicit-dependencies.png`. Existing encoders default to Ordered;
-use `create_command_encoder_with_synchronization(SynchronizationMode::Explicit)`
-for checked declarations/barriers. See [the dependency contract](docs/DEPENDENCIES.md).
-
-
-## Shared shader parameter example
-
-```powershell
-cargo run -p ex-api --example shared_parameters --locked --offline
-```
-
-One reusable layout/group supplies uniform parameters to compute, vertex and
-fragment shaders, storage to compute, and a material texture/sampler to fragments.
-The example uploads parameters through device-only memory, verifies geometry,
-then updates colour and reuses the same pipelines/group/commands. Outputs are
-`target/core-bindings-blue.png` and `target/core-bindings-orange.png`.
-The [binding contract](docs/BINDINGS.md) defines the supported shader profile,
-compatibility, lifetime, live updates and limits.
+Start with the [API catalog](api.md), [architecture](docs/ARCHITECTURE.md) or
+[contributing guide](docs/CONTRIBUTING.md). The [release guide](docs/RELEASING.md)
+describes how SDK downloads are built and checked.

@@ -21,7 +21,7 @@ new creates an independent headless Rust project; default package name: ex-app.
 doctor checks tools/build without installing anything. info queries the linked runtime.
 Use --sdk to select a source checkout when running outside one.
 Shader tools: glslangValidator and spirv-val (PATH, EX_GLSLANG, EX_SPIRV_VAL).
-Shader import supports EX-GLSL-1; windowing, reload and capture are future SDK gates.";
+Shader import supports EX-GLSL-1; windowing, reload and capture are planned.";
 
 fn main() -> ExitCode {
     match run(std::env::args_os().skip(1).collect()) {

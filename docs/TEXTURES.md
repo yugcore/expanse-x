@@ -1,12 +1,11 @@
 # Textures, views, and sampling
 
-Selected Phase 4 contract (2026-10-08): make an indexed checkerboard quad run
-through EX's own reference shader execution. An image stores texels; a view
-selects a rectangle; a sampler defines filtering/addressing. Vulkan also separates
+An image stores texels, a view selects a rectangle, and a sampler defines
+filtering and addressing. EX samples these through its software shader interpreter. Vulkan also separates
 [image views and samplers](https://docs.vulkan.org/tutorial/latest/06_Texture_mapping/01_Image_view_and_sampler.html).
 EX uses retained paired slots for this first supported resource interface.
 
-## Selected API and execution contract
+## Resources and execution
 
 - Textures own zero-initialized, top-left, row-major RGBA8 unorm
   storage with dimensions 1..=16384, same-device ownership, and explicit HostAccess.
